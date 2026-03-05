@@ -301,3 +301,70 @@ export function CloseQuoteIcon() {
     </svg>
   );
 }
+
+export function UploadBoxIcon() {
+  return (
+    <svg
+      width="48"
+      height="48"
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* Tray / inbox body */}
+      <rect x="6" y="28" width="36" height="14" rx="3" stroke="#2563EB" strokeWidth="2.5" fill="none" />
+      {/* Up arrow shaft */}
+      <line x1="24" y1="6" x2="24" y2="28" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" />
+      {/* Arrow head */}
+      <path d="M16 14L24 6L32 14" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      {/* Tray bottom dot highlight */}
+      <circle cx="24" cy="35" r="2" fill="#2563EB" />
+    </svg>
+  );
+}
+
+export function SmallUploadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M8 2v8M5 5l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 4h12M5.333 4V2.667A.667.667 0 0 1 6 2h4a.667.667 0 0 1 .667.667V4M6.667 7.333v4M9.333 7.333v4M3.333 4l.667 9.333A.667.667 0 0 0 4.667 14h6.666a.667.667 0 0 0 .667-.667L12.667 4" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+export function BellIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M11 2a7 7 0 0 0-7 7v3l-1.5 2.5A1 1 0 0 0 3.5 16h15a1 1 0 0 0 .866-1.5L18 12V9a7 7 0 0 0-7-7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M9 16a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="17" cy="5" r="3" fill="#EF4444"/>
+    </svg>
+  );
+}
+
+export function LightbulbIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 1a5 5 0 0 1 3.5 8.5L12 11H6l-.5-1.5A5 5 0 0 1 9 1z" stroke="#2563EB" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M6.5 11v1a2.5 2.5 0 0 0 5 0v-1" stroke="#2563EB" strokeWidth="1.5" strokeLinejoin="round"/>
+      <line x1="9" y1="3" x2="9" y2="4.5" stroke="#2563EB" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+export function CheckCircleSolidIcon({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="20" cy="20" r="20" fill="#2563EB"/>
+      <path d="M12 20l6 6 10-12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
