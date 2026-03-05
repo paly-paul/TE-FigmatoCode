@@ -12,7 +12,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     // TODO: connect to auth API
     console.log({ email });
-    window.location.href = "/signup/confirmation";
+    window.location.href = "/reset-password/sent";
   }
 
   return (
