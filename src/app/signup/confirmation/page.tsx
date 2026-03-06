@@ -21,10 +21,10 @@ export default function ConfirmationPage() {
           confirm your account.
         </p>
 
-        {/* CTA */}
-        <Button type="button" className="mb-5">
-          Okay!
-        </Button>
+        {/* CTA — first-time signup leads to CV upload onboarding */}
+        <Link href="/profile/create" className="w-full mb-5">
+          <Button type="button">Okay!</Button>
+        </Link>
 
         {/* Resend */}
         <p className="text-sm text-gray-500">

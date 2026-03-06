@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import {
   SocialLoginDivider,
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Checkbox } from "@/components/ui/Checkbox";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -19,7 +21,11 @@ export default function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // TODO: connect to auth API
-    console.log({ email, password, rememberMe });
+    // First-time users (no profile yet) are routed to CV upload onboarding.
+    // Returning users with a profile go to /dashboard.
+    // Mock: treat every login as first-time for demo purposes.
+    const isFirstTimeUser = true;
+    router.push(isFirstTimeUser ? "/profile/create" : "/dashboard");
   }
 
   return (
