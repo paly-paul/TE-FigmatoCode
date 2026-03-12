@@ -45,7 +45,7 @@ export default function CreateProfilePage() {
       return;
     }
     // TODO: navigate to step 2 when implemented
-    router.push("/profile/create?step=2");
+    router.push("/profile/basic-details");
   }
 
   return (

@@ -1,8 +1,12 @@
 interface ProfileProgressCardProps {
   percent?: number;
+  description?: string;
 }
 
-export function ProfileProgressCard({ percent = 10 }: ProfileProgressCardProps) {
+export function ProfileProgressCard({
+  percent = 10,
+  description = "Complete your profile to get 3× more interview calls",
+}: ProfileProgressCardProps) {
   // SVG circle maths
   const r = 30;
   const circumference = 2 * Math.PI * r; // ≈ 188.5
@@ -47,7 +51,7 @@ export function ProfileProgressCard({ percent = 10 }: ProfileProgressCardProps) 
         <div className="flex flex-col gap-1 pt-1">
           <p className="text-sm font-semibold text-gray-900">Profile Progress</p>
           <p className="text-xs text-gray-500 leading-snug">
-            Complete your profile to get 3&times; more interview calls
+            {description}
           </p>
         </div>
       </div>
