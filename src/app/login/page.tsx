@@ -21,11 +21,8 @@ export default function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // TODO: connect to auth API
-    // First-time users (no profile yet) are routed to CV upload onboarding.
-    // Returning users with a profile go to /dashboard.
-    // Mock: treat every login as first-time for demo purposes.
-    const isFirstTimeUser = true;
-    router.push(isFirstTimeUser ? "/profile/create" : "/dashboard");
+    // For now, send users straight to the dashboard after login.
+    router.push("/dashboard");
   }
 
   return (
