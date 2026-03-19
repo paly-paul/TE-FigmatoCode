@@ -21,6 +21,7 @@ import {
 
 import ActionDrawer from "../ActionDrawer";
 import PauseJobSearchModal from "../PauseJobSearchModal";
+import ReferFriendModal from "../ReferFriendModal";
 
 interface ActionCard {
   id: number;
@@ -58,6 +59,41 @@ export default function TalentEngineDashboard() {
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
+
+  const [showReferModal, setShowReferModal] = useState(false);
+
+  const handleJobApplyClick = (job: JobListing) => {
+    const nextAction: ActionCard = {
+      id: job.id,
+      type: "Job",
+      title: job.title,
+      subtitle: `${job.location} · ${job.locationFull}`,
+      timestamp: job.postedTime,
+    };
+
+    const isSameJobAlreadyOpen =
+      isDrawerOpen &&
+      selectedAction?.type === "Job" &&
+      selectedAction?.id === job.id;
+
+    if (isSameJobAlreadyOpen) {
+      setIsDrawerOpen(false);
+      return;
+    }
+
+    setSelectedAction(nextAction);
+    setIsDrawerOpen(true);
+  };
+
+  const handleToggleSavedJob = (jobId: number) => {
+    setSavedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  };
 
   const actionCards: ActionCard[] = [
     {
@@ -278,7 +314,7 @@ export default function TalentEngineDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#EEF0F3]">
       {/* HEADER */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
@@ -476,197 +512,219 @@ export default function TalentEngineDashboard() {
         <div className="grid lg:grid-cols-3 gap-6 sm:gap-8">
           {/* JOBS */}
           <div className="lg:col-span-2">
-            <h2 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-6">Jobs</h2>
-
-            {/* FILTER BAR */}
-            <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4 sm:mb-6">
-              <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-                {["Recommended", "Your Applications"].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab as any)}
-                    className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${
-                      activeTab === tab
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : "bg-white text-gray-600 border-gray-200"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+            <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <h2 className="text-lg sm:text-xl font-semibold">Jobs</h2>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-                <div className="relative flex-1 sm:flex-initial">
-                  <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                  <input
-                    placeholder="Search jobs..."
-                    className="pl-10 pr-4 h-10 border rounded-lg text-sm w-full sm:w-auto"
-                  />
+              {/* TABS & FILTERS */}
+              <div className="flex flex-col gap-4 mb-6">
+                {/* Tabs Row */}
+                <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
+                  {["Recommended", "Your Applications"].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab as any)}
+                      className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${
+                        activeTab === tab
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : "bg-white text-gray-600 border-gray-200"
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
                 </div>
 
-                <button className="hidden sm:flex items-center gap-2 border rounded-lg px-4 h-10 text-sm whitespace-nowrap">
-                  <MapPin size={16} />
-                  <span className="hidden md:inline">Bangor, United States</span>
-                  <span className="md:hidden">Bangor</span>
-                  <span className="text-blue-600">+2</span>
-                </button>
-
-                <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Bookmark size={16} />
-                </button>
-
-                <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
-                  <SlidersHorizontal size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* JOB GRID */}
-            {activeTab === "Recommended" ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-                {jobListings.map((job) => (
-                  <div
-                    key={job.id}
-                    className="group bg-white border border-gray-200 border-b-4 border-b-blue-600 rounded-lg p-4 sm:p-6 hover:shadow-md hover:border-blue-600 hover:border-b-blue-600 min-h-[240px] flex flex-col justify-between transition-all"
-                  >
-                    <div className="flex justify-between mb-4">
-                      <span
-                        className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(
-                          job.status
-                        )}`}
-                      >
-                        {job.status}
-                      </span>
-                      <span className="text-xs text-gray-500">{job.postedTime}</span>
-                    </div>
-
-                    <h3 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{job.title}</h3>
-
-                    <div className="space-y-2 text-sm text-gray-600 mb-4">
-                      <div className="flex items-center gap-2">
-                        <MapPin size={16} className="flex-shrink-0" />
-                        <span className="truncate">{job.location} · {job.locationFull}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <DollarSign size={16} className="flex-shrink-0" />
-                        {job.salary}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar size={16} className="flex-shrink-0" />
-                        {job.startDate}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">Match</span>
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((bar) => (
-                            <div
-                              key={bar}
-                              className={`w-2.5 h-2.5 rounded-[2px] ${
-                                bar <= Math.ceil(job.matchPercentage / 20)
-                                  ? getMatchColor(job.matchPercentage)
-                                  : "bg-gray-200"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-sm font-semibold">{job.matchPercentage}%</span>
-                      </div>
-
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Share2 size={16} />
-                        </button>
-                        <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Bookmark size={16} />
-                        </button>
-                        <button className="relative border border-gray-300 rounded-lg px-6 sm:px-8 py-2 text-sm text-gray-800 bg-white transition-all flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600 flex-1 sm:flex-initial">
-                          <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
-                            Apply
-                          </span>
-                          <span className="absolute right-4 opacity-0 translate-x-1 text-white transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0">
-                            →
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              // Application Table - Mobile: Card view, Desktop: Table view
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                {/* Desktop Table View */}
-                <div className="hidden md:block">
-                  {/* Table Header */}
-                  <div className="grid grid-cols-5 gap-4 px-6 py-3 text-sm font-medium text-gray-600 border-b">
-                    <span>Job/Title / Location</span>
-                    <span>Company</span>
-                    <span className="text-center">Match Score %</span>
-                    <span>Stage</span>
-                    <span></span>
+                {/* Filter Controls Row */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                    <input
+                      placeholder="Search jobs..."
+                      className="pl-10 pr-4 h-10 border rounded-lg text-sm w-full"
+                    />
                   </div>
 
-                  {/* Rows */}
+                  <div className="flex gap-2">
+                    <button className="flex items-center gap-2 border rounded-lg px-4 h-10 text-sm whitespace-nowrap flex-1 sm:flex-initial justify-center sm:justify-start">
+                      <MapPin size={16} className="flex-shrink-0" />
+                      <span className="truncate">Bangor, United States</span>
+                      <span className="text-blue-600 flex-shrink-0">+2</span>
+                    </button>
+
+                    <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Bookmark size={16} />
+                    </button>
+
+                    <button className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
+                      <SlidersHorizontal size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* JOB CONTENT */}
+              {activeTab === "Recommended" ? (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
                   {jobListings.map((job) => (
                     <div
                       key={job.id}
-                      className="grid grid-cols-5 gap-4 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
+                      className="group bg-white border border-gray-200 border-b-4 border-b-blue-600 rounded-lg p-4 sm:p-6 hover:shadow-md hover:border-blue-600 hover:border-b-blue-600 min-h-[240px] flex flex-col justify-between transition-all"
                     >
-                      <div>
-                        <p className="font-medium text-gray-900">{job.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {job.location} | {job.locationFull}
-                        </p>
+                      <div className="flex justify-between mb-4">
+                        <span
+                          className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(
+                            job.status
+                          )}`}
+                        >
+                          {job.status}
+                        </span>
+                        <span className="text-xs text-gray-500">{job.postedTime}</span>
                       </div>
-                      <p className="text-sm text-gray-700">{job.company}</p>
-                      <p className="flex justify-center">
-                        <MatchCircle score={job.matchPercentage} />
-                      </p>
-                      <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
-                        {job.stage}
-                      </span>
-                      <div className="flex gap-3 justify-end text-gray-500">
-                        <Share2 size={16} />
-                        <Bookmark size={16} />
-                        <ChevronDown size={16} />
+
+                      <h3 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{job.title}</h3>
+
+                      <div className="space-y-2 text-sm text-gray-600 mb-4">
+                        <div className="flex items-center gap-2">
+                          <MapPin size={16} className="flex-shrink-0" />
+                          <span className="truncate">{job.location} · {job.locationFull}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={16} className="flex-shrink-0" />
+                          {job.salary}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Calendar size={16} className="flex-shrink-0" />
+                          {job.startDate}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600">Match</span>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((bar) => (
+                              <div
+                                key={bar}
+                                className={`w-2.5 h-2.5 rounded-[2px] ${
+                                  bar <= Math.ceil(job.matchPercentage / 20)
+                                    ? getMatchColor(job.matchPercentage)
+                                    : "bg-gray-200"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-sm font-semibold">{job.matchPercentage}%</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <button 
+                            onClick={() => setShowReferModal(true)}
+                            className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Share2 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
+                            aria-pressed={savedJobIds.has(job.id)}
+                            onClick={() => handleToggleSavedJob(job.id)}
+                            className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                              savedJobIds.has(job.id)
+                                ? "border-blue-600 bg-transparent text-blue-600"
+                                : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            <Bookmark size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleJobApplyClick(job)}
+                            className="relative border border-gray-300 rounded-lg px-6 sm:px-8 py-2 text-sm text-gray-800 bg-white transition-all flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600 flex-1 sm:flex-initial"
+                          >
+                            <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
+                              Apply
+                            </span>
+                            <span className="absolute right-4 opacity-0 translate-x-1 text-white transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0">
+                              →
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
+              ) : (
+                // Application Table - Mobile: Card view, Desktop: Table view
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-5 gap-4 px-6 py-3 text-sm font-medium text-gray-600 border-b">
+                      <span>Job/Title / Location</span>
+                      <span>Company</span>
+                      <span className="text-center">Match Score %</span>
+                      <span>Stage</span>
+                      <span></span>
+                    </div>
 
-                {/* Mobile Card View */}
-                <div className="md:hidden divide-y">
-                  {jobListings.map((job) => (
-                    <div key={job.id} className="p-4 hover:bg-gray-50">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
-                          <p className="text-sm text-gray-600">{job.company}</p>
-                          <p className="text-xs text-gray-500 mt-1">
+                    {/* Rows */}
+                    {jobListings.map((job) => (
+                      <div
+                        key={job.id}
+                        className="grid grid-cols-5 gap-4 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">{job.title}</p>
+                          <p className="text-xs text-gray-500">
                             {job.location} | {job.locationFull}
                           </p>
                         </div>
-                        <MatchCircle score={job.matchPercentage} />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
+                        <p className="text-sm text-gray-700">{job.company}</p>
+                        <p className="flex justify-center">
+                          <MatchCircle score={job.matchPercentage} />
+                        </p>
+                        <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
                           {job.stage}
                         </span>
-                        <div className="flex gap-3 text-gray-500">
+                        <div className="flex gap-3 justify-end text-gray-500">
                           <Share2 size={16} />
                           <Bookmark size={16} />
                           <ChevronDown size={16} />
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden divide-y">
+                    {jobListings.map((job) => (
+                      <div key={job.id} className="p-4 hover:bg-gray-50">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                            <p className="text-sm text-gray-600">{job.company}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {job.location} | {job.locationFull}
+                            </p>
+                          </div>
+                          <MatchCircle score={job.matchPercentage} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
+                            {job.stage}
+                          </span>
+                          <div className="flex gap-3 text-gray-500">
+                            <Share2 size={16} />
+                            <Bookmark size={16} />
+                            <ChevronDown size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* INSIGHTS */}
@@ -738,6 +796,11 @@ export default function TalentEngineDashboard() {
         open={showPauseModal}
         onClose={() => setShowPauseModal(false)}
         onSave={handlePauseSave}
+      />
+
+      <ReferFriendModal 
+        open={showReferModal}
+        onClose={() => setShowReferModal(false)}
       />
     </div>
   );
