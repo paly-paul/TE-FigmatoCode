@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+
 import {
   Bell,
   BriefcaseBusiness,
@@ -46,6 +48,9 @@ interface JobListing {
 }
 
 export default function TalentEngineDashboard() {
+
+  const router = useRouter();
+
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<
     "Recommended" | "Your Applications"
@@ -778,7 +783,10 @@ export default function TalentEngineDashboard() {
                 </div>
               </div>
 
-              <button className="w-full border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50">
+              <button 
+                className="w-full border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50"
+                onClick={() => router.push('/dashboard/visibility-score')}
+              >
                 Improve Score
               </button>
             </div>
