@@ -66,7 +66,7 @@ export function ResumeUploadArea({
       }`}
     >
       {uploadedFile ? (
-        /* ── Uploaded state ── */
+        /*  Uploaded state  */
         <div className="flex flex-col items-center gap-3 py-10">
           <CheckCircleSolidIcon size={48} />
           <div className="text-center">
@@ -87,7 +87,7 @@ export function ResumeUploadArea({
           </button>
         </div>
       ) : (
-        /* ── Empty / drop state ── */
+        /*  Empty / drop state  */
         <div className="flex flex-col items-center gap-3 py-10 px-6 text-center">
           <UploadBoxIcon />
           <div>

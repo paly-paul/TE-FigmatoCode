@@ -19,7 +19,7 @@ export function AuthLayout({
 }: AuthLayoutProps) {
   return (
     <div className="flex min-h-screen">
-      {/* ── Left Panel ── */}
+      {/*  Left Panel  */}
       <div className="flex flex-col w-full lg:w-[45%] bg-[#F3F4F6] relative">
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-8 pt-7 pb-0">
@@ -56,7 +56,7 @@ export function AuthLayout({
         </div>
       </div>
 
-      {/* ── Right Panel ── */}
+      {/*  Right Panel  */}
       <RightPanel />
     </div>
   );

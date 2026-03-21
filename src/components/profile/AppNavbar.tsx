@@ -1,97 +1,191 @@
 "use client";
 
-import { useState, useRef } from "react";
-import Link from "next/link";
-import { BellIcon } from "@/components/icons";
-import { NotificationDrawer } from "@/components/ui/NotificationDrawer";
+import React, { useState, useRef } from "react";
+import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { NotificationDrawer } from "../ui/NotificationDrawer";
 
-const navLinks = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Jobs", href: "/jobs" },
-  { label: "Timesheet", href: "/timesheet" },
-];
+export default function AppNavbar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
-interface AppNavbarProps {
-  userName?: string;
-  userInitials?: string;
-}
-
-export function AppNavbar({
-  userName = "",
-  userInitials = "",
-}: AppNavbarProps) {
-  const [open, setOpen] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = () => {
+    // Add your logout logic here
+    console.log("Logging out...");
+  };
+
+  const navItems = [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Jobs", href: "/jobs" },
+    { label: "Timesheet", href: "/timesheet" },
+  ];
+
+  const isActive = (href: string) => pathname === href;
 
   return (
-    <>
-      <header className="bg-white border-b border-gray-200 shrink-0 z-10 px-4 sm:px-6 py-2.5">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xs">TE</span>
+    <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
+        <div className="flex items-center justify-between h-16">
+
+          {/* Logo */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-xs sm:text-sm">TE</span>
             </div>
-            <span className="font-semibold text-gray-800 text-sm sm:text-base">
+            <span className="text-base sm:text-lg font-semibold text-gray-900">
               Talent Engine
             </span>
-          </Link>
+          </div>
 
-          <nav className="hidden md:flex items-center gap-8 flex-1 justify-center">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-sm font-medium text-gray-600 hover:text-gray-900"
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center gap-4">
+            {navItems.map((item) => (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => router.push(item.href)}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  isActive(item.href)
+                    ? "bg-gray-100 text-gray-900"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
               >
-                {link.label}
-              </Link>
+                {item.label}
+              </button>
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-4">
-            {/* 🔔 Bell button */}
+          {/* Right Side */}
+          <div className="flex items-center gap-2 sm:gap-4">
+
+            {/* Bell Icon — toggles NotificationDrawer */}
             <button
               ref={bellRef}
-              type="button"
-              onClick={() => setOpen((prev) => !prev)}
-              className="relative text-gray-500 hover:text-gray-700"
-              aria-label="Notifications"
+              onClick={() => setNotifOpen((prev) => !prev)}
+              className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Toggle notifications"
             >
-              <BellIcon />
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
             </button>
 
-            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-2.5 sm:px-3 py-1.5">
-              <div className="w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center">
-                <span className="text-white text-xs font-semibold">
-                  {userInitials}
-                </span>
-              </div>
-              <span className="hidden sm:inline text-sm font-medium text-gray-700">
-                {userName}
+            {/* Profile Section — hover dropdown */}
+            <div
+              ref={profileRef}
+              className="relative hidden sm:flex items-center gap-2 cursor-pointer select-none group"
+              onMouseEnter={() => setProfileOpen(true)}
+              onMouseLeave={() => setProfileOpen(false)}
+            >
+              <img
+                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Adam"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full"
+                alt="Profile"
+              />
+              <span className="text-sm font-medium text-gray-900 hidden md:block">
+                Adam Smith
               </span>
+              <ChevronDown
+                className={`w-4 h-4 text-gray-500 hidden md:block transition-transform duration-200 ${
+                  profileOpen ? "rotate-180" : "rotate-0"
+                }`}
+              />
+
+              {/* Dropdown Menu */}
+              <div
+                className={`absolute right-0 top-full pt-2 w-44 transition-all duration-150 ${
+                  profileOpen
+                    ? "opacity-100 translate-y-0 pointer-events-auto"
+                    : "opacity-0 -translate-y-1 pointer-events-none"
+                }`}
+              >
+                <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden py-1">
+                  <button
+                    onClick={() => router.push("/profile")}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <User className="w-4 h-4 text-gray-500" />
+                    Profile
+                  </button>
+
+                  <div className="mx-3 border-t border-gray-100" />
+
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Logout
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
 
-        <nav className="md:hidden mt-2 flex items-center gap-5 overflow-x-auto pb-1">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-      </header>
+        {/* Mobile Navigation */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden py-4 border-t">
+            <nav className="flex flex-col gap-2">
+              {navItems.map((item) => (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => {
+                    router.push(item.href);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-2 rounded-md font-medium text-left transition-colors ${
+                    isActive(item.href)
+                      ? "bg-gray-100 text-gray-900"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
 
-      {/* ✅ Drawer connected here */}
+              {/* Mobile Profile Links */}
+              <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
+                <button
+                  onClick={() => router.push("/profile")}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100 text-left text-sm"
+                >
+                  <User className="w-4 h-4 text-gray-500" />
+                  Profile
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-red-600 hover:bg-red-50 text-left text-sm"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
+            </nav>
+          </div>
+        )}
+      </div>
+
+      {/* Notification Drawer */}
       <NotificationDrawer
-        open={open}
-        onClose={() => setOpen(false)}
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
         triggerRef={bellRef}
       />
-    </>
+    </header>
   );
 }
