@@ -1,8 +1,33 @@
 "use client";
 
-import { Calendar, MapPin, Clock, Users, RefreshCw } from "lucide-react";
+import {
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  CircleCheck,
+  Clock,
+  Hourglass,
+  MapPin,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { BaseDrawer } from "./ui/BaseDrawer";
+import {
+  actionDrawerChrome,
+  actionDrawerFirstRecruiterCardId,
+  actionDrawerFooter,
+  actionDrawerFormDefaults,
+  actionDrawerInterview,
+  actionDrawerJobDescription,
+  actionDrawerJobSummary,
+  actionDrawerRecruiterInterest,
+  actionDrawerSalary,
+  actionDrawerTimeline,
+  actionDrawerTitleMatchers,
+  type ActionDrawerTab,
+} from "./actionDrawer/actionDrawerContent";
 
 interface ActionCard {
   id: number;
@@ -18,126 +43,366 @@ interface ActionDrawerProps {
   action: ActionCard | null;
 }
 
-export default function ActionDrawer({
-  open,
-  onClose,
-  action,
-}: ActionDrawerProps) {
-  const [activeTab, setActiveTab] = useState<"Job Action" | "Timeline" | "Job Description">("Job Action");
+const metaIcons = {
+  calendar: Calendar,
+  hourglass: Hourglass,
+  refresh: RefreshCw,
+  clock: Clock,
+  users: Users,
+} as const;
+
+export default function ActionDrawer({ open, onClose, action }: ActionDrawerProps) {
+  const [activeTab, setActiveTab] = useState<ActionDrawerTab>("Job Action");
+  const [availableDate, setAvailableDate] = useState<string>(actionDrawerFormDefaults.availableDate);
+  const [expectedSalary, setExpectedSalary] = useState<string>(actionDrawerFormDefaults.expectedSalary);
+  const [selectedInterviewSlot, setSelectedInterviewSlot] = useState<string>(
+    actionDrawerFormDefaults.selectedInterviewSlotId
+  );
+  const [isProposalExpanded, setIsProposalExpanded] = useState(true);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true);
 
   useEffect(() => {
     if (open) {
       setActiveTab("Job Action");
+      setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
+      setIsProposalExpanded(true);
     }
   }, [open]);
 
-  return (
-    <BaseDrawer
-      open={open}
-      onClose={onClose}
-      title="Job Details"
-      widthClassName="sm:w-[90%] md:w-[700px] lg:w-[900px]"
-      bodyClassName="px-4 sm:px-6 md:px-10 py-4 sm:py-6"
-      contentClassName="max-w-4xl mx-auto space-y-4 sm:space-y-6"
-      footer={
-        <div className="flex justify-end">
-          <button className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 text-sm font-medium">
-            Submit
-          </button>
-        </div>
-      }
-      headerActions={
-        <div className="text-right">
-          <p className="text-xs sm:text-sm text-gray-500">#RR-26-00023</p>
-        </div>
-      }
-    >
-      <div className="border rounded-lg p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-4">
-          <span className="bg-green-100 text-green-700 text-xs font-medium px-3 py-1 rounded-full w-fit">
-            Strong Match
-          </span>
-          <span className="text-xs text-gray-500">6 days ago</span>
-        </div>
+  const normalizedTitle = action?.title.toLowerCase() ?? "";
+  const isRecruiterInterestReceived =
+    normalizedTitle === actionDrawerTitleMatchers.recruiterInterest;
+  const isFirstRecruiterInterestCard =
+    isRecruiterInterestReceived && action?.id === actionDrawerFirstRecruiterCardId;
+  const isInterviewScheduled = normalizedTitle === actionDrawerTitleMatchers.interviewScheduled;
+  const isSalaryNegotiation = normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation;
+  const roleTitle = action?.subtitle.split(" - ")[0] ?? "Senior Engineer";
+  const locationLabel = action?.subtitle.split(" - ")[1] ?? "Atlanta";
 
-        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-3 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <h3 className="font-semibold text-base sm:text-lg text-gray-900">
-              Senior Engineer
-            </h3>
-            <p className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin size={14} className="flex-shrink-0" />
-              <span>Atlanta | United States</span>
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900">Match</span>
-            <div className="flex gap-0.5">
-              <div className="w-1.5 h-4 bg-blue-600 rounded-sm"></div>
-              <div className="w-1.5 h-4 bg-blue-600 rounded-sm"></div>
-              <div className="w-1.5 h-4 bg-blue-600 rounded-sm"></div>
-              <div className="w-1.5 h-4 bg-blue-600 rounded-sm"></div>
-              <div className="w-1.5 h-4 bg-gray-300 rounded-sm"></div>
-            </div>
-            <span className="text-sm font-semibold text-gray-900">80%</span>
+  const primarySlot = actionDrawerInterview.slots[0];
+
+  const renderRecruiterInterestAction = () => (
+    <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
+      <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
+        {actionDrawerRecruiterInterest.sectionTitle}
+      </h3>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-[#202939] sm:text-sm">
+            {actionDrawerRecruiterInterest.availableDateLabel}
+          </label>
+          <div className="relative">
+            <input
+              type="date"
+              value={availableDate}
+              onChange={(event) => setAvailableDate(event.target.value)}
+              className="h-10 w-full rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
+            />
+            <Calendar className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5E7397] sm:right-3.5 sm:h-4 sm:w-4" />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-3 sm:gap-y-4 text-sm">
-          <div className="flex gap-2 items-start">
-            <Calendar size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Project Est. Start Date</p>
-              <p className="font-medium text-gray-900">March 11, 2026</p>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-[#202939] sm:text-sm">
+            {actionDrawerRecruiterInterest.expectedSalaryLabel}
+          </label>
+          <div className="flex h-10 overflow-hidden rounded border border-[#D6DCEA] bg-white sm:h-11">
+            <div className="flex w-9 items-center justify-center border-r border-[#D6DCEA] text-base text-[#202939] sm:w-10 sm:text-lg">
+              {actionDrawerRecruiterInterest.currencySymbol}
             </div>
-          </div>
-          <div className="flex gap-2 items-start">
-            <Calendar size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Project Est. End Date</p>
-              <p className="font-medium text-gray-900">August 31, 2026</p>
-            </div>
-          </div>
-          <div className="flex gap-2 items-start">
-            <Users size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Minimum Contract Duration</p>
-              <p className="font-medium text-gray-900">5 months, 20 days</p>
-            </div>
-          </div>
-          <div className="flex gap-2 items-start">
-            <RefreshCw size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Rotation Cycle</p>
-              <p className="font-medium text-gray-900">0 Weeks On / 0 Weeks Off</p>
-            </div>
-          </div>
-          <div className="flex gap-2 items-start">
-            <Clock size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Working Hours / Day</p>
-              <p className="font-medium text-gray-900">8 hours</p>
-            </div>
-          </div>
-          <div className="flex gap-2 items-start">
-            <Calendar size={16} className="text-gray-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-gray-500 text-xs">Working Days / Week</p>
-              <p className="font-medium text-gray-900">5 days</p>
+            <input
+              value={expectedSalary}
+              onChange={(event) => setExpectedSalary(event.target.value.replace(/[^\d.]/g, ""))}
+              className="min-w-0 flex-1 px-3 text-xs text-[#202939] outline-none sm:px-3.5 sm:text-sm"
+              inputMode="decimal"
+            />
+            <div className="flex items-center pr-3 text-xs text-[#202939] sm:pr-3.5 sm:text-sm">
+              {actionDrawerRecruiterInterest.salaryRateSuffix}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex overflow-x-auto border-b text-sm gap-4 sm:gap-6 scrollbar-hide">
-        {["Job Action", "Timeline", "Job Description"].map((tab) => (
+      <label className="mt-3 flex items-start gap-2.5 text-xs text-[#202939] sm:text-sm">
+        <input
+          type="checkbox"
+          checked={hasAcceptedTerms}
+          onChange={(event) => setHasAcceptedTerms(event.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-[#1D4ED8] text-[#1D4ED8]"
+        />
+        <span>{actionDrawerRecruiterInterest.termsAgreement}</span>
+      </label>
+    </div>
+  );
+
+  const renderInterviewScheduledAction = () => (
+    <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
+      <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
+        {actionDrawerInterview.sectionTitle}
+      </h3>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {actionDrawerInterview.tags.map((tag) => (
+          <span
+            key={tag}
+            className="rounded border border-[#D6DCEA] bg-white px-2.5 py-1 text-[11px] text-[#5E7397] sm:px-3 sm:py-1.5 sm:text-xs"
+          >
+            {tag}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-3 overflow-hidden rounded border border-[#E6ECF6] bg-white">
+        <div className="hidden border-b border-[#E6ECF6] lg:block">
+          <div className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 px-4 py-2 text-xs font-medium text-[#202939] sm:text-sm">
+            <span className="text-center">{actionDrawerInterview.tableHeaders.select}</span>
+            <span>{actionDrawerInterview.tableHeaders.slot}</span>
+            <span>{actionDrawerInterview.tableHeaders.date}</span>
+            <span>{actionDrawerInterview.tableHeaders.time}</span>
+          </div>
+          <div className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 border-t border-[#E6ECF6] px-4 py-3">
+            <label className="flex cursor-pointer items-center justify-center">
+              <input
+                type="radio"
+                name="interview-slot"
+                checked={selectedInterviewSlot === primarySlot.id}
+                onChange={() => setSelectedInterviewSlot(primarySlot.id)}
+                className="h-4 w-4 text-[#1D4ED8]"
+              />
+            </label>
+            <span className="text-xs text-[#202939] sm:text-sm">{primarySlot.label}</span>
+            <span className="text-xs text-[#202939] sm:text-sm">{primarySlot.date}</span>
+            <span className="text-xs leading-snug text-[#202939] sm:text-sm">{primarySlot.time}</span>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 lg:hidden">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              name="interview-slot"
+              checked={selectedInterviewSlot === primarySlot.id}
+              onChange={() => setSelectedInterviewSlot(primarySlot.id)}
+              className="mt-0.5 h-4 w-4 shrink-0 text-[#1D4ED8]"
+            />
+            <div className="min-w-0 flex-1 space-y-1.5 text-xs text-[#202939] sm:text-sm">
+              <p className="font-semibold text-[#202939]">{primarySlot.label}</p>
+              <p>
+                <span className="text-[#5E7397]">{actionDrawerInterview.mobileDatePrefix} </span>
+                <span className="font-medium">{primarySlot.date}</span>
+              </p>
+              <p>
+                <span className="text-[#5E7397]">{actionDrawerInterview.mobileTimePrefix} </span>
+                <span className="font-medium">{primarySlot.time}</span>
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSalaryNegotiationAction = () => (
+    <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
+      <button
+        type="button"
+        onClick={() => setIsProposalExpanded((current) => !current)}
+        className="flex w-full items-start justify-between gap-3 text-left"
+      >
+        <div>
+          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
+            {actionDrawerSalary.proposalTitle}
+          </h3>
+          <p className="mt-2 text-base font-semibold text-[#202939] sm:text-lg">
+            {actionDrawerSalary.rateDisplay}{" "}
+            <span className="text-sm font-normal text-[#5E7397] sm:text-base">
+              {actionDrawerSalary.rateSuffix}
+            </span>
+          </p>
+          <p className="mt-1.5 text-xs text-[#202939] sm:text-sm">
+            {actionDrawerSalary.proposedJoiningPrefix}{" "}
+            <span className="font-semibold">{actionDrawerSalary.proposedJoiningDate}</span>
+          </p>
+        </div>
+        {isProposalExpanded ? (
+          <ChevronUp className="mt-1 h-5 w-5 text-[#202939] sm:h-6 sm:w-6" />
+        ) : (
+          <ChevronDown className="mt-1 h-5 w-5 text-[#202939] sm:h-6 sm:w-6" />
+        )}
+      </button>
+
+      {isProposalExpanded ? (
+        <div className="mt-4 rounded-md bg-white p-4">
+          <h4 className="text-lg leading-none font-semibold text-[#202939] sm:text-xl">
+            {actionDrawerSalary.termsHeading}
+          </h4>
+
+          <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4">
+            <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
+              <div className="border-b border-[#E6ECF6] pb-4 lg:border-b-0 lg:border-r lg:pr-5">
+                <p className="text-sm font-semibold text-[#202939] sm:text-base">
+                  {actionDrawerSalary.byCustomer}
+                </p>
+                <div className="mt-2 space-y-2 sm:mt-3 sm:space-y-2.5">
+                  {actionDrawerSalary.customerTerms.map((item) => (
+                    <div
+                      key={item}
+                      className="flex items-center gap-2.5 text-xs text-[#5E7397] sm:gap-3 sm:text-sm"
+                    >
+                      <CircleCheck className="h-4.5 w-4.5 text-[#22C55E]" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="border-b border-[#E6ECF6] pb-4">
+                  <p className="text-sm font-semibold text-[#202939] sm:text-base">
+                    {actionDrawerSalary.byCandidate}
+                  </p>
+                  <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
+                    {actionDrawerSalary.byCandidatePlaceholder}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-[#202939] sm:text-base">
+                    {actionDrawerSalary.notApplicableTitle}
+                  </p>
+                  <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
+                    {actionDrawerSalary.notApplicableBody}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const renderJobActionContent = () => {
+    if (isInterviewScheduled) {
+      return renderInterviewScheduledAction();
+    }
+
+    if (isSalaryNegotiation) {
+      return renderSalaryNegotiationAction();
+    }
+
+    return renderRecruiterInterestAction();
+  };
+
+  const footerContent = isSalaryNegotiation ? (
+    <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+      <button
+        type="button"
+        className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
+      >
+        {actionDrawerFooter.requestClarification}
+      </button>
+      <button
+        type="button"
+        className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6 sm:py-2.5"
+      >
+        {actionDrawerFooter.submit}
+      </button>
+    </div>
+  ) : (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6"
+      >
+        {actionDrawerFooter.submit}
+      </button>
+    </div>
+  );
+
+  return (
+    <BaseDrawer
+      open={open}
+      onClose={onClose}
+      title={actionDrawerChrome.drawerTitle}
+      widthClassName="w-full sm:w-[94%] lg:w-[90%] xl:w-[1120px]"
+      bodyClassName="px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"
+      contentClassName="mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"
+      footer={footerContent}
+      headerActions={
+        <div className="text-right">
+          <p className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerChrome.referenceId}</p>
+        </div>
+      }
+    >
+      <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
+            {actionDrawerJobSummary.matchBadge}
+          </span>
+          <span className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerJobSummary.postedAgo}</span>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <h3 className="text-base font-semibold text-[#202939] sm:text-lg lg:text-xl">{roleTitle}</h3>
+            <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
+              <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
+              <span>
+                {locationLabel} | {actionDrawerJobSummary.locationCountrySuffix}
+              </span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 self-start xl:self-center sm:gap-2.5">
+            <span className="text-sm font-medium text-[#5E7397] sm:text-base">
+              {actionDrawerJobSummary.matchLabel}
+            </span>
+            <div className="flex gap-1">
+              {Array.from({ length: actionDrawerJobSummary.matchBarTotalSegments }, (_, i) => (
+                <div
+                  key={i}
+                  className={`h-3.5 w-2.5 rounded-[1px] ${
+                    i < actionDrawerJobSummary.matchBarFilledCount ? "bg-[#1447E6]" : "bg-[#E1E7F0]"
+                  }`}
+                />
+              ))}
+            </div>
+            <span className="text-sm font-semibold text-[#202939] sm:text-base">
+              {actionDrawerJobSummary.matchPercentLabel}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-x-5 gap-y-3 text-xs md:grid-cols-2 xl:grid-cols-3 sm:gap-y-3.5 sm:text-sm">
+          {actionDrawerJobSummary.metaFields.map((field) => {
+            const Icon = metaIcons[field.icon];
+            return (
+              <div key={field.label} className="flex items-start gap-2.5 sm:gap-3">
+                <Icon
+                  size={16}
+                  className="mt-0.5 flex-shrink-0 text-[#5E7397] sm:mt-1 sm:h-[18px] sm:w-[18px]"
+                />
+                <div>
+                  <p className="text-xs text-[#5E7397] sm:text-sm">{field.label}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-[#202939] sm:text-base">{field.value}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto border-b border-[#E6ECF6] text-xs scrollbar-hide sm:gap-4 sm:text-sm">
+        {actionDrawerChrome.tabs.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab as typeof activeTab)}
-            className={`pb-2 font-medium whitespace-nowrap transition-colors ${
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`pb-1.5 font-medium whitespace-nowrap transition-colors sm:pb-2 ${
               activeTab === tab
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-500 hover:text-gray-700"
+                ? "border-b-[3px] border-[#1447E6] text-[#1447E6]"
+                : "text-[#5E7397] hover:text-[#202939]"
             }`}
           >
             {tab}
@@ -145,161 +410,75 @@ export default function ActionDrawer({
         ))}
       </div>
 
-      {activeTab === "Job Action" ? (
-        <div className="bg-gray-50 border rounded-md p-4 sm:p-5 space-y-4">
-          <h3 className="font-semibold text-sm sm:text-base text-gray-900">
-            Accept Recruiter Invitation
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">
-                Available Date
-              </label>
-              <input
-                type="date"
-                defaultValue="2026-03-10"
-                className="w-full border rounded-md px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-600 block mb-1">
-                Expected Salary
-              </label>
-              <input
-                placeholder="$ 0 / hourly"
-                className="w-full border rounded-md px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
-          <label className="flex items-start gap-2 text-sm text-gray-600">
-            <input type="checkbox" defaultChecked className="mt-1 flex-shrink-0" />
-            <span>
-              I agree to the terms and agree to share my profile with Six Force
-              Talent Engine.
-            </span>
-          </label>
-        </div>
-      ) : null}
+      {activeTab === "Job Action" ? renderJobActionContent() : null}
 
       {activeTab === "Timeline" ? (
-        <div className="bg-gray-50 border rounded-md p-4 sm:p-5 space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full ring-4 ring-blue-600"></div>
-              <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
-            </div>
-            <div className="flex-1 pb-6">
-              <h4 className="font-semibold text-sm sm:text-base text-gray-900">
-                Recruiter Interest Accepted
-              </h4>
-              <p className="text-xs sm:text-sm text-gray-500 mt-1">Jan 26, 2026</p>
+        isFirstRecruiterInterestCard ? (
+          <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-[#F8FAFD] px-6 py-10 sm:min-h-[220px] sm:py-12">
+            <Image
+              width={40}
+              height={40}
+              src={actionDrawerTimeline.emptyStateIconSrc}
+              alt=""
+            />
+            <p className="mt-4 max-w-[280px] text-center text-lg font-medium leading-relaxed text-black sm:text-base">
+              {actionDrawerTimeline.emptyStateMessage}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex shrink-0 items-center justify-center" aria-hidden>
+                <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
+                  {isInterviewScheduled
+                    ? actionDrawerTimeline.milestoneTitles.interview
+                    : isSalaryNegotiation
+                      ? actionDrawerTimeline.milestoneTitles.salary
+                      : actionDrawerTimeline.milestoneTitles.default}
+                </h4>
+                <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
+                  {actionDrawerTimeline.milestoneDate}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )
       ) : null}
 
       {activeTab === "Job Description" ? (
-        <div className="bg-gray-50 border rounded-md p-4 sm:p-5 space-y-4">
+        <div className="space-y-4 rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
           <div>
-            <h3 className="font-semibold text-sm sm:text-base text-gray-900 mb-3">
-              Job Overview
+            <h3 className="mb-2 text-sm font-semibold text-[#202939] sm:mb-3 sm:text-base">
+              {actionDrawerJobDescription.overview.title}
             </h3>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              We are seeking a Senior Engineer to join our team in Atlanta.
-              This is an exciting opportunity to work on cutting-edge projects
-              in a collaborative environment.
+            <p className="text-xs leading-relaxed text-[#5E7397] sm:text-sm">
+              {actionDrawerJobDescription.overview.body}
             </p>
           </div>
 
           <div>
-            <h4 className="font-semibold text-sm sm:text-base text-gray-900 mb-2">
-              Key Responsibilities
+            <h4 className="mb-2 text-base font-semibold text-[#202939]">
+              {actionDrawerJobDescription.responsibilities.title}
             </h4>
-            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-              <li>Lead technical architecture and design decisions</li>
-              <li>Mentor junior engineers and conduct code reviews</li>
-              <li>Collaborate with cross-functional teams</li>
-              <li>Ensure high-quality code and best practices</li>
+            <ul className="list-inside list-disc space-y-1 text-sm text-[#5E7397]">
+              {actionDrawerJobDescription.responsibilities.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
             </ul>
           </div>
 
           <div>
-            <h4 className="font-semibold text-sm sm:text-base text-gray-900 mb-2">
-              Required Qualifications
+            <h4 className="mb-1.5 text-sm font-semibold text-[#202939] sm:mb-2 sm:text-base">
+              {actionDrawerJobDescription.qualifications.title}
             </h4>
-            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-              <li>5+ years of software engineering experience</li>
-              <li>Strong knowledge of modern web technologies</li>
-              <li>Experience with cloud platforms (AWS, Azure, or GCP)</li>
-              <li>Excellent communication and leadership skills</li>
+            <ul className="list-inside list-disc space-y-0.5 text-xs text-[#5E7397] sm:space-y-1 sm:text-sm">
+              {actionDrawerJobDescription.qualifications.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
             </ul>
-          </div>
-        </div>
-      ) : null}
-
-      {activeTab === "Job Action" && action?.title === "Interview Scheduled" ? (
-        <div className="bg-gray-50 border rounded-md p-4 sm:p-5 space-y-4">
-          <h3 className="font-semibold text-sm sm:text-base text-gray-900">
-            Interview Details
-          </h3>
-
-          <div className="flex flex-wrap gap-2">
-            <span className="px-3 py-1 bg-white border rounded-md text-xs font-medium">
-              Round 1
-            </span>
-            <span className="px-3 py-1 bg-white border rounded-md text-xs font-medium">
-              Technical
-            </span>
-            <span className="px-3 py-1 bg-white border rounded-md text-xs font-medium">
-              Virtual Meeting
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <div className="min-w-full bg-white border rounded-md">
-              <div className="hidden sm:grid sm:grid-cols-4 gap-4 px-4 py-3 bg-gray-50 border-b text-xs sm:text-sm font-medium text-gray-600">
-                <span>Select</span>
-                <span>#Slot</span>
-                <span>Date</span>
-                <span>Time</span>
-              </div>
-
-              <div className="sm:grid sm:grid-cols-4 sm:gap-4 sm:items-center px-4 py-3 sm:py-4">
-                <div className="sm:hidden space-y-3">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="radio"
-                      name="interview-slot"
-                      defaultChecked
-                      className="w-4 h-4 text-blue-600"
-                    />
-                    <span className="font-medium text-sm">Slot 1</span>
-                  </div>
-                  <div className="pl-7 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Date:</span>
-                      <span className="font-medium">Feb 03, 2026</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Time:</span>
-                      <span className="font-medium">11:00 IST (UTC +5.30)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="hidden sm:block">
-                  <input
-                    type="radio"
-                    name="interview-slot"
-                    defaultChecked
-                    className="w-4 h-4 text-blue-600"
-                  />
-                </div>
-                <div className="hidden sm:block text-sm">Slot 1</div>
-                <div className="hidden sm:block text-sm">Feb 03, 2026</div>
-                <div className="hidden sm:block text-sm">11:00 IST (UTC +5.30)</div>
-              </div>
-            </div>
           </div>
         </div>
       ) : null}

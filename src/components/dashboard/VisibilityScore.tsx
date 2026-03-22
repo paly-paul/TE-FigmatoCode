@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from 'next/navigation';
 import Image from "next/image";
 import {
     Chart,
@@ -13,13 +12,11 @@ import {
 } from "chart.js";
 
 import {
-    Bell,
-    Menu,
-    X,
     Home,
     ChevronRight,
     Star,
     CheckCircle,
+    X,
     ThumbsUp,
     Target,
     TrendingUp,
@@ -27,6 +24,9 @@ import {
     ExternalLink,
     BarChart3
 } from "lucide-react";
+import AppNavbar from "../profile/AppNavbar";
+import ProfileVisibilityInfoDrawer from "./ProfileVisibilityInfoDrawer";
+import RewardPointsInfoDrawer from "./RewardPointsInfoDrawer";
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip);
 
@@ -58,8 +58,8 @@ interface ProfileRank {
 }
 
 export default function VisibilityScore() {
-    const router = useRouter();
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [visibilityInfoOpen, setVisibilityInfoOpen] = useState(false);
+    const [rewardPointsInfoOpen, setRewardPointsInfoOpen] = useState(false);
     const activityChartRef = useRef<HTMLCanvasElement>(null);
 
     const visibilityScore = 80;
@@ -241,79 +241,7 @@ export default function VisibilityScore() {
 
     return (
         <div className="min-h-screen bg-[#EEF0F3]">
-            {/* HEADER */}
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-                <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between h-16">
-                        {/* Logo */}
-                        <div className="flex items-center gap-2 sm:gap-3">
-                            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                                <span className="text-white font-bold text-sm sm:text-sm">TE</span>
-                            </div>
-                            <span className="text-base sm:text-lg font-semibold text-gray-900">
-                                Talent Engine
-                            </span>
-                        </div>
-
-                        {/* Desktop Navigation */}
-                        <nav className="hidden lg:flex items-center gap-4">
-                            <button className="px-4 py-2 rounded-md bg-gray-100 text-gray-900 font-medium">
-                                Dashboard
-                            </button>
-                            <button className="px-4 py-2 rounded-md text-gray-500 hover:bg-gray-100">
-                                Jobs
-                            </button>
-                            <button className="px-4 py-2 rounded-md text-gray-500 hover:bg-gray-100">
-                                Timesheet
-                            </button>
-                        </nav>
-
-                        {/* Right Side */}
-                        <div className="flex items-center gap-2 sm:gap-4">
-                            <button className="relative p-2 hover:bg-gray-100 rounded-lg">
-                                <Bell className="w-5 h-5 text-gray-600" />
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-                            </button>
-
-                            <div className="hidden sm:flex items-center gap-2">
-                                <img
-                                    src="https://api.dicebear.com/7.x/avataaars/svg?seed=Adam"
-                                    className="w-9 h-9 rounded-full"
-                                    alt="Profile"
-                                />
-                                <span className="text-sm font-medium text-gray-900 hidden md:block">
-                                    Adam Smith
-                                </span>
-                            </div>
-
-                            {/* Mobile Menu Button */}
-                            <button
-                                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
-                                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            >
-                                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Mobile Navigation */}
-                    {mobileMenuOpen && (
-                        <div className="lg:hidden py-4 border-t">
-                            <nav className="flex flex-col gap-2">
-                                <button className="px-4 py-2.5 rounded-md bg-gray-100 text-gray-900 font-medium text-left text-base">
-                                    Dashboard
-                                </button>
-                                <button className="px-4 py-2.5 rounded-md text-gray-500 hover:bg-gray-100 text-left text-base">
-                                    Jobs
-                                </button>
-                                <button className="px-4 py-2.5 rounded-md text-gray-500 hover:bg-gray-100 text-left text-base">
-                                    Timesheet
-                                </button>
-                            </nav>
-                        </div>
-                    )}
-                </div>
-            </header>
+            <AppNavbar />
 
             {/* BREADCRUMB */}
             <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -343,7 +271,11 @@ export default function VisibilityScore() {
                                     <p className="text-blue-100 text-base sm:text-base mb-6 max-w-md">
                                         Improve your visibility to appear in more recruiter searches.
                                     </p>
-                                    <button className="bg-white text-blue-700 px-6 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition-colors text-base sm:text-base">
+                                    <button
+                                        type="button"
+                                        onClick={() => setVisibilityInfoOpen(true)}
+                                        className="bg-white text-blue-700 px-6 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition-colors text-base sm:text-base"
+                                    >
                                         Know More
                                     </button>
                                 </div>
@@ -530,7 +462,11 @@ export default function VisibilityScore() {
                                     <div className="text-xs">pts</div>
                                 </div>
                             </div>
-                            <button className="w-full border border-gray-300 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50">
+                            <button
+                                type="button"
+                                onClick={() => setRewardPointsInfoOpen(true)}
+                                className="border border-gray-300 rounded-lg p-3.5 text-sm font-medium hover:bg-gray-50"
+                            >
                                 Know More
                             </button>
                         </div>
@@ -609,6 +545,16 @@ export default function VisibilityScore() {
                     </div>
                 </div>
             </main>
+
+            <ProfileVisibilityInfoDrawer
+                open={visibilityInfoOpen}
+                onClose={() => setVisibilityInfoOpen(false)}
+            />
+
+            <RewardPointsInfoDrawer
+                open={rewardPointsInfoOpen}
+                onClose={() => setRewardPointsInfoOpen(false)}
+            />
         </div>
     );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Search,
@@ -10,6 +10,7 @@ import {
   Share2,
   SlidersHorizontal,
   ChevronDown,
+  ChevronUp,
   Calendar,
   DollarSign,
   TrendingUp,
@@ -21,12 +22,18 @@ import ActionDrawer from "../ActionDrawer";
 import PauseJobSearchModal from "../PauseJobSearchModal";
 import ReferFriendModal from "../ReferFriendModal";
 import VisibilityScoreCard from "./VisibilityScoreCard";
+import WelcomeBackModal from "./WelcomeBackModal";
+import {
+  DASHBOARD_WELCOME_PENDING_KEY,
+  STATIC_NAV_DISPLAY_NAME,
+} from "@/lib/dashboardWelcome";
 import { DEFAULT_LOCATIONS, LocationDrawer } from "../ui/LocationDrawer";
 import {
   DEFAULT_FILTERS,
   FilterDrawer,
   FilterState,
 } from "../ui/FilterDrawer";
+import Image from "next/image";
 
 interface ActionCard {
   id: number;
@@ -106,7 +113,24 @@ const ACTION_CARDS: ActionCard[] = [
     subtitle: "Matching opportunities are available based on your profile",
     timestamp: "1 week ago",
   },
+  {
+    id: 7,
+    type: "Job",
+    title: "Application viewed",
+    subtitle: "Pipeline Engineer - Houston",
+    timestamp: "3 days ago",
+  },
+  {
+    id: 8,
+    type: "Job",
+    title: "New job match",
+    subtitle: "Renewables Analyst - Remote",
+    timestamp: "5 days ago",
+  },
 ];
+
+/** Max Action Center cards shown before "See All" (per tab). */
+const ACTION_CENTER_PAGE_SIZE = 4;
 
 const JOB_LISTINGS: JobListing[] = [
   {
@@ -205,6 +229,7 @@ export default function TalentEngineDashboard() {
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
   const [activeActionTab, setActiveActionTab] = useState<"Job" | "Profile" | "General">("Job");
+  const [actionCenterSeeAll, setActionCenterSeeAll] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
   const [showPauseModal, setShowPauseModal] = useState(false);
@@ -216,9 +241,23 @@ export default function TalentEngineDashboard() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>(["bangor-us"]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
-
+  const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
+  const [welcomeUserName, setWelcomeUserName] = useState("");
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1") {
+        window.sessionStorage.removeItem(DASHBOARD_WELCOME_PENDING_KEY);
+        setWelcomeUserName(STATIC_NAV_DISPLAY_NAME);
+        setWelcomeModalOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const primaryLocation = selectedLocations[0]
     ? LOCATION_LABELS[selectedLocations[0]]
@@ -230,12 +269,25 @@ export default function TalentEngineDashboard() {
     activeFilters.employmentTypes.length > 0,
     activeFilters.seniorityLevels.length > 0,
     activeFilters.salaryMin !== DEFAULT_FILTERS.salaryMin ||
-      activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax,
+    activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax,
   ].filter(Boolean).length;
 
   const filteredActions = ACTION_CARDS.filter(
     (card) => card.type === activeActionTab
   );
+
+  const hasMoreActions = filteredActions.length > ACTION_CENTER_PAGE_SIZE;
+  const displayedActions = actionCenterSeeAll
+    ? filteredActions
+    : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
+
+  const actionTabCounts = useMemo(() => {
+    return {
+      Job: ACTION_CARDS.filter((c) => c.type === "Job").length,
+      Profile: ACTION_CARDS.filter((c) => c.type === "Profile").length,
+      General: ACTION_CARDS.filter((c) => c.type === "General").length,
+    };
+  }, []);
 
   const visibleJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -448,22 +500,19 @@ export default function TalentEngineDashboard() {
               aria-pressed={isLookingForJob}
             >
               <span
-                className={`text-xs sm:text-sm font-medium transition-colors ${
-                  isLookingForJob ? "text-gray-900" : "text-gray-500"
-                }`}
+                className={`text-xs sm:text-sm font-medium transition-colors ${isLookingForJob ? "text-gray-900" : "text-gray-500"
+                  }`}
               >
                 {isLookingForJob ? "Looking for a Job" : "Not looking right now"}
               </span>
 
               <span
-                className={`w-11 h-6 rounded-full relative transition-colors ${
-                  isLookingForJob ? "bg-green-500" : "bg-gray-300"
-                }`}
+                className={`w-11 h-6 rounded-full relative transition-colors ${isLookingForJob ? "bg-green-500" : "bg-gray-300"
+                  }`}
               >
                 <span
-                  className={`absolute w-5 h-5 bg-white rounded-full top-0.5 left-0.5 transition-transform duration-200 flex items-center justify-center ${
-                    isLookingForJob ? "translate-x-5" : "translate-x-0"
-                  }`}
+                  className={`absolute w-5 h-5 bg-white rounded-full top-0.5 left-0.5 transition-transform duration-200 flex items-center justify-center ${isLookingForJob ? "translate-x-5" : "translate-x-0"
+                    }`}
                 >
                   {isLookingForJob ? (
                     <svg
@@ -488,29 +537,40 @@ export default function TalentEngineDashboard() {
 
           <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
             <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-              {["Job", "Profile", "General"].map((tab) => (
+              {(["Job", "Profile", "General"] as const).map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveActionTab(tab as typeof activeActionTab)}
-                  className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${
-                    activeActionTab === tab
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-white text-gray-600 border-gray-200"
-                  }`}
+                  type="button"
+                  onClick={() => {
+                    setActiveActionTab(tab);
+                    setActionCenterSeeAll(false);
+                  }}
+                  className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${activeActionTab === tab
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-white text-gray-600 border-gray-200"
+                    }`}
                 >
-                  {tab}
+                  {tab} ({actionTabCounts[tab]})
                 </button>
               ))}
             </div>
 
-            <button className="flex items-center justify-center sm:justify-start text-blue-600 text-sm font-medium gap-1">
-              See All
-              <ChevronDown size={16} />
-            </button>
+            {hasMoreActions ? (
+              <button
+                type="button"
+                onClick={() => setActionCenterSeeAll((prev) => !prev)}
+                className="flex items-center justify-center sm:justify-start text-blue-600 text-sm font-medium gap-1 hover:text-blue-700"
+              >
+                {actionCenterSeeAll ? "Show less" : "See All"}
+                {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            ) : (
+              <span className="hidden sm:block sm:w-[88px]" aria-hidden />
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredActions.map((card) => {
+            {displayedActions.map((card) => {
               const badge = getActionBadge(card.type);
 
               return (
@@ -548,25 +608,129 @@ export default function TalentEngineDashboard() {
 
         <div className="grid lg:grid-cols-3 gap-6 sm:gap-8">
           <div className="lg:col-span-2">
-            <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <h2 className="text-lg sm:text-xl font-semibold">Jobs</h2>
-                <p className="text-sm text-gray-500">
-                  Showing {visibleJobs.length} of {JOB_LISTINGS.length} jobs
-                </p>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <h2 className="text-lg sm:text-xl font-semibold">Jobs</h2>
+              {/* <p className="text-sm text-gray-500">
+                Showing {visibleJobs.length} of {JOB_LISTINGS.length} jobs
+              </p> */}
+            </div>
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
+                {["Recommended", "Your Applications"].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab as typeof activeTab)}
+                    className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${activeTab === tab
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : "bg-white text-gray-600 border-gray-200"
+                      }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
 
-              <div className="flex flex-col gap-4 mb-6">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search jobs, company, skill..."
+                    className="pl-10 pr-4 h-10 border rounded-lg text-sm w-full"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    ref={locationButtonRef}
+                    onClick={() => setLocationDrawerOpen(true)}
+                    className="flex items-center gap-2 border rounded-lg bg-white px-4 h-10 text-sm whitespace-nowrap flex-1 sm:flex-initial justify-center sm:justify-start"
+                  >
+                    <MapPin size={16} className="flex-shrink-0" />
+                    <span className="truncate">{primaryLocation}</span>
+                    {extraCount > 0 ? (
+                      <span className="text-blue-600 flex-shrink-0">+{extraCount}</span>
+                    ) : null}
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label={showSavedOnly ? "Show all jobs" : "Show saved jobs only"}
+                    aria-pressed={showSavedOnly}
+                    onClick={() => setShowSavedOnly((prev) => !prev)}
+                    className={`w-10 h-10 border rounded-lg bg-white flex items-center justify-center flex-shrink-0 transition-colors ${showSavedOnly
+                      ? "border-blue-600 text-blue-600 bg-blue-50"
+                      : "border-gray-200 text-gray-700"
+                      }`}
+                  >
+                    <Bookmark size={16} />
+                  </button>
+
+                  <button
+                    ref={filterButtonRef}
+                    onClick={() => setFilterDrawerOpen(true)}
+                    className={`relative w-10 h-10 border rounded-lg bg-white flex items-center justify-center flex-shrink-0 ${activeFilterCount > 0
+                      ? "border-blue-600 text-blue-600 bg-blue-50"
+                      : "border-gray-200 text-gray-700"
+                      }`}
+                  >
+                    <SlidersHorizontal size={16} />
+                    {activeFilterCount > 0 ? (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold flex items-center justify-center">
+                        {activeFilterCount}
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <span className="px-3 py-1 rounded-full bg-white text-xs text-gray-700">
+                  {selectedLocations.length > 0
+                    ? `${selectedLocations.length} location${selectedLocations.length > 1 ? "s" : ""}`
+                    : "All locations"}
+                </span>
+                {showSavedOnly ? (
+                  <span className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700">
+                    Saved only
+                  </span>
+                ) : null}
+                {activeFilters.skills.map((skill) => (
+                  <span key={skill} className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700">
+                    {skill}
+                  </span>
+                ))}
+                {activeFilters.employmentTypes.map((type) => (
+                  <span key={type} className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
+                    {type}
+                  </span>
+                ))}
+                {activeFilters.seniorityLevels.map((level) => (
+                  <span key={level} className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
+                    {level}
+                  </span>
+                ))}
+                {activeFilters.salaryMin !== DEFAULT_FILTERS.salaryMin ||
+                  activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax ? (
+                  <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
+                    ${activeFilters.salaryMin} - ${activeFilters.salaryMax}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
+              {/* <div className="flex flex-col gap-4 mb-6">
                 <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
                   {["Recommended", "Your Applications"].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab as typeof activeTab)}
-                      className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${
-                        activeTab === tab
+                      className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${activeTab === tab
                           ? "bg-blue-50 text-blue-700 border-blue-200"
                           : "bg-white text-gray-600 border-gray-200"
-                      }`}
+                        }`}
                     >
                       {tab}
                     </button>
@@ -602,11 +766,10 @@ export default function TalentEngineDashboard() {
                       aria-label={showSavedOnly ? "Show all jobs" : "Show saved jobs only"}
                       aria-pressed={showSavedOnly}
                       onClick={() => setShowSavedOnly((prev) => !prev)}
-                      className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
-                        showSavedOnly
+                      className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${showSavedOnly
                           ? "border-blue-600 text-blue-600 bg-blue-50"
                           : "border-gray-200 text-gray-700"
-                      }`}
+                        }`}
                     >
                       <Bookmark size={16} />
                     </button>
@@ -614,11 +777,10 @@ export default function TalentEngineDashboard() {
                     <button
                       ref={filterButtonRef}
                       onClick={() => setFilterDrawerOpen(true)}
-                      className={`relative w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        activeFilterCount > 0
+                      className={`relative w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 ${activeFilterCount > 0
                           ? "border-blue-600 text-blue-600 bg-blue-50"
                           : "border-gray-200 text-gray-700"
-                      }`}
+                        }`}
                     >
                       <SlidersHorizontal size={16} />
                       {activeFilterCount > 0 ? (
@@ -657,13 +819,13 @@ export default function TalentEngineDashboard() {
                     </span>
                   ))}
                   {activeFilters.salaryMin !== DEFAULT_FILTERS.salaryMin ||
-                  activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax ? (
+                    activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax ? (
                     <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
                       ${activeFilters.salaryMin} - ${activeFilters.salaryMax}
                     </span>
                   ) : null}
                 </div>
-              </div>
+              </div> */}
 
               {activeTab === "Recommended" ? (
                 recommendedJobs.length > 0 ? (
@@ -716,11 +878,10 @@ export default function TalentEngineDashboard() {
                               {[1, 2, 3, 4, 5].map((bar) => (
                                 <div
                                   key={bar}
-                                  className={`w-2.5 h-2.5 rounded-[2px] ${
-                                    bar <= Math.ceil(job.matchPercentage / 20)
-                                      ? getMatchColor(job.matchPercentage)
-                                      : "bg-gray-200"
-                                  }`}
+                                  className={`w-2.5 h-2.5 rounded-[2px] ${bar <= Math.ceil(job.matchPercentage / 20)
+                                    ? getMatchColor(job.matchPercentage)
+                                    : "bg-gray-200"
+                                    }`}
                                 />
                               ))}
                             </div>
@@ -739,11 +900,10 @@ export default function TalentEngineDashboard() {
                               aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
                               aria-pressed={savedJobIds.has(job.id)}
                               onClick={() => handleToggleSavedJob(job.id)}
-                              className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
-                                savedJobIds.has(job.id)
-                                  ? "border-blue-600 bg-transparent text-blue-600"
-                                  : "border-gray-200 text-gray-700 hover:bg-gray-50"
-                              }`}
+                              className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${savedJobIds.has(job.id)
+                                ? "border-blue-600 bg-transparent text-blue-600"
+                                : "border-gray-200 text-gray-700 hover:bg-gray-50"
+                                }`}
                             >
                               <Bookmark size={16} />
                             </button>
@@ -865,7 +1025,13 @@ export default function TalentEngineDashboard() {
             <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-4 sm:mb-6">
               <div className="flex gap-3">
                 <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="text-blue-600 w-5 h-5" />
+                  {/* <TrendingUp className="text-blue-600 w-5 h-5" /> */}
+                  <Image
+                    width={30}
+                    height={30}
+                    src="/icons/chart-increase.svg"
+                    alt=""
+                  />
                 </div>
                 <div>
                   <h3 className="font-semibold text-sm">Matching roles found!</h3>
@@ -876,7 +1042,7 @@ export default function TalentEngineDashboard() {
               </div>
             </div>
 
-            <VisibilityScoreCard value={80} />
+            <VisibilityScoreCard value={80} ctaLabel="Improve Score" />
           </div>
         </div>
       </main>
@@ -912,6 +1078,14 @@ export default function TalentEngineDashboard() {
         onApply={(filters) => setActiveFilters(filters)}
         triggerRef={filterButtonRef}
         initialFilters={activeFilters}
+      />
+
+      <WelcomeBackModal
+        open={welcomeModalOpen}
+        userName={welcomeUserName}
+        onClose={() => setWelcomeModalOpen(false)}
+        onYesOpenToOpportunities={() => setIsLookingForJob(true)}
+        onNotRightNow={() => setIsLookingForJob(false)}
       />
     </div>
   );

@@ -9,25 +9,12 @@ import { ResumeUploadArea } from "@/components/profile/ResumeUploadArea";
 import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon } from "@/components/icons";
+import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
+import { ResumeProfileData } from "@/types/profile";
 
 interface UploadedFile {
   name: string;
   uploadDate: string;
-}
-
-interface ResumeProfileData {
-  professionalTitle?: string;
-  experienceYears?: string;
-  experienceMonths?: string;
-  summary?: string;
-  salaryPerMonth?: string;
-  salaryCurrency?: string;
-  firstName?: string;
-  lastName?: string;
-  dob?: string;
-  gender?: string;
-  countryCode?: string;
-  phone?: string;
 }
 
 export default function CreateProfilePage() {
@@ -59,34 +46,36 @@ export default function CreateProfilePage() {
     });
   }
 
-  function handleUpload(file: File) {
+  async function handleUpload(file: File) {
     const meta: UploadedFile = {
       name: file.name,
       uploadDate: formatDate(new Date()),
     };
-    setUploadedFile(meta);
+    const baseData = deriveFallbackResumeData(file.name);
 
-    // Store basic profile data derived from the resume so that
-    // the next step can pre-fill fields which the user can edit.
-    // For now we avoid hardcoded defaults and only set fields
-    // we can reasonably infer (e.g. name from file name).
-    const baseData: ResumeProfileData = {};
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    // Very lightweight heuristic to try and pull the candidate name
-    // from the file name if it looks like "Firstname Lastname - Something.pdf".
-    const nameFromFile = file.name.replace(/\.[^/.]+$/, "");
-    const parts = nameFromFile.split(/[\s_-]+/);
-    if (parts.length >= 2) {
-      baseData.firstName = parts[0];
-      baseData.lastName = parts[1];
+      const response = await fetch("/api/parse-resume", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const parsed = (await response.json()) as ResumeProfileData;
+        upsertResumeProfile({ ...baseData, ...parsed });
+      } else {
+        upsertResumeProfile(baseData);
+      }
+    } catch {
+      upsertResumeProfile(baseData);
     }
+
+    setUploadedFile(meta);
 
     if (typeof window !== "undefined") {
       try {
-        window.sessionStorage.setItem(
-          "resumeProfile",
-          JSON.stringify(baseData)
-        );
         window.sessionStorage.setItem(
           "uploadedResumeMeta",
           JSON.stringify(meta)
@@ -99,10 +88,10 @@ export default function CreateProfilePage() {
 
   function handleDelete() {
     setUploadedFile(null);
+    clearResumeProfile();
     if (typeof window !== "undefined") {
       try {
         window.sessionStorage.removeItem("uploadedResumeMeta");
-        window.sessionStorage.removeItem("resumeProfile");
       } catch {
         // ignore storage errors
       }
@@ -116,6 +105,26 @@ export default function CreateProfilePage() {
     }
 
     router.push("/profile/create/basic-details");
+  }
+
+  function deriveFallbackResumeData(fileName: string): ResumeProfileData {
+    const baseData: ResumeProfileData = {};
+    const nameFromFile = fileName.replace(/\.[^/.]+$/, "");
+    const parts = nameFromFile.split(/[\s_-]+/).filter(Boolean);
+    if (parts.length >= 2) {
+      baseData.firstName = parts[0];
+      baseData.lastName = parts[1];
+    }
+
+    const ignoredTokens = new Set(["resume", "cv", "profile", "updated", "final", "draft"]);
+    const titleTokens = parts
+      .slice(2)
+      .filter((token) => !ignoredTokens.has(token.toLowerCase()));
+    if (titleTokens.length) {
+      baseData.professionalTitle = titleTokens.join(" ");
+    }
+
+    return baseData;
   }
 
   return (

@@ -8,6 +8,8 @@ interface VisibilityScoreCardProps {
   description?: string;
   className?: string;
   compact?: boolean;
+  ctaLabel?: string;
+  onCtaClick?: () => void;
 }
 
 export default function VisibilityScoreCard({
@@ -16,11 +18,22 @@ export default function VisibilityScoreCard({
   description = "You're well-positioned for relevant opportunities",
   className = "",
   compact = false,
+  ctaLabel = "Improve Score",
+  onCtaClick,
 }: VisibilityScoreCardProps) {
   const router = useRouter();
   const radius = compact ? 60 : 80;
   const circumference = Math.PI * radius;
   const offset = circumference - (value / 100) * circumference;
+
+  const handleClick = () => {
+    if (onCtaClick) {
+      onCtaClick();
+      return;
+    }
+
+    router.push("/dashboard/visibility-score");
+  };
 
   return (
     <div className={`bg-white border border-gray-200 rounded-xl p-4 sm:p-6 ${className}`}>
@@ -61,9 +74,9 @@ export default function VisibilityScoreCard({
       <button
         type="button"
         className="w-full border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50"
-        onClick={() => router.push("/dashboard/visibility-score")}
+        onClick={handleClick}
       >
-        Improve Score
+        {ctaLabel}
       </button>
     </div>
   );

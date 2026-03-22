@@ -21,8 +21,8 @@ export default function ConfirmationPage() {
           confirm your account.
         </p>
 
-        {/* CTA — first-time signup leads to CV upload onboarding */}
-        <Link href="/profile/create" className="w-full mb-5">
+        {/* CTA — continue to sign in; profile is created after first login */}
+        <Link href="/login" className="w-full mb-5">
           <Button type="button">Okay!</Button>
         </Link>
 

@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { isProfileComplete } from "@/lib/profileOnboarding";
+import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,9 +22,13 @@ export default function LoginPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: connect to auth API
-    // For now, send users straight to the dashboard after login.
-    router.push("/dashboard");
+    // TODO: connect to auth API — use server "profile complete" when available
+    if (isProfileComplete()) {
+      setDashboardWelcomePending();
+      router.push("/dashboard");
+    } else {
+      router.push("/profile/create");
+    }
   }
 
   return (

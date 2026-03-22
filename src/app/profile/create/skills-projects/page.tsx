@@ -8,6 +8,8 @@ import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
+import { markProfileComplete } from "@/lib/profileOnboarding";
+import { CheckCircle2, X } from "lucide-react";
 
 interface ResumeSkillsData {
   skills?: string[];
@@ -15,22 +17,41 @@ interface ResumeSkillsData {
   responsibilities?: string;
 }
 
-interface SkillsProjectsForm {
+interface ExperienceEntry {
+  id: string;
   experience: string;
   experienceYears: string;
   experienceReference: string;
+}
+
+interface ToolEntry {
+  id: string;
   tool: string;
   toolYears: string;
   toolReference: string;
+}
+
+interface ProjectEntry {
+  id: string;
   projectTitle: string;
   customerCompany: string;
   projectStartDate: string;
   projectEndDate: string;
+  inProgress: boolean;
   projectDescription: string;
   responsibilities: string;
 }
 
-type FormErrors = Partial<Record<keyof SkillsProjectsForm | "skills", string>>;
+type ExperienceFieldErrors = Partial<Record<keyof Omit<ExperienceEntry, "id">, string>>;
+type ToolFieldErrors = Partial<Record<keyof Omit<ToolEntry, "id">, string>>;
+type ProjectFieldErrors = Partial<Record<keyof Omit<ProjectEntry, "id">, string>>;
+
+type FormErrors = {
+  skills?: string;
+  experiences?: Record<string, ExperienceFieldErrors>;
+  tools?: Record<string, ToolFieldErrors>;
+  projects?: Record<string, ProjectFieldErrors>;
+};
 
 const SKILL_OPTIONS = [
   "React",
@@ -45,91 +66,193 @@ const SKILL_OPTIONS = [
   "Docker",
 ];
 
-const initialForm: SkillsProjectsForm = {
-  experience: "",
-  experienceYears: "",
-  experienceReference: "",
-  tool: "",
-  toolYears: "",
-  toolReference: "",
-  projectTitle: "",
-  customerCompany: "",
-  projectStartDate: "",
-  projectEndDate: "",
-  projectDescription: "",
-  responsibilities: "",
-};
-
 const fieldClass = (hasError: boolean) =>
   `w-full rounded-md border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary-500 ${
     hasError ? "border-red-400" : "border-gray-300"
   }`;
+
+function createEntryId(prefix: string) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function createExperienceEntry(overrides: Partial<Omit<ExperienceEntry, "id">> & { id?: string } = {}): ExperienceEntry {
+  return {
+    id: overrides.id ?? createEntryId("exp"),
+    experience: overrides.experience ?? "",
+    experienceYears: overrides.experienceYears ?? "",
+    experienceReference: overrides.experienceReference ?? "",
+  };
+}
+
+function createToolEntry(overrides: Partial<Omit<ToolEntry, "id">> & { id?: string } = {}): ToolEntry {
+  return {
+    id: overrides.id ?? createEntryId("tool"),
+    tool: overrides.tool ?? "",
+    toolYears: overrides.toolYears ?? "",
+    toolReference: overrides.toolReference ?? "",
+  };
+}
+
+function createProjectEntry(overrides: Partial<Omit<ProjectEntry, "id">> & { id?: string } = {}): ProjectEntry {
+  return {
+    id: overrides.id ?? createEntryId("proj"),
+    projectTitle: overrides.projectTitle ?? "",
+    customerCompany: overrides.customerCompany ?? "",
+    projectStartDate: overrides.projectStartDate ?? "",
+    projectEndDate: overrides.projectEndDate ?? "",
+    inProgress: overrides.inProgress ?? false,
+    projectDescription: overrides.projectDescription ?? "",
+    responsibilities: overrides.responsibilities ?? "",
+  };
+}
+
+function isExperienceEmpty(e: ExperienceEntry) {
+  return !e.experience.trim() && !e.experienceYears.trim() && !e.experienceReference.trim();
+}
+
+function isToolEmpty(e: ToolEntry) {
+  return !e.tool.trim() && !e.toolYears.trim() && !e.toolReference.trim();
+}
+
+function isProjectEmpty(e: ProjectEntry) {
+  return (
+    !e.projectTitle.trim() &&
+    !e.customerCompany.trim() &&
+    !e.projectStartDate &&
+    !e.projectEndDate &&
+    !e.projectDescription.trim() &&
+    !e.responsibilities.trim() &&
+    !e.inProgress
+  );
+}
 
 export default function SkillsProjectsPage() {
   const router = useRouter();
   const [lookingForJob, setLookingForJob] = useState(true);
   const [skills, setSkills] = useState<string[]>([]);
   const [selectedSkill, setSelectedSkill] = useState("");
-  const [form, setForm] = useState<SkillsProjectsForm>(initialForm);
+  const [experiences, setExperiences] = useState<ExperienceEntry[]>(() => [createExperienceEntry()]);
+  const [tools, setTools] = useState<ToolEntry[]>(() => [createToolEntry()]);
+  const [projects, setProjects] = useState<ProjectEntry[]>(() => [createProjectEntry()]);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [hasExperienceEntry, setHasExperienceEntry] = useState(false);
-  const [hasToolEntry, setHasToolEntry] = useState(false);
-  const [hasProjectEntry, setHasProjectEntry] = useState(false);
+  const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
+
+  function isValidUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function validateExperienceEntry(entry: ExperienceEntry): ExperienceFieldErrors {
+    const sectionErrors: ExperienceFieldErrors = {};
+    if (!entry.experience.trim()) sectionErrors.experience = "Experience is required.";
+    if (!entry.experienceYears.trim()) sectionErrors.experienceYears = "Experience years are required.";
+    const ref = entry.experienceReference.trim();
+    if (!ref) {
+      sectionErrors.experienceReference = "Reference link is required.";
+    } else if (!isValidUrl(ref)) {
+      sectionErrors.experienceReference = "Enter a valid URL (http/https).";
+    }
+    return sectionErrors;
+  }
+
+  function validateToolEntry(entry: ToolEntry): ToolFieldErrors {
+    const sectionErrors: ToolFieldErrors = {};
+    if (!entry.tool.trim()) sectionErrors.tool = "Tool is required.";
+    if (!entry.toolYears.trim()) sectionErrors.toolYears = "Tool experience years are required.";
+    const ref = entry.toolReference.trim();
+    if (!ref) {
+      sectionErrors.toolReference = "Reference link is required.";
+    } else if (!isValidUrl(ref)) {
+      sectionErrors.toolReference = "Enter a valid URL (http/https).";
+    }
+    return sectionErrors;
+  }
+
+  function validateProjectEntry(entry: ProjectEntry): ProjectFieldErrors {
+    const sectionErrors: ProjectFieldErrors = {};
+    if (!entry.projectTitle.trim()) sectionErrors.projectTitle = "Project title is required.";
+    if (!entry.customerCompany.trim()) sectionErrors.customerCompany = "Customer/company is required.";
+    if (!entry.projectStartDate) sectionErrors.projectStartDate = "Start date is required.";
+
+    if (!entry.inProgress) {
+      if (!entry.projectEndDate) {
+        sectionErrors.projectEndDate = "End date is required, or mark In progress.";
+      }
+    }
+
+    if (entry.projectStartDate && entry.projectEndDate) {
+      const start = new Date(entry.projectStartDate);
+      const end = new Date(entry.projectEndDate);
+      if (end < start) sectionErrors.projectEndDate = "End date cannot be before start date.";
+    }
+
+    if (!entry.projectDescription.trim()) {
+      sectionErrors.projectDescription = "Project description is required.";
+    } else if (entry.projectDescription.trim().length < 30) {
+      sectionErrors.projectDescription = "Description should be at least 30 characters.";
+    }
+
+    if (!entry.responsibilities.trim()) {
+      sectionErrors.responsibilities = "Responsibilities are required.";
+    } else if (entry.responsibilities.trim().length < 20) {
+      sectionErrors.responsibilities = "Responsibilities should be at least 20 characters.";
+    }
+
+    return sectionErrors;
+  }
+
+  function nonEmptyExperiences() {
+    return experiences.filter((e) => !isExperienceEmpty(e));
+  }
+
+  function nonEmptyTools() {
+    return tools.filter((t) => !isToolEmpty(t));
+  }
+
+  function nonEmptyProjects() {
+    return projects.filter((p) => !isProjectEmpty(p));
+  }
+
+  function isExperiencesSectionComplete() {
+    const filled = nonEmptyExperiences();
+    if (filled.length === 0) return false;
+    return experiences.every((e) => isExperienceEmpty(e) || Object.keys(validateExperienceEntry(e)).length === 0);
+  }
+
+  function isToolsSectionComplete() {
+    const filled = nonEmptyTools();
+    if (filled.length === 0) return false;
+    return tools.every((t) => isToolEmpty(t) || Object.keys(validateToolEntry(t)).length === 0);
+  }
+
+  function isProjectsSectionComplete() {
+    const filled = nonEmptyProjects();
+    if (filled.length === 0) return false;
+    return projects.every((p) => isProjectEmpty(p) || Object.keys(validateProjectEntry(p)).length === 0);
+  }
 
   const completionPercent = (() => {
-    // Section-based completion:
-    // 1) Skills, 2) Experience, 3) Tools, 4) Projects
-
-    const isSkillsSectionComplete = skills.length > 0;
-
-    const isExperienceSectionComplete = (() => {
-      if (!hasExperienceEntry) return false;
-      if (!form.experience.trim()) return false;
-      if (!form.experienceYears.trim()) return false;
-      const ref = form.experienceReference.trim();
-      if (!ref || !isValidUrl(ref)) return false;
-      return true;
-    })();
-
-    const isToolsSectionComplete = (() => {
-      if (!hasToolEntry) return false;
-      if (!form.tool.trim()) return false;
-      if (!form.toolYears.trim()) return false;
-      const ref = form.toolReference.trim();
-      if (!ref || !isValidUrl(ref)) return false;
-      return true;
-    })();
-
-    const isProjectsSectionComplete = (() => {
-      if (!hasProjectEntry) return false;
-      if (!form.projectTitle.trim()) return false;
-      if (!form.customerCompany.trim()) return false;
-      if (!form.projectStartDate) return false;
-      if (!form.projectEndDate) return false;
-
-      const start = new Date(form.projectStartDate);
-      const end = new Date(form.projectEndDate);
-      if (end < start) return false;
-
-      const descLen = form.projectDescription.trim().length;
-      if (descLen < 30) return false;
-
-      const respLen = form.responsibilities.trim().length;
-      if (respLen < 20) return false;
-
-      return true;
-    })();
+    const skillsDone = skills.length > 0;
+    const experienceDone = isExperiencesSectionComplete();
+    const toolsDone = isToolsSectionComplete();
+    const projectsDone = isProjectsSectionComplete();
 
     let completedSections = 0;
     const totalSections = 4;
 
-    if (isSkillsSectionComplete) completedSections += 1;
-    if (isExperienceSectionComplete) completedSections += 1;
-    if (isToolsSectionComplete) completedSections += 1;
-    if (isProjectsSectionComplete) completedSections += 1;
+    if (skillsDone) completedSections += 1;
+    if (experienceDone) completedSections += 1;
+    if (toolsDone) completedSections += 1;
+    if (projectsDone) completedSections += 1;
 
     const ratio = Math.min(1, completedSections / totalSections);
-    // Steps 1+2 contribute 40%, this step contributes up to +30% (total 70%)
     return 40 + ratio * 30;
   })();
 
@@ -140,11 +263,20 @@ export default function SkillsProjectsPage() {
       if (!raw) return;
       const data = JSON.parse(raw) as ResumeSkillsData;
       if (Array.isArray(data.skills)) setSkills(data.skills);
-      setForm((prev) => ({
-        ...prev,
-        projectDescription: typeof data.projectDescription === "string" ? data.projectDescription : prev.projectDescription,
-        responsibilities: typeof data.responsibilities === "string" ? data.responsibilities : prev.responsibilities,
-      }));
+      setProjects((prev) => {
+        const first = prev[0];
+        if (!first) return prev;
+        return [
+          {
+            ...first,
+            projectDescription:
+              typeof data.projectDescription === "string" ? data.projectDescription : first.projectDescription,
+            responsibilities:
+              typeof data.responsibilities === "string" ? data.responsibilities : first.responsibilities,
+          },
+          ...prev.slice(1),
+        ];
+      });
     } catch {
       // ignore invalid JSON
     }
@@ -152,30 +284,74 @@ export default function SkillsProjectsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const first = projects[0];
     const payload: ResumeSkillsData = {
       skills,
-      projectDescription: form.projectDescription,
-      responsibilities: form.responsibilities,
+      projectDescription: first?.projectDescription ?? "",
+      responsibilities: first?.responsibilities ?? "",
     };
     try {
       window.sessionStorage.setItem("resumeSkills", JSON.stringify(payload));
     } catch {
       // ignore storage errors
     }
-  }, [skills, form.projectDescription, form.responsibilities]);
+  }, [skills, projects]);
 
-  function setField<K extends keyof SkillsProjectsForm>(key: K, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setErrors((prev) => ({ ...prev, [key]: undefined }));
+  function updateExperience(id: string, patch: Partial<Omit<ExperienceEntry, "id">>) {
+    setExperiences((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (next.experiences?.[id]) {
+        const fe = { ...next.experiences[id] };
+        for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
+          delete fe[k as keyof ExperienceFieldErrors];
+        }
+        next.experiences = { ...next.experiences, [id]: fe };
+        if (Object.keys(next.experiences[id]).length === 0) {
+          const { [id]: _, ...rest } = next.experiences;
+          next.experiences = Object.keys(rest).length ? rest : undefined;
+        }
+      }
+      return next;
+    });
   }
 
-  function isValidUrl(value: string): boolean {
-    try {
-      const url = new URL(value);
-      return url.protocol === "http:" || url.protocol === "https:";
-    } catch {
-      return false;
-    }
+  function updateTool(id: string, patch: Partial<Omit<ToolEntry, "id">>) {
+    setTools((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (next.tools?.[id]) {
+        const fe = { ...next.tools[id] };
+        for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
+          delete fe[k as keyof ToolFieldErrors];
+        }
+        next.tools = { ...next.tools, [id]: fe };
+        if (Object.keys(next.tools[id]).length === 0) {
+          const { [id]: _, ...rest } = next.tools;
+          next.tools = Object.keys(rest).length ? rest : undefined;
+        }
+      }
+      return next;
+    });
+  }
+
+  function updateProject(id: string, patch: Partial<Omit<ProjectEntry, "id">>) {
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (next.projects?.[id]) {
+        const fe = { ...next.projects[id] };
+        for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
+          delete fe[k as keyof ProjectFieldErrors];
+        }
+        next.projects = { ...next.projects, [id]: fe };
+        if (Object.keys(next.projects[id]).length === 0) {
+          const { [id]: _, ...rest } = next.projects;
+          next.projects = Object.keys(rest).length ? rest : undefined;
+        }
+      }
+      return next;
+    });
   }
 
   function handleSkillsChange(value: string) {
@@ -194,96 +370,99 @@ export default function SkillsProjectsPage() {
   }
 
   function handleAddExperience() {
-    const sectionErrors: FormErrors = {};
-
-    if (!form.experience.trim()) sectionErrors.experience = "Experience is required.";
-    if (!form.experienceYears.trim()) sectionErrors.experienceYears = "Experience years are required.";
-    if (!form.experienceReference.trim()) {
-      sectionErrors.experienceReference = "Reference link is required.";
-    } else if (!isValidUrl(form.experienceReference.trim())) {
-      sectionErrors.experienceReference = "Enter a valid URL (http/https).";
+    const expMap: Record<string, ExperienceFieldErrors> = {};
+    for (const e of experiences) {
+      if (isExperienceEmpty(e)) continue;
+      const fe = validateExperienceEntry(e);
+      if (Object.keys(fe).length) expMap[e.id] = fe;
     }
-
-    if (Object.keys(sectionErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...sectionErrors }));
+    const last = experiences[experiences.length - 1];
+    if (last && isExperienceEmpty(last)) {
+      expMap[last.id] = validateExperienceEntry(last);
+    }
+    if (Object.keys(expMap).length > 0) {
+      setErrors((prev) => ({ ...prev, experiences: { ...prev.experiences, ...expMap } }));
       return;
     }
+    setExperiences((prev) => [...prev, createExperienceEntry()]);
+    setErrors((prev) => ({ ...prev, experiences: undefined }));
+  }
 
-    setHasExperienceEntry(true);
-    setErrors((prev) => ({
-      ...prev,
-      experience: undefined,
-      experienceYears: undefined,
-      experienceReference: undefined,
-    }));
+  function handleRemoveExperience(id: string) {
+    setExperiences((prev) => {
+      const next = prev.filter((e) => e.id !== id);
+      return next.length ? next : [createExperienceEntry()];
+    });
+    setErrors((prev) => {
+      if (!prev.experiences?.[id]) return prev;
+      const { [id]: _, ...rest } = prev.experiences;
+      return { ...prev, experiences: Object.keys(rest).length ? rest : undefined };
+    });
   }
 
   function handleAddTool() {
-    const sectionErrors: FormErrors = {};
-
-    if (!form.tool.trim()) sectionErrors.tool = "Tool is required.";
-    if (!form.toolYears.trim()) sectionErrors.toolYears = "Tool experience years are required.";
-    if (!form.toolReference.trim()) {
-      sectionErrors.toolReference = "Reference link is required.";
-    } else if (!isValidUrl(form.toolReference.trim())) {
-      sectionErrors.toolReference = "Enter a valid URL (http/https).";
+    const toolMap: Record<string, ToolFieldErrors> = {};
+    for (const t of tools) {
+      if (isToolEmpty(t)) continue;
+      const fe = validateToolEntry(t);
+      if (Object.keys(fe).length) toolMap[t.id] = fe;
     }
-
-    if (Object.keys(sectionErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...sectionErrors }));
+    const last = tools[tools.length - 1];
+    if (last && isToolEmpty(last)) {
+      toolMap[last.id] = validateToolEntry(last);
+    }
+    if (Object.keys(toolMap).length > 0) {
+      setErrors((prev) => ({ ...prev, tools: { ...prev.tools, ...toolMap } }));
       return;
     }
+    setTools((prev) => [...prev, createToolEntry()]);
+    setErrors((prev) => ({ ...prev, tools: undefined }));
+  }
 
-    setHasToolEntry(true);
-    setErrors((prev) => ({
-      ...prev,
-      tool: undefined,
-      toolYears: undefined,
-      toolReference: undefined,
-    }));
+  function handleRemoveTool(id: string) {
+    setTools((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      return next.length ? next : [createToolEntry()];
+    });
+    setErrors((prev) => {
+      if (!prev.tools?.[id]) return prev;
+      const { [id]: _, ...rest } = prev.tools;
+      return { ...prev, tools: Object.keys(rest).length ? rest : undefined };
+    });
   }
 
   function handleAddProject() {
-    const sectionErrors: FormErrors = {};
-
-    if (!form.projectTitle.trim()) sectionErrors.projectTitle = "Project title is required.";
-    if (!form.customerCompany.trim()) sectionErrors.customerCompany = "Customer/company is required.";
-    if (!form.projectStartDate) sectionErrors.projectStartDate = "Start date is required.";
-    if (!form.projectEndDate) sectionErrors.projectEndDate = "End date is required.";
-
-    if (form.projectStartDate && form.projectEndDate) {
-      const start = new Date(form.projectStartDate);
-      const end = new Date(form.projectEndDate);
-      if (end < start) sectionErrors.projectEndDate = "End date cannot be before start date.";
-    }
-
-    if (!form.projectDescription.trim()) {
-      sectionErrors.projectDescription = "Project description is required.";
-    } else if (form.projectDescription.trim().length < 30) {
-      sectionErrors.projectDescription = "Description should be at least 30 characters.";
-    }
-
-    if (!form.responsibilities.trim()) {
-      sectionErrors.responsibilities = "Responsibilities are required.";
-    } else if (form.responsibilities.trim().length < 20) {
-      sectionErrors.responsibilities = "Responsibilities should be at least 20 characters.";
-    }
-
-    if (Object.keys(sectionErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...sectionErrors }));
+    const last = projects[projects.length - 1];
+    if (!last) return;
+    const lastErrors = validateProjectEntry(last);
+    if (Object.keys(lastErrors).length > 0) {
+      setErrors((prev) => ({
+        ...prev,
+        projects: { ...prev.projects, [last.id]: lastErrors },
+      }));
       return;
     }
+    setProjects((prev) => [...prev, createProjectEntry()]);
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (next.projects?.[last.id]) {
+        const { [last.id]: _, ...rest } = next.projects;
+        next.projects = Object.keys(rest).length ? rest : undefined;
+      }
+      return next;
+    });
+  }
 
-    setHasProjectEntry(true);
-    setErrors((prev) => ({
-      ...prev,
-      projectTitle: undefined,
-      customerCompany: undefined,
-      projectStartDate: undefined,
-      projectEndDate: undefined,
-      projectDescription: undefined,
-      responsibilities: undefined,
-    }));
+  function handleRemoveProject(id: string) {
+    setProjects((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      return next.length ? next : [createProjectEntry()];
+    });
+    setErrors((prev) => {
+      if (!prev.projects?.[id]) return prev;
+      const { [id]: _, ...rest } = prev.projects;
+      return { ...prev, projects: Object.keys(rest).length ? rest : undefined };
+    });
   }
 
   function validate(): boolean {
@@ -291,25 +470,66 @@ export default function SkillsProjectsPage() {
 
     if (skills.length === 0) nextErrors.skills = "Please add at least one skill.";
 
-    if (!hasExperienceEntry) {
-      nextErrors.experience = "Please add at least one experience using '+ Add'.";
+    const expMap: Record<string, ExperienceFieldErrors> = {};
+    const filledExp = nonEmptyExperiences();
+    if (filledExp.length === 0) {
+      const only = experiences[0];
+      if (only) expMap[only.id] = validateExperienceEntry(only);
+    } else {
+      for (const e of experiences) {
+        if (isExperienceEmpty(e)) continue;
+        const fe = validateExperienceEntry(e);
+        if (Object.keys(fe).length) expMap[e.id] = fe;
+      }
     }
+    if (Object.keys(expMap).length) nextErrors.experiences = expMap;
 
-    if (!hasToolEntry) {
-      nextErrors.tool = "Please add at least one tool using '+ Add'.";
+    const toolMap: Record<string, ToolFieldErrors> = {};
+    const filledTools = nonEmptyTools();
+    if (filledTools.length === 0) {
+      const only = tools[0];
+      if (only) toolMap[only.id] = validateToolEntry(only);
+    } else {
+      for (const t of tools) {
+        if (isToolEmpty(t)) continue;
+        const fe = validateToolEntry(t);
+        if (Object.keys(fe).length) toolMap[t.id] = fe;
+      }
     }
+    if (Object.keys(toolMap).length) nextErrors.tools = toolMap;
 
-    if (!hasProjectEntry) {
-      nextErrors.projectTitle = "Please add at least one project using '+ Add'.";
+    const projMap: Record<string, ProjectFieldErrors> = {};
+    const filledProj = nonEmptyProjects();
+    if (filledProj.length === 0) {
+      const only = projects[0];
+      if (only) projMap[only.id] = validateProjectEntry(only);
+    } else {
+      for (const p of projects) {
+        if (isProjectEmpty(p)) continue;
+        const fe = validateProjectEntry(p);
+        if (Object.keys(fe).length) projMap[p.id] = fe;
+      }
     }
+    if (Object.keys(projMap).length) nextErrors.projects = projMap;
 
     setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    return (
+      !nextErrors.skills &&
+      !nextErrors.experiences &&
+      !nextErrors.tools &&
+      !nextErrors.projects
+    );
   }
 
   function handleFinish() {
     if (!validate()) return;
-    alert("Profile created successfully.");
+    markProfileComplete();
+    setIsFinishModalOpen(true);
+  }
+
+  function handleContinueToDashboard() {
+    setIsFinishModalOpen(false);
+    router.push("/dashboard");
   }
 
   return (
@@ -396,51 +616,63 @@ export default function SkillsProjectsPage() {
               </div>
 
               <div className="p-4 sm:p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Experience</span>
-                    <input
-                      type="text"
-                      value={form.experience}
-                      onChange={(e) => setField("experience", e.target.value)}
-                      placeholder="Enter experience"
-                      className={fieldClass(Boolean(errors.experience))}
-                    />
-                    {errors.experience && <p className="text-xs text-red-500">{errors.experience}</p>}
-                  </label>
+                {experiences.map((entry, idx) => {
+                  const fe = errors.experiences?.[entry.id];
+                  return (
+                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Experience {idx + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExperience(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Experience</span>
+                          <input
+                            type="text"
+                            value={entry.experience}
+                            onChange={(e) => updateExperience(entry.id, { experience: e.target.value })}
+                            placeholder="Enter experience"
+                            className={fieldClass(Boolean(fe?.experience))}
+                          />
+                          {fe?.experience && <p className="text-xs text-red-500">{fe.experience}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.experienceYears}
-                      onChange={(e) => setField("experienceYears", e.target.value)}
-                      placeholder="0"
-                      className={fieldClass(Boolean(errors.experienceYears))}
-                    />
-                    {errors.experienceYears && <p className="text-xs text-red-500">{errors.experienceYears}</p>}
-                  </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={entry.experienceYears}
+                            onChange={(e) => updateExperience(entry.id, { experienceYears: e.target.value })}
+                            placeholder="0"
+                            className={fieldClass(Boolean(fe?.experienceYears))}
+                          />
+                          {fe?.experienceYears && <p className="text-xs text-red-500">{fe.experienceYears}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
-                    <input
-                      type="url"
-                      value={form.experienceReference}
-                      onChange={(e) => setField("experienceReference", e.target.value)}
-                      placeholder="https://"
-                      className={fieldClass(Boolean(errors.experienceReference))}
-                    />
-                    {errors.experienceReference && <p className="text-xs text-red-500">{errors.experienceReference}</p>}
-                  </label>
-                </div>
-
-                <div className="flex justify-end">
-                  <button type="button" className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-50">
-                    <TrashIcon />
-                    Delete
-                  </button>
-                </div>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
+                          <input
+                            type="url"
+                            value={entry.experienceReference}
+                            onChange={(e) => updateExperience(entry.id, { experienceReference: e.target.value })}
+                            placeholder="https://"
+                            className={fieldClass(Boolean(fe?.experienceReference))}
+                          />
+                          {fe?.experienceReference && (
+                            <p className="text-xs text-red-500">{fe.experienceReference}</p>
+                          )}
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
 
@@ -457,51 +689,61 @@ export default function SkillsProjectsPage() {
               </div>
 
               <div className="p-4 sm:p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Tools</span>
-                    <input
-                      type="text"
-                      value={form.tool}
-                      onChange={(e) => setField("tool", e.target.value)}
-                      placeholder="Enter tool"
-                      className={fieldClass(Boolean(errors.tool))}
-                    />
-                    {errors.tool && <p className="text-xs text-red-500">{errors.tool}</p>}
-                  </label>
+                {tools.map((entry, idx) => {
+                  const fe = errors.tools?.[entry.id];
+                  return (
+                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Tool {idx + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTool(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Tools</span>
+                          <input
+                            type="text"
+                            value={entry.tool}
+                            onChange={(e) => updateTool(entry.id, { tool: e.target.value })}
+                            placeholder="Enter tool"
+                            className={fieldClass(Boolean(fe?.tool))}
+                          />
+                          {fe?.tool && <p className="text-xs text-red-500">{fe.tool}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.toolYears}
-                      onChange={(e) => setField("toolYears", e.target.value)}
-                      placeholder="0"
-                      className={fieldClass(Boolean(errors.toolYears))}
-                    />
-                    {errors.toolYears && <p className="text-xs text-red-500">{errors.toolYears}</p>}
-                  </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={entry.toolYears}
+                            onChange={(e) => updateTool(entry.id, { toolYears: e.target.value })}
+                            placeholder="0"
+                            className={fieldClass(Boolean(fe?.toolYears))}
+                          />
+                          {fe?.toolYears && <p className="text-xs text-red-500">{fe.toolYears}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
-                    <input
-                      type="url"
-                      value={form.toolReference}
-                      onChange={(e) => setField("toolReference", e.target.value)}
-                      placeholder="https://"
-                      className={fieldClass(Boolean(errors.toolReference))}
-                    />
-                    {errors.toolReference && <p className="text-xs text-red-500">{errors.toolReference}</p>}
-                  </label>
-                </div>
-
-                <div className="flex justify-end">
-                  <button type="button" className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-50">
-                    <TrashIcon />
-                    Delete
-                  </button>
-                </div>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
+                          <input
+                            type="url"
+                            value={entry.toolReference}
+                            onChange={(e) => updateTool(entry.id, { toolReference: e.target.value })}
+                            placeholder="https://"
+                            className={fieldClass(Boolean(fe?.toolReference))}
+                          />
+                          {fe?.toolReference && <p className="text-xs text-red-500">{fe.toolReference}</p>}
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
 
@@ -518,92 +760,140 @@ export default function SkillsProjectsPage() {
               </div>
 
               <div className="p-4 sm:p-6 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Project Title</span>
-                    <input
-                      type="text"
-                      value={form.projectTitle}
-                      onChange={(e) => setField("projectTitle", e.target.value)}
-                      placeholder="Enter project title"
-                      className={fieldClass(Boolean(errors.projectTitle))}
-                    />
-                    {errors.projectTitle && <p className="text-xs text-red-500">{errors.projectTitle}</p>}
-                  </label>
+                {projects.map((entry, idx) => {
+                  const fe = errors.projects?.[entry.id];
+                  return (
+                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Project {idx + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveProject(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Project Title</span>
+                          <input
+                            type="text"
+                            value={entry.projectTitle}
+                            onChange={(e) => updateProject(entry.id, { projectTitle: e.target.value })}
+                            placeholder="Enter project title"
+                            className={fieldClass(Boolean(fe?.projectTitle))}
+                          />
+                          {fe?.projectTitle && <p className="text-xs text-red-500">{fe.projectTitle}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Customer / Company</span>
-                    <input
-                      type="text"
-                      value={form.customerCompany}
-                      onChange={(e) => setField("customerCompany", e.target.value)}
-                      placeholder="Enter customer or company"
-                      className={fieldClass(Boolean(errors.customerCompany))}
-                    />
-                    {errors.customerCompany && <p className="text-xs text-red-500">{errors.customerCompany}</p>}
-                  </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Customer / Company</span>
+                          <input
+                            type="text"
+                            value={entry.customerCompany}
+                            onChange={(e) => updateProject(entry.id, { customerCompany: e.target.value })}
+                            placeholder="Enter customer or company"
+                            className={fieldClass(Boolean(fe?.customerCompany))}
+                          />
+                          {fe?.customerCompany && <p className="text-xs text-red-500">{fe.customerCompany}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Project Start Date</span>
-                    <input
-                      type="date"
-                      value={form.projectStartDate}
-                      onChange={(e) => setField("projectStartDate", e.target.value)}
-                      className={fieldClass(Boolean(errors.projectStartDate))}
-                    />
-                    {errors.projectStartDate && <p className="text-xs text-red-500">{errors.projectStartDate}</p>}
-                  </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Project Start Date</span>
+                          <input
+                            type="date"
+                            value={entry.projectStartDate}
+                            onChange={(e) => updateProject(entry.id, { projectStartDate: e.target.value })}
+                            className={fieldClass(Boolean(fe?.projectStartDate))}
+                          />
+                          {fe?.projectStartDate && <p className="text-xs text-red-500">{fe.projectStartDate}</p>}
+                        </label>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Project End Date</span>
-                    <input
-                      type="date"
-                      value={form.projectEndDate}
-                      onChange={(e) => setField("projectEndDate", e.target.value)}
-                      className={fieldClass(Boolean(errors.projectEndDate))}
-                    />
-                    {errors.projectEndDate && <p className="text-xs text-red-500">{errors.projectEndDate}</p>}
-                  </label>
-                </div>
+                        <div className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Project End Date</span>
+                          <input
+                            type="date"
+                            value={entry.projectEndDate}
+                            onChange={(e) => updateProject(entry.id, { projectEndDate: e.target.value })}
+                            disabled={entry.inProgress}
+                            className={`${fieldClass(Boolean(fe?.projectEndDate))} ${entry.inProgress ? "bg-gray-100 text-gray-500" : ""}`}
+                          />
+                          {fe?.projectEndDate && <p className="text-xs text-red-500">{fe.projectEndDate}</p>}
+                          <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-gray-700 mt-1">
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                              checked={entry.inProgress}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                updateProject(entry.id, {
+                                  inProgress: checked,
+                                  ...(checked ? { projectEndDate: "" } : {}),
+                                });
+                                setErrors((prev) => {
+                                  if (!prev.projects?.[entry.id]) return prev;
+                                  const fePrev = { ...prev.projects[entry.id] };
+                                  delete fePrev.projectEndDate;
+                                  const nextProj = { ...prev.projects, [entry.id]: fePrev };
+                                  if (Object.keys(nextProj[entry.id]).length === 0) {
+                                    const { [entry.id]: _, ...rest } = nextProj;
+                                    return {
+                                      ...prev,
+                                      projects: Object.keys(rest).length ? rest : undefined,
+                                    };
+                                  }
+                                  return { ...prev, projects: nextProj };
+                                });
+                              }}
+                            />
+                            <span>In progress — end date not required</span>
+                          </label>
+                        </div>
+                      </div>
 
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Description</span>
-                  <textarea
-                    value={form.projectDescription}
-                    onChange={(e) => setField("projectDescription", e.target.value)}
-                    maxLength={300}
-                    rows={5}
-                    placeholder="Describe the project"
-                    className={`${fieldClass(Boolean(errors.projectDescription))} leading-6 resize-y`}
-                  />
-                  <div className="flex items-center justify-between">
-                    {errors.projectDescription ? <p className="text-xs text-red-500">{errors.projectDescription}</p> : <span />}
-                    <p className="text-xs text-gray-500">{form.projectDescription.length} / 300</p>
-                  </div>
-                </label>
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Description</span>
+                        <textarea
+                          value={entry.projectDescription}
+                          onChange={(e) => updateProject(entry.id, { projectDescription: e.target.value })}
+                          maxLength={300}
+                          rows={5}
+                          placeholder="Describe the project"
+                          className={`${fieldClass(Boolean(fe?.projectDescription))} leading-6 resize-y`}
+                        />
+                        <div className="flex items-center justify-between">
+                          {fe?.projectDescription ? (
+                            <p className="text-xs text-red-500">{fe.projectDescription}</p>
+                          ) : (
+                            <span />
+                          )}
+                          <p className="text-xs text-gray-500">{entry.projectDescription.length} / 300</p>
+                        </div>
+                      </label>
 
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Responsibilities</span>
-                  <textarea
-                    value={form.responsibilities}
-                    onChange={(e) => setField("responsibilities", e.target.value)}
-                    maxLength={300}
-                    rows={5}
-                    placeholder="List your key responsibilities"
-                    className={`${fieldClass(Boolean(errors.responsibilities))} leading-6 resize-y`}
-                  />
-                  <div className="flex items-center justify-between">
-                    {errors.responsibilities ? <p className="text-xs text-red-500">{errors.responsibilities}</p> : <span />}
-                    <p className="text-xs text-gray-500">{form.responsibilities.length} / 300</p>
-                  </div>
-                </label>
-
-                <div className="flex justify-end">
-                  <button type="button" className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-50">
-                    <TrashIcon />
-                    Delete
-                  </button>
-                </div>
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Responsibilities</span>
+                        <textarea
+                          value={entry.responsibilities}
+                          onChange={(e) => updateProject(entry.id, { responsibilities: e.target.value })}
+                          maxLength={300}
+                          rows={5}
+                          placeholder="List your key responsibilities"
+                          className={`${fieldClass(Boolean(fe?.responsibilities))} leading-6 resize-y`}
+                        />
+                        <div className="flex items-center justify-between">
+                          {fe?.responsibilities ? (
+                            <p className="text-xs text-red-500">{fe.responsibilities}</p>
+                          ) : (
+                            <span />
+                          )}
+                          <p className="text-xs text-gray-500">{entry.responsibilities.length} / 300</p>
+                        </div>
+                      </label>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           </div>
@@ -643,12 +933,49 @@ export default function SkillsProjectsPage() {
           Finish
         </Button>
       </div>
+
+      {isFinishModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="relative w-full max-w-[570px] rounded-xl bg-white shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setIsFinishModalOpen(false)}
+              className="absolute right-4 top-4 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close success popup"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="px-6 pb-6 pt-10 sm:px-8 sm:pb-8">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-primary-600">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+
+              <div className="mx-auto mt-5 max-w-[360px] text-center">
+                <h3 className="text-xl font-semibold text-gray-900">Resume submitted successfully!</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  Your profile has been updated with all the key details from your resume.
+                </p>
+              </div>
+
+              <div className="mx-auto mt-5 flex max-w-[420px] items-center justify-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-gray-700">
+                <CheckCircle2 className="h-4 w-4 text-primary-600" />
+                <span>Profile Version V1.0 created!</span>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  fullWidth={false}
+                  className="px-6 py-2.5 text-sm"
+                  onClick={handleContinueToDashboard}
+                >
+                  Continue
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
-
-
-
-
-
-

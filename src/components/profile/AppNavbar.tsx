@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
+import { STATIC_NAV_DISPLAY_NAME } from "@/lib/dashboardWelcome";
 
 export default function AppNavbar() {
   const router = useRouter();
@@ -26,7 +27,8 @@ export default function AppNavbar() {
     { label: "Timesheet", href: "/timesheet" },
   ];
 
-  const isActive = (href: string) => pathname === href;
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -34,14 +36,18 @@ export default function AppNavbar() {
         <div className="flex items-center justify-between h-16">
 
           {/* Logo */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-2 sm:gap-3"
+          >
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">TE</span>
             </div>
             <span className="text-base sm:text-lg font-semibold text-gray-900">
               Talent Engine
             </span>
-          </div>
+          </button>
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-4">
@@ -83,12 +89,12 @@ export default function AppNavbar() {
               onMouseLeave={() => setProfileOpen(false)}
             >
               <img
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Adam"
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(STATIC_NAV_DISPLAY_NAME)}`}
                 className="w-8 h-8 sm:w-9 sm:h-9 rounded-full"
-                alt="Profile"
+                alt=""
               />
               <span className="text-sm font-medium text-gray-900 hidden md:block">
-                Adam Smith
+                {STATIC_NAV_DISPLAY_NAME}
               </span>
               <ChevronDown
                 className={`w-4 h-4 text-gray-500 hidden md:block transition-transform duration-200 ${

@@ -86,11 +86,17 @@ export function BaseDrawer({
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-gray-200 shrink-0">
+          <h2 className="min-w-0 shrink text-base font-semibold text-gray-900 pr-1">
+            {title}
+          </h2>
 
-          <div className="flex items-center gap-3">
-            {headerActions}
+          <div className="flex shrink-0 items-center gap-5">
+            {headerActions ? (
+              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-4">
+                {headerActions}
+              </div>
+            ) : null}
             {showCloseButton ? (
               <button
                 type="button"
