@@ -39,6 +39,11 @@ export default function LoginPageClient() {
     if (!ok) return;
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
+    console.log("[login-page] final-decision", {
+      email: email.trim().toLowerCase(),
+      skipWizard,
+      destination: skipWizard ? "/dashboard" : "/profile/create",
+    });
     if (skipWizard) {
       setDashboardWelcomePending();
       router.push("/dashboard");

@@ -29,6 +29,11 @@ export function MobileLoginScreen() {
     if (!ok) return;
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
+    console.log("[mobile-login-page] final-decision", {
+      email: email.trim().toLowerCase(),
+      skipWizard,
+      destination: skipWizard ? "/dashboard" : "/profile/create",
+    });
     if (skipWizard) {
       setDashboardWelcomePending();
       router.push("/dashboard");

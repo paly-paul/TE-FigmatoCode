@@ -11,8 +11,16 @@ export async function isProfileWizardCompleteOnServer(
     const data = await getCandidateProfileData(profileName);
     const title = data.professionalTitle?.trim();
     const skills = data.keySkills?.length ?? 0;
+    console.log("[profile-check] server-data", {
+      profileName,
+      title,
+      skills,
+      email: data.email,
+      currentLocation: data.currentLocation,
+    });
     return Boolean(title && skills > 0);
-  } catch {
+  } catch (error) {
+    console.error("[profile-check] server-data:error", { profileName, error });
     return false;
   }
 }

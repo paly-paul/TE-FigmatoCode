@@ -75,6 +75,10 @@ export async function GET(request: Request) {
     getCookieValue(cookieHeader, "user_id"),
     getCookieValue(cookieHeader, "full_name"),
   ]);
+  console.info("[resolve_profile_name] start", {
+    hints,
+    hasCookieHeader: Boolean(cookieHeader),
+  });
 
   const headers: HeadersInit = {};
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -89,6 +93,13 @@ export async function GET(request: Request) {
       const url = `${backendBase}/api/resource/Profile?fields=${encodeURIComponent(JSON.stringify(["name"]))}&filters=${encodeURIComponent(filters)}&limit_page_length=1`;
       try {
         const { response, data } = await fetchJson(url, headers);
+        console.info("[resolve_profile_name] resource lookup", {
+          hint,
+          field,
+          status: response.status,
+          ok: response.ok,
+          data,
+        });
         if (!response.ok) continue;
         const name = pickFirstProfileName(data);
         if (name) {
@@ -107,6 +118,12 @@ export async function GET(request: Request) {
     for (const email of emailHints) {
       const lookupUrl = `${backendBase}/api/method/get_profile_by_email?email=${encodeURIComponent(email)}`;
       const { response, data } = await fetchJson(lookupUrl, headers);
+      console.info("[resolve_profile_name] email lookup", {
+        email,
+        status: response.status,
+        ok: response.ok,
+        data,
+      });
       if (!response.ok) continue;
       const name = pickProfileNameFromLookup(data);
       if (name) {
@@ -119,5 +136,6 @@ export async function GET(request: Request) {
     // ignore
   }
 
+  console.warn("[resolve_profile_name] not-found", { hints });
   return NextResponse.json({ error: "Profile document ID could not be resolved." }, { status: 404 });
 }

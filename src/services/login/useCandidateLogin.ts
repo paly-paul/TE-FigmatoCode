@@ -24,20 +24,41 @@ export function useCandidateLogin() {
     setError(null);
     setIsLoading(true);
     try {
+      console.log("[login] submit:start", {
+        email: values.email.trim().toLowerCase(),
+        hasPassword: Boolean(values.password),
+      });
       clearAuthSession();
       clearSessionLoginEmail();
       const data = await candidateLogin(values);
+      console.log("[login] submit:response", data);
       const candidateId = extractProfileId(data) ?? values.email.trim();
-      const profileName = extractProfileName(data, values.email.trim());
+      let profileName = extractProfileName(data, values.email.trim());
+      let isProfileGenerated = extractIsProfileGenerated(data);
+
+      if (!profileName) {
+        const resolvedProfileName = await resolveProfileNameForLogin(values.email.trim());
+        if (resolvedProfileName) {
+          profileName = resolvedProfileName;
+          isProfileGenerated = true;
+        }
+      }
       clearResumeWizardSession();
       setCandidateId(candidateId);
       if (profileName) setProfileName(profileName);
-      setProfileGenerated(extractIsProfileGenerated(data));
+      setProfileGenerated(isProfileGenerated);
       const displayName = extractDisplayNameFromLogin(data);
       if (displayName) setUserDisplayName(displayName);
       setSessionLoginEmail(values.email.trim().toLowerCase());
+      console.log("[login] submit:derived-state", {
+        candidateId,
+        profileName,
+        isProfileGenerated,
+        displayName,
+      });
       return true;
     } catch (e) {
+      console.error("[login] submit:error", e);
       setError(e instanceof Error ? e.message : "Something went wrong.");
       return false;
     } finally {
@@ -169,4 +190,33 @@ function extractIsProfileGenerated(data: Record<string, unknown>): boolean {
   ];
 
   return candidates.some((candidate) => candidate === true);
+}
+
+async function resolveProfileNameForLogin(email: string): Promise<string | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized || typeof window === "undefined") return null;
+
+  try {
+    const url = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    url.searchParams.set("candidate_id", normalized);
+    const response = await fetch(url.toString(), { credentials: "same-origin" });
+    const data = (await response.json()) as { profile_name?: string; error?: string };
+    console.log("[login] submit:resolve-profile", {
+      email: normalized,
+      status: response.status,
+      ok: response.ok,
+      body: data,
+    });
+
+    if (response.ok && typeof data.profile_name === "string" && data.profile_name.trim()) {
+      return data.profile_name.trim();
+    }
+  } catch (error) {
+    console.error("[login] submit:resolve-profile:error", {
+      email: normalized,
+      error,
+    });
+  }
+
+  return null;
 }
