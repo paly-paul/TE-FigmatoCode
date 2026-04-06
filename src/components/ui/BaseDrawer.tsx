@@ -3,6 +3,8 @@
 import { ReactNode, RefObject, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 
+export type DrawerPlacement = "right" | "bottom";
+
 interface BaseDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -16,6 +18,10 @@ interface BaseDrawerProps {
   bodyClassName?: string;
   contentClassName?: string;
   showCloseButton?: boolean;
+  /** `right` = slide from right (desktop). `bottom` = bottom sheet (mobile). */
+  placement?: DrawerPlacement;
+  /** Extra class on the panel (e.g. safe-area). */
+  panelClassName?: string;
 }
 
 export function BaseDrawer({
@@ -31,8 +37,11 @@ export function BaseDrawer({
   bodyClassName = "px-5 py-5",
   contentClassName = "space-y-6",
   showCloseButton = true,
+  placement = "right",
+  panelClassName = "",
 }: BaseDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
+  const isBottom = placement === "bottom";
 
   useEffect(() => {
     if (!open) return;
@@ -72,8 +81,8 @@ export function BaseDrawer({
       <div
         aria-hidden="true"
         onClick={onClose}
-        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-300 ${
-          open ? "opacity-100 visible" : "opacity-0 invisible"
+        className={`fixed inset-0 z-40 bg-black/20 transition-opacity duration-300 ${
+          open ? "visible opacity-100" : "invisible opacity-0"
         }`}
       />
 
@@ -82,12 +91,28 @@ export function BaseDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? title}
-        className={`fixed top-0 right-0 h-full w-full ${widthClassName} bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
-          open ? "translate-x-0" : "translate-x-full"
+        className={`z-50 flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${
+          isBottom
+            ? `fixed bottom-0 left-0 right-0 max-h-[min(92vh,900px)] w-full rounded-t-2xl ${panelClassName} ${
+                open ? "translate-y-0" : "translate-y-full pointer-events-none"
+              }`
+            : `fixed top-0 right-0 h-full w-full ${widthClassName} ${
+                open ? "translate-x-0" : "translate-x-full pointer-events-none"
+              }`
         }`}
       >
-        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-gray-200 shrink-0">
-          <h2 className="min-w-0 shrink text-base font-semibold text-gray-900 pr-1">
+        {isBottom ? (
+          <div className="flex shrink-0 justify-center pt-2 pb-1" aria-hidden="true">
+            <div className="h-1 w-10 rounded-full bg-gray-300" />
+          </div>
+        ) : null}
+
+        <div
+          className={`flex shrink-0 items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 ${
+            isBottom ? "pt-1" : ""
+          }`}
+        >
+          <h2 className="min-w-0 shrink pr-1 text-base font-semibold text-gray-900">
             {title}
           </h2>
 
@@ -101,21 +126,25 @@ export function BaseDrawer({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus:outline-none"
+                className="rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none"
                 aria-label={`Close ${title}`}
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             ) : null}
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto ${bodyClassName}`}>
+        <div className={`min-h-0 flex-1 overflow-y-auto ${bodyClassName}`}>
           <div className={contentClassName}>{children}</div>
         </div>
 
         {footer ? (
-          <div className="px-5 py-4 border-t border-gray-100 shrink-0">
+          <div
+            className={`shrink-0 border-t border-gray-100 ${
+              isBottom ? "px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" : "px-5 py-4"
+            }`}
+          >
             {footer}
           </div>
         ) : null}

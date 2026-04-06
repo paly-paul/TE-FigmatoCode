@@ -30,15 +30,23 @@ export function ProfileStepper({ currentStep = 1 }: ProfileStepperProps) {
                     : "border-2 border-gray-300 text-gray-400 bg-white"
                 }`}
               >
-                {step.number}
+                {isDone ? (
+                  <span aria-hidden="true" className="text-[16px] leading-none">
+                    &#10003;
+                  </span>
+                ) : (
+                  step.number
+                )}
               </div>
-              <span
-                className={`text-sm font-medium transition-colors ${
-                  isActive || isDone ? "text-gray-900" : "text-gray-400"
-                }`}
-              >
-                {step.label}
-              </span>
+              {isActive ? (
+                <span
+                  className={`text-sm font-medium transition-colors ${
+                    isActive ? "text-gray-900" : "text-gray-400"
+                  }`}
+                >
+                  {step.label}
+                </span>
+              ) : null}
             </div>
           );
         })}

@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { BaseDrawer } from "@/components/ui/BaseDrawer";
 import { SmallUploadIcon, TrashIcon } from "@/components/icons";
 import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
+import { getCandidateId } from "@/lib/authSession";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
+import { getCandidateProfileData } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
+import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nationalityOptions = [
@@ -139,6 +143,20 @@ interface BasicDetailsForm {
 
 type FormErrors = Partial<Record<keyof BasicDetailsForm, string>>;
 
+function normalizeExperienceYears(value: string | undefined): string {
+  if (value == null || value === "") return "";
+  const n = parseInt(String(value), 10);
+  if (Number.isNaN(n) || n < 1) return "";
+  return String(Math.min(16, n));
+}
+
+function normalizeExperienceMonths(value: string | undefined): string {
+  if (value == null || value === "") return "";
+  const n = parseInt(String(value), 10);
+  if (Number.isNaN(n)) return "";
+  return String(Math.min(11, Math.max(0, n)));
+}
+
 const initialForm: BasicDetailsForm = {
   professionalTitle: "",
   expYears: "",
@@ -189,6 +207,7 @@ function buildGeneratedSummary(form: BasicDetailsForm, prompt: string) {
 export default function BasicDetailsPage() {
   const router = useRouter();
   const generateButtonRef = useRef<HTMLButtonElement>(null);
+  const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [lookingForJob, setLookingForJob] = useState(true);
   const [form, setForm] = useState<BasicDetailsForm>(initialForm);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -200,35 +219,133 @@ export default function BasicDetailsPage() {
   const [summaryPrompt, setSummaryPrompt] = useState("");
   const [generatedSummary, setGeneratedSummary] = useState("");
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [profilePicPreview, setProfilePicPreview] = useState<string | null>(null);
+  const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
+    personal: true,
+    basicDetails: false,
+    education: false,
+    certifications: false,
+    externalLinks: false,
+    languages: false,
+  });
+
+  const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
 
   useEffect(() => {
-    const stored = readResumeProfile();
-    if (!stored) return;
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(PROFILE_PIC_STORAGE_KEY);
+      if (raw) setProfilePicPreview(raw);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
+  function handlePickProfilePic() {
+    profilePicInputRef.current?.click();
+  }
+
+  async function handleProfilePicFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowed = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      alert("Please upload a valid image (PNG, JPG, GIF, or WEBP).");
+      return;
+    }
+
+    const maxBytes = 2 * 1024 * 1024; // 2 MB
+    if (file.size > maxBytes) {
+      alert("Profile picture must be under 2 MB.");
+      return;
+    }
+
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read file."));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    });
+
+    setProfilePicPreview(dataUrl);
+    try {
+      window.sessionStorage.setItem(PROFILE_PIC_STORAGE_KEY, dataUrl);
+    } catch {
+      // ignore storage errors
+    }
+
+    // Allow re-selecting the same file.
+    e.target.value = "";
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(MOBILE_MQ);
+    const sync = () => setIsMobileViewport(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  function MobileAccordionCard({
+    title,
+    expanded,
+    onToggle,
+    children,
+  }: {
+    title: string;
+    expanded: boolean;
+    onToggle: () => void;
+    children: React.ReactNode;
+  }) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full flex items-center justify-between px-4 py-3"
+        >
+          <span className="text-base font-semibold text-gray-900">{title}</span>
+          {expanded ? (
+            <ChevronUp className="h-5 w-5 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-gray-500" />
+          )}
+        </button>
+        {expanded ? <div>{children}</div> : null}
+      </div>
+    );
+  }
+
+  function applyProfileToForm(profile: ResumeProfileData) {
+    const expYearsNorm = normalizeExperienceYears(profile.experienceYears);
+    const expMonthsNorm = normalizeExperienceMonths(profile.experienceMonths);
     setForm((prev) => ({
       ...prev,
-      professionalTitle: stored.professionalTitle ?? prev.professionalTitle,
-      expYears: stored.experienceYears ?? prev.expYears,
-      expMonths: stored.experienceMonths ?? prev.expMonths,
-      salary: stored.salaryPerMonth ?? prev.salary,
-      salaryCurrency: stored.salaryCurrency ?? prev.salaryCurrency,
-      summary: stored.summary ?? prev.summary,
-      firstName: stored.firstName ?? prev.firstName,
-      lastName: stored.lastName ?? prev.lastName,
-      dob: stored.dob ?? prev.dob,
-      gender: stored.gender ?? prev.gender,
-      countryCode: stored.countryCode ?? prev.countryCode,
-      contact: stored.phone ?? prev.contact,
-      email: stored.email ?? prev.email,
-      altEmail: stored.altEmail ?? prev.altEmail,
-      nationality: stored.nationality ?? prev.nationality,
-      currentLocation: stored.currentLocation ?? prev.currentLocation,
-      preferredLocation: stored.preferredLocation ?? prev.preferredLocation,
+      professionalTitle: profile.professionalTitle ?? prev.professionalTitle,
+      expYears: expYearsNorm || prev.expYears,
+      expMonths: expMonthsNorm || prev.expMonths,
+      salary: profile.salaryPerMonth ?? prev.salary,
+      salaryCurrency: profile.salaryCurrency ?? prev.salaryCurrency,
+      summary: profile.summary ?? prev.summary,
+      firstName: profile.firstName ?? prev.firstName,
+      lastName: profile.lastName ?? prev.lastName,
+      dob: profile.dob ?? prev.dob,
+      gender: profile.gender ?? prev.gender,
+      countryCode: profile.countryCode ?? prev.countryCode,
+      contact: profile.phone ?? prev.contact,
+      email: profile.email ?? prev.email,
+      altEmail: profile.altEmail ?? prev.altEmail,
+      nationality: profile.nationality ?? prev.nationality,
+      currentLocation: profile.currentLocation ?? prev.currentLocation,
+      preferredLocation: profile.preferredLocation ?? prev.preferredLocation,
     }));
 
-    if (stored.education && stored.education.length) {
+    if (profile.education && profile.education.length) {
       setEducation(
-        stored.education.map((entry) =>
+        profile.education.map((entry) =>
           createEducationEntry({
             title: entry.title ?? "",
             institute: entry.institute ?? "",
@@ -240,9 +357,9 @@ export default function BasicDetailsPage() {
       );
     }
 
-    if (stored.certifications && stored.certifications.length) {
+    if (profile.certifications && profile.certifications.length) {
       setCertifications(
-        stored.certifications.map((entry) =>
+        profile.certifications.map((entry) =>
           createCertificationEntry({
             name: entry.name ?? "",
             issuing: entry.issuing ?? "",
@@ -255,9 +372,9 @@ export default function BasicDetailsPage() {
       );
     }
 
-    if (stored.externalLinks && stored.externalLinks.length) {
+    if (profile.externalLinks && profile.externalLinks.length) {
       setExternalLinks(
-        stored.externalLinks.map((entry) =>
+        profile.externalLinks.map((entry) =>
           createExternalLinkEntry({
             label: entry.label ?? "",
             url: entry.url ?? "",
@@ -266,9 +383,9 @@ export default function BasicDetailsPage() {
       );
     }
 
-    if (stored.languages && stored.languages.length) {
+    if (profile.languages && profile.languages.length) {
       setLanguages(
-        stored.languages.map((entry) =>
+        profile.languages.map((entry) =>
           createLanguageEntry({
             language: entry.language ?? "",
             read: entry.read ?? "",
@@ -278,6 +395,43 @@ export default function BasicDetailsPage() {
         )
       );
     }
+  }
+
+  useEffect(() => {
+    const stored = readResumeProfile();
+    console.log("Data from session storage:", stored);
+    if (!stored) return;
+    applyProfileToForm(stored);
+  }, []);
+
+  useEffect(() => {
+    const candidateId = getCandidateId();
+    if (!candidateId) return;
+
+    const sessionProfile = readResumeProfile();
+    if (sessionProfile) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const backendProfile = await getCandidateProfileData(candidateId);
+        if (cancelled) return;
+
+        const merged = { ...backendProfile };
+
+        upsertResumeProfile(merged);
+        applyProfileToForm(merged);
+      } catch {
+        const fallback = readResumeProfile();
+        if (fallback) {
+          applyProfileToForm(fallback)
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const isProfessionalSectionComplete = (() => {
@@ -554,6 +708,13 @@ export default function BasicDetailsPage() {
   return (
     <div className="flex flex-col min-h-screen bg-[#F3F4F6]">
       <AppNavbar />
+      <input
+        ref={profilePicInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="hidden"
+        onChange={handleProfilePicFileChange}
+      />
 
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4">
@@ -571,6 +732,721 @@ export default function BasicDetailsPage() {
         <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
           <ProfileStepper currentStep={2} />
 
+          {isMobileViewport ? (
+            <div className="flex-1 min-w-0 space-y-4">
+              <ProfileProgressCard
+                percent={completionPercent}
+                className="!w-full"
+                description="Higher profile strength improves recruiter visibility"
+              />
+
+              <MobileAccordionCard
+                title="Personal Information"
+                expanded={mobileAccordionOpen.personal}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({ ...prev, personal: !prev.personal }))
+                }
+              >
+                <div className="p-4 space-y-4">
+                  <div className="bg-[#F4F7FC] border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="w-14 h-14 border border-gray-300 rounded-md bg-white flex items-center justify-center text-primary-600 text-2xl overflow-hidden">
+                      {profilePicPreview ? (
+                        <img
+                          src={profilePicPreview}
+                          alt="Profile preview"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span aria-hidden="true">&#9787;</span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <button
+                        type="button"
+                        onClick={handlePickProfilePic}
+                        className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
+                      >
+                        <SmallUploadIcon />
+                        Upload
+                      </button>
+                      <p className="text-xs text-gray-500 mt-2">JPG, PNG or GIF up to 2 MB</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-gray-800">First Name</span>
+                      <input
+                        type="text"
+                        value={form.firstName}
+                        onChange={(e) => setField("firstName", e.target.value)}
+                        placeholder="Enter first name"
+                        className={fieldClass(Boolean(errors.firstName))}
+                      />
+                      {errors.firstName && (
+                        <p className="text-xs text-red-500">{errors.firstName}</p>
+                      )}
+                    </label>
+
+                    <label className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-gray-800">Last Name</span>
+                      <input
+                        type="text"
+                        value={form.lastName}
+                        onChange={(e) => setField("lastName", e.target.value)}
+                        placeholder="Enter last name"
+                        className={fieldClass(Boolean(errors.lastName))}
+                      />
+                      {errors.lastName && (
+                        <p className="text-xs text-red-500">{errors.lastName}</p>
+                      )}
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-gray-800">DOB</span>
+                      <input
+                        type="date"
+                        value={form.dob}
+                        onChange={(e) => setField("dob", e.target.value)}
+                        className={fieldClass(Boolean(errors.dob))}
+                      />
+                      {errors.dob && <p className="text-xs text-red-500">{errors.dob}</p>}
+                    </label>
+
+                    <label className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-gray-800">Gender</span>
+                      <select
+                        value={form.gender}
+                        onChange={(e) => setField("gender", e.target.value)}
+                        className={`${fieldClass(Boolean(errors.gender))} bg-white`}
+                      >
+                        <option value="">Select gender</option>
+                        <option>Male</option>
+                        <option>Female</option>
+                        <option>Other</option>
+                      </select>
+                      {errors.gender && (
+                        <p className="text-xs text-red-500">{errors.gender}</p>
+                      )}
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Contact</span>
+                    <div className="flex items-stretch gap-0 rounded-md overflow-hidden border border-gray-200 bg-white">
+                      <select
+                        value={form.countryCode}
+                        onChange={(e) => setField("countryCode", e.target.value)}
+                        className={`${fieldClass(Boolean(errors.countryCode))} bg-white px-2 border-none w-auto`}
+                        style={{ width: 96 }}
+                      >
+                        <option value="">Code</option>
+                        <option value="+1">US (+1)</option>
+                        <option value="+91">IN (+91)</option>
+                        <option value="+44">UK (+44)</option>
+                      </select>
+                      <input
+                        type="tel"
+                        value={form.contact}
+                        onChange={(e) => setField("contact", e.target.value)}
+                        placeholder="Enter contact number"
+                        className={`${fieldClass(Boolean(errors.contact))} w-auto`}
+                        style={{ borderRadius: 0, border: "none", flex: 1 }}
+                      />
+                    </div>
+                    {(errors.countryCode || errors.contact) && (
+                      <p className="text-xs text-red-500">{errors.countryCode ?? errors.contact}</p>
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Email</span>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setField("email", e.target.value)}
+                      placeholder="Enter email"
+                      className={fieldClass(Boolean(errors.email))}
+                    />
+                    {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Alternative Email</span>
+                    <input
+                      type="email"
+                      value={form.altEmail}
+                      onChange={(e) => setField("altEmail", e.target.value)}
+                      placeholder="Optional"
+                      className={fieldClass(false)}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Nationality</span>
+                    <select
+                      value={form.nationality}
+                      onChange={(e) => setField("nationality", e.target.value)}
+                      className={`${fieldClass(Boolean(errors.nationality))} bg-white`}
+                    >
+                      <option value="">Select nationality</option>
+                      {nationalityOptions.map((country) => (
+                        <option key={country} value={country}>
+                          {country}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.nationality && (
+                      <p className="text-xs text-red-500">{errors.nationality}</p>
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Current Location</span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={form.currentLocation}
+                        onChange={(e) => setField("currentLocation", e.target.value)}
+                        placeholder="City, Country"
+                        className={`${fieldClass(Boolean(errors.currentLocation))} pr-10`}
+                      />
+                      <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {errors.currentLocation && (
+                      <p className="text-xs text-red-500">{errors.currentLocation}</p>
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Preferred Location</span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={form.preferredLocation}
+                        onChange={(e) => setField("preferredLocation", e.target.value)}
+                        placeholder="Where would you like to work?"
+                        className={`${fieldClass(false)} pr-10`}
+                      />
+                      <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </label>
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Basic Details"
+                expanded={mobileAccordionOpen.basicDetails}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({ ...prev, basicDetails: !prev.basicDetails }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-5">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <label className="flex flex-col gap-2 md:col-span-1">
+                        <span className="text-sm font-medium text-gray-800">Professional Title</span>
+                        <input
+                          type="text"
+                          value={form.professionalTitle}
+                          onChange={(e) => setField("professionalTitle", e.target.value)}
+                          placeholder="Enter professional title"
+                          className={fieldClass(Boolean(errors.professionalTitle))}
+                        />
+                        {errors.professionalTitle && (
+                          <p className="text-xs text-red-500">{errors.professionalTitle}</p>
+                        )}
+                      </label>
+
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Exp. Years</span>
+                        <select
+                          value={form.expYears}
+                          onChange={(e) => setField("expYears", e.target.value)}
+                          className={`${fieldClass(Boolean(errors.expYears))} bg-white`}
+                        >
+                          <option value="">Select years</option>
+                          {Array.from({ length: 16 }).map((_, idx) => (
+                            <option key={idx + 1} value={(idx + 1).toString()}>
+                              {idx + 1}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.expYears && <p className="text-xs text-red-500">{errors.expYears}</p>}
+                      </label>
+
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Months</span>
+                        <select
+                          value={form.expMonths}
+                          onChange={(e) => setField("expMonths", e.target.value)}
+                          className={`${fieldClass(Boolean(errors.expMonths))} bg-white`}
+                        >
+                          <option value="">Select months</option>
+                          {Array.from({ length: 12 }).map((_, idx) => (
+                            <option key={idx} value={idx.toString()}>
+                              {idx}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.expMonths && <p className="text-xs text-red-500">{errors.expMonths}</p>}
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Salary / Month</span>
+                        <input
+                          type="text"
+                          value={form.salary}
+                          onChange={(e) => setField("salary", e.target.value)}
+                          placeholder="Enter monthly salary"
+                          className={fieldClass(Boolean(errors.salary))}
+                        />
+                        {errors.salary && <p className="text-xs text-red-500">{errors.salary}</p>}
+                      </label>
+
+                      <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-gray-800">Salary Currency</span>
+                        <select
+                          value={form.salaryCurrency}
+                          onChange={(e) => setField("salaryCurrency", e.target.value)}
+                          className={`${fieldClass(Boolean(errors.salaryCurrency))} bg-white`}
+                        >
+                          <option value="">Select currency</option>
+                          <option>USD</option>
+                          <option>INR</option>
+                          <option>EUR</option>
+                        </select>
+                        {errors.salaryCurrency && (
+                          <p className="text-xs text-red-500">{errors.salaryCurrency}</p>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-gray-900">Summary</span>
+                      <button
+                        ref={generateButtonRef}
+                        type="button"
+                        onClick={openSummaryDrawer}
+                        className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                      >
+                        Generate
+                      </button>
+                    </div>
+
+                    <textarea
+                      value={form.summary}
+                      onChange={(e) => setField("summary", e.target.value)}
+                      rows={8}
+                      maxLength={600}
+                      placeholder="Write a short profile summary"
+                      className={`${fieldClass(Boolean(errors.summary))} leading-6 resize-y`}
+                    />
+
+                    <div className="mt-1 flex items-center justify-between">
+                      {errors.summary ? <p className="text-xs text-red-500">{errors.summary}</p> : <span />}
+                      <p className="text-xs text-gray-500">{form.summary.length} / 600</p>
+                    </div>
+                  </div>
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Education"
+                expanded={mobileAccordionOpen.education}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    education: !prev.education,
+                  }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500">Add degrees or diplomas you have completed</span>
+                    <button
+                      type="button"
+                      onClick={addEducationEntry}
+                      className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {education.map((entry, idx) => (
+                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Education {idx + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => removeEducationEntry(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Title</span>
+                          <input
+                            type="text"
+                            value={entry.title}
+                            onChange={(e) => updateEducationEntry(entry.id, "title", e.target.value)}
+                            placeholder="e.g., Master of Computer Applications"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Institute</span>
+                          <input
+                            type="text"
+                            value={entry.institute}
+                            onChange={(e) =>
+                              updateEducationEntry(entry.id, "institute", e.target.value)
+                            }
+                            placeholder="Enter institute"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Specialization</span>
+                          <input
+                            type="text"
+                            value={entry.specialization}
+                            onChange={(e) =>
+                              updateEducationEntry(entry.id, "specialization", e.target.value)
+                            }
+                            placeholder="Enter specialization"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Graduation Year</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={entry.graduationYear}
+                            onChange={(e) =>
+                              updateEducationEntry(entry.id, "graduationYear", e.target.value)
+                            }
+                            placeholder="e.g., 2016"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Score</span>
+                          <input
+                            type="text"
+                            value={entry.score}
+                            onChange={(e) => updateEducationEntry(entry.id, "score", e.target.value)}
+                            placeholder="e.g., 9.8"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Certifications"
+                expanded={mobileAccordionOpen.certifications}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    certifications: !prev.certifications,
+                  }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500">List professional certificates you have earned</span>
+                    <button
+                      type="button"
+                      onClick={addCertificationEntry}
+                      className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {certifications.map((entry) => (
+                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Certification</p>
+                        <button
+                          type="button"
+                          onClick={() => removeCertificationEntry(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Name</span>
+                          <input
+                            type="text"
+                            value={entry.name}
+                            onChange={(e) => updateCertificationEntry(entry.id, "name", e.target.value)}
+                            placeholder="Certificate name"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Issuing</span>
+                          <input
+                            type="text"
+                            value={entry.issuing}
+                            onChange={(e) =>
+                              updateCertificationEntry(entry.id, "issuing", e.target.value)
+                            }
+                            placeholder="Issuing authority"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">#Certificate</span>
+                          <input
+                            type="text"
+                            value={entry.certificateNumber}
+                            onChange={(e) =>
+                              updateCertificationEntry(entry.id, "certificateNumber", e.target.value)
+                            }
+                            placeholder="Certificate number"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Issue Date</span>
+                          <input
+                            type="date"
+                            value={entry.issueDate}
+                            onChange={(e) =>
+                              updateCertificationEntry(entry.id, "issueDate", e.target.value)
+                            }
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Expiration Date</span>
+                          <input
+                            type="date"
+                            value={entry.expirationDate}
+                            onChange={(e) =>
+                              updateCertificationEntry(entry.id, "expirationDate", e.target.value)
+                            }
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">URL</span>
+                          <input
+                            type="text"
+                            value={entry.url}
+                            onChange={(e) => updateCertificationEntry(entry.id, "url", e.target.value)}
+                            placeholder="https://example.com"
+                            className={fieldClass(false)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="External Links"
+                expanded={mobileAccordionOpen.externalLinks}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    externalLinks: !prev.externalLinks,
+                  }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500">Share portfolios, GitHub, or other professional links</span>
+                    <button
+                      type="button"
+                      onClick={addExternalLink}
+                      className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {externalLinks.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-gray-500">
+                      No external link details added
+                      <div className="mt-1 text-xs text-gray-400">
+                        Click on + Add to add external link details
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {externalLinks.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="border border-gray-200 rounded-xl p-4 space-y-3"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="flex flex-col gap-2">
+                              <span className="text-sm font-medium text-gray-800">Label</span>
+                              <input
+                                type="text"
+                                value={entry.label}
+                                onChange={(e) =>
+                                  updateExternalLink(entry.id, "label", e.target.value)
+                                }
+                                placeholder="e.g., LinkedIn"
+                                className={fieldClass(false)}
+                              />
+                            </label>
+                            <label className="flex flex-col gap-2">
+                              <span className="text-sm font-medium text-gray-800">URL</span>
+                              <input
+                                type="text"
+                                value={entry.url}
+                                onChange={(e) =>
+                                  updateExternalLink(entry.id, "url", e.target.value)
+                                }
+                                placeholder="https://"
+                                className={fieldClass(false)}
+                              />
+                            </label>
+                          </div>
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => removeExternalLink(entry.id)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                            >
+                              <TrashIcon /> Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Languages"
+                expanded={mobileAccordionOpen.languages}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    languages: !prev.languages,
+                  }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500">Capture the languages you speak</span>
+                    <button
+                      type="button"
+                      onClick={addLanguageEntry}
+                      className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {languages.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="border border-gray-200 rounded-xl p-4 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">Language</p>
+                        <button
+                          type="button"
+                          onClick={() => removeLanguageEntry(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <label className="flex flex-col gap-2 md:col-span-2">
+                          <span className="text-sm font-medium text-gray-800">Language</span>
+                          <input
+                            type="text"
+                            value={entry.language}
+                            onChange={(e) => updateLanguageEntry(entry.id, "language", e.target.value)}
+                            placeholder="English"
+                            list="language-options"
+                            className={fieldClass(false)}
+                          />
+                          <datalist id="language-options">
+                            {languageOptions.map((lang) => (
+                              <option key={lang} value={lang} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Read</span>
+                          <select
+                            value={entry.read}
+                            onChange={(e) => updateLanguageEntry(entry.id, "read", e.target.value)}
+                            className={`${fieldClass(false)} bg-white`}
+                          >
+                            <option value="">Select</option>
+                            {languageRatings.map((rating) => (
+                              <option key={`${entry.id}-read-${rating}`} value={rating}>
+                                {rating}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Write</span>
+                          <select
+                            value={entry.write}
+                            onChange={(e) => updateLanguageEntry(entry.id, "write", e.target.value)}
+                            className={`${fieldClass(false)} bg-white`}
+                          >
+                            <option value="">Select</option>
+                            {languageRatings.map((rating) => (
+                              <option key={`${entry.id}-write-${rating}`} value={rating}>
+                                {rating}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Speak</span>
+                          <select
+                            value={entry.speak}
+                            onChange={(e) => updateLanguageEntry(entry.id, "speak", e.target.value)}
+                            className={`${fieldClass(false)} bg-white`}
+                          >
+                            <option value="">Select</option>
+                            {languageRatings.map((rating) => (
+                              <option key={`${entry.id}-speak-${rating}`} value={rating}>
+                                {rating}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </MobileAccordionCard>
+            </div>
+          ) : (
+            <>
           <div className="flex-1 min-w-0 space-y-5">
             <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
@@ -1033,12 +1909,21 @@ export default function BasicDetailsPage() {
 
               <div className="p-4 space-y-4">
                 <div className="bg-[#F4F7FC] border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="w-14 h-14 border border-gray-300 rounded-md bg-white flex items-center justify-center text-primary-600 text-2xl">
-                    <span aria-hidden="true">&#9787;</span>
+                  <div className="w-14 h-14 border border-gray-300 rounded-md bg-white flex items-center justify-center text-primary-600 text-2xl overflow-hidden">
+                    {profilePicPreview ? (
+                      <img
+                        src={profilePicPreview}
+                        alt="Profile preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span aria-hidden="true">&#9787;</span>
+                    )}
                   </div>
                   <div className="flex-1">
                     <button
                       type="button"
+                      onClick={handlePickProfilePic}
                       className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
                     >
                       <SmallUploadIcon />
@@ -1193,6 +2078,8 @@ export default function BasicDetailsPage() {
               </div>
             </section>
           </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronDown, ArrowLeft, ArrowRight, Clock, CalendarDays, Bandage } from "lucide-react";
+import { ChevronDown, ArrowLeft, ArrowRight, Clock, Bandage } from "lucide-react";
 import { useState } from "react";
 import AppNavbar from "../profile/AppNavbar";
+import CandidateAppShell, { type TimesheetBottomTab } from "../mobile/CandidateAppShell";
+import { useIs768AndBelow } from "@/lib/useResponsive";
 import CommentModal from "../ui/CommentModal";
 
 type WeeklyRow = {
@@ -68,11 +70,26 @@ const WEEKLY_TIMESHEETS: WeeklySheet[] = [
   },
 ];
 
+function getMonthYearLabelFromWeekRange(range: string): string {
+  const segments = range.split(/\s*-\s*/).map((s) => s.trim());
+  if (segments.length < 2) return "";
+  const startToken = segments[0];
+  const endToken = segments[1];
+  const yearMatch = endToken.match(/\b(\d{4})\b/);
+  const year = yearMatch?.[1] ?? "";
+  if (!year) return "";
+  const startForParse = startToken.includes(",") ? startToken : `${startToken}, ${year}`;
+  const d = new Date(startForParse);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 export default function TalentEngineTimesheet() {
   const [activeWeek, setActiveWeek] = useState<string>(() => WEEKLY_TIMESHEETS.find((week) => week.current)?.range ?? WEEKLY_TIMESHEETS[0].range);
   const [leaveSelections, setLeaveSelections] = useState<Record<string, boolean>>({});
 
   const [commentModal, setCommentModal] = useState<{ date: string; comment: string; triggerElement: HTMLElement | null } | null>(null);
+  const [mobileTimesheetTab, setMobileTimesheetTab] = useState<TimesheetBottomTab>("overview");
 
   const toggleLeave = (date: string) => {
     setLeaveSelections((prev) => ({
@@ -90,25 +107,16 @@ export default function TalentEngineTimesheet() {
     // API call
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <AppNavbar />
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Timesheet</p>
-            <h1 className="text-3xl font-semibold text-slate-900">Weekly time tracking</h1>
-          </div>
-          <button
-            type="button"
-            className="self-start sm:self-auto inline-flex items-center justify-center gap-2 bg-[#033CE5] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-          >
-            Export
-          </button>
-        </div>
+  const isCompact = useIs768AndBelow();
+  const compactTimesheetView = isCompact && mobileTimesheetTab === "timesheet";
 
+  const activeWeekRange =
+    WEEKLY_TIMESHEETS.find((w) => w.range === activeWeek)?.range ?? WEEKLY_TIMESHEETS[0].range;
+  const monthNavLabel = getMonthYearLabelFromWeekRange(activeWeekRange);
+
+  const overviewCards = (
         <section className="grid gap-5 md:grid-cols-3">
-          <div className="border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between text-m font-semibold">
               <span>Hours Worked - Total</span>
             </div>
@@ -127,7 +135,7 @@ export default function TalentEngineTimesheet() {
 
               <div className="flex items-center gap-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
-                  <CalendarDays className="h-5 w-5" />
+                  <Clock className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Total Overtime Hours</p>
@@ -138,7 +146,7 @@ export default function TalentEngineTimesheet() {
           </div>
 
 
-          <div className="border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-m font-semibold">Timesheet Login Streak</p>
             <p className="text-sm text-slate-500">Days logged-in: This Month vs Last Month</p>
             <div className="mt-5 space-y-4">
@@ -163,7 +171,7 @@ export default function TalentEngineTimesheet() {
             </div>
           </div>
 
-          <div className="border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between text-m font-semibold">
               <span>Hours Worked - Monthly</span>
             </div>
@@ -182,28 +190,101 @@ export default function TalentEngineTimesheet() {
             </div>
           </div>
         </section>
+  );
 
-        <section className="space-y-6 rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+  const timesheetMain = (
+      <main className="max-w-[1600px] mx-auto space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        {!isCompact ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Timesheet</p>
+            <h1 className="text-3xl font-semibold text-slate-900">Weekly time tracking</h1>
+          </div>
+          <button
+            type="button"
+            className="self-start sm:self-auto inline-flex items-center justify-center gap-2 bg-[#033CE5] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            Export
+          </button>
+        </div>
+        ) : null}
+
+        {!isCompact ? overviewCards : null}
+        {isCompact && mobileTimesheetTab === "overview" ? (
+          <>
+            <h1 className="text-2xl font-semibold text-slate-900">Overview</h1>
+            {overviewCards}
+          </>
+        ) : null}
+
+        {isCompact && mobileTimesheetTab === "timesheet" ? (
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Weekly Timesheet</h1>
+              <p className="mt-1 text-sm text-slate-500">Enter your time in hours for the project.</p>
+              <button
+                type="button"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#033CE5] px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                Export
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <section
+          className={`space-y-6 rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm ${isCompact && mobileTimesheetTab === "overview" ? "hidden" : ""}`}
+        >
           <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            {!compactTimesheetView ? (
             <div>
               <p className="text-lg font-semibold text-slate-900">Weekly Time-Sheet</p>
               <p className="text-sm text-slate-500">Enter your time in hours for the project</p>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Previous Month
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-              >
-                Next Month
-                <ArrowRight className="h-4 w-4" />
-              </button>
+            ) : null}
+            <div
+              className={`flex items-center gap-3 ${compactTimesheetView ? "w-full" : ""} ${compactTimesheetView ? "" : "sm:justify-end"}`}
+            >
+              {compactTimesheetView ? (
+                <div className="flex w-full items-stretch justify-between gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    aria-label="Previous month"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <div className="flex min-w-0 flex-[1.4] items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/80 px-2 py-2.5">
+                    <span className="truncate text-center text-sm font-semibold text-slate-900">
+                      {monthNavLabel || "—"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    aria-label="Next month"
+                  >
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Previous Month
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                  >
+                    Next Month
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </>
+              )}
             </div>
           </header>
 
@@ -219,11 +300,17 @@ export default function TalentEngineTimesheet() {
                   <button
                     type="button"
                     onClick={() => setActiveWeek(week.range)}
-                    className="flex w-full items-center justify-between"
+                    className={`flex w-full items-center justify-between ${isCompact ? "gap-2" : ""}`}
                   >
-                    <div className="text-left">
-                      <p className="text-lg font-semibold text-slate-900">{week.range}</p>
-                      <p className="text-sm text-slate-500">{week.weekLabel}</p>
+                    <div className="min-w-0 text-left">
+                      <p
+                        className={`font-semibold text-slate-900 ${isCompact ? "text-sm leading-snug" : "text-lg"}`}
+                      >
+                        {week.range}
+                      </p>
+                      <p className={`text-slate-500 ${isCompact ? "text-xs" : "text-sm"}`}>
+                        {week.weekLabel}
+                      </p>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">Regular Hours: {week.regular}</span>
@@ -422,17 +509,40 @@ export default function TalentEngineTimesheet() {
           </div>
         </section>
       </main>
+  );
 
-      {/* Comment Modal */}
-      {commentModal && (
-        <CommentModal
-          date={commentModal.date}
-          initialComment={commentModal.comment}
-          triggerElement={commentModal.triggerElement}
-          onClose={() => setCommentModal(null)}
-          onSubmit={handleCommentSubmit}
-        />
-      )}
+  const timesheetModal =
+    commentModal ? (
+      <CommentModal
+        date={commentModal.date}
+        initialComment={commentModal.comment}
+        triggerElement={commentModal.triggerElement}
+        onClose={() => setCommentModal(null)}
+        onSubmit={handleCommentSubmit}
+      />
+    ) : null;
+
+  if (isCompact) {
+    return (
+      <>
+        <CandidateAppShell
+          timesheetNav={{
+            active: mobileTimesheetTab,
+            onChange: setMobileTimesheetTab,
+          }}
+        >
+          {timesheetMain}
+        </CandidateAppShell>
+        {timesheetModal}
+      </>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <AppNavbar />
+      {timesheetMain}
+      {timesheetModal}
     </div>
   );
 }

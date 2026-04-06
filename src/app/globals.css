@@ -20,6 +20,20 @@
   }
 }
 
+@layer components {
+  .mobile-success-stories-swiper .swiper-pagination {
+    @apply bottom-0;
+  }
+
+  .mobile-success-stories-swiper .swiper-pagination-bullet {
+    @apply h-2 w-2 bg-primary-200 opacity-100;
+  }
+
+  .mobile-success-stories-swiper .swiper-pagination-bullet-active {
+    @apply bg-primary-600;
+  }
+}
+
 @layer utilities {
   .bg-grid-pattern {
     background-image: linear-gradient(

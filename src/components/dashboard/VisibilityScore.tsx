@@ -25,8 +25,10 @@ import {
     BarChart3
 } from "lucide-react";
 import AppNavbar from "../profile/AppNavbar";
+import CandidateAppShell from "../mobile/CandidateAppShell";
 import ProfileVisibilityInfoDrawer from "./ProfileVisibilityInfoDrawer";
 import RewardPointsInfoDrawer from "./RewardPointsInfoDrawer";
+import { useIsMobile } from "@/lib/useResponsive";
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip);
 
@@ -58,6 +60,7 @@ interface ProfileRank {
 }
 
 export default function VisibilityScore() {
+    const isMobile = useIsMobile();
     const [visibilityInfoOpen, setVisibilityInfoOpen] = useState(false);
     const [rewardPointsInfoOpen, setRewardPointsInfoOpen] = useState(false);
     const activityChartRef = useRef<HTMLCanvasElement>(null);
@@ -239,12 +242,10 @@ export default function VisibilityScore() {
         return () => chart.destroy();
     }, []);
 
-    return (
-        <div className="min-h-screen bg-[#EEF0F3]">
-            <AppNavbar />
-
-            {/* BREADCRUMB */}
-            <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    const visibilityInner = (
+        <>
+            {/* BREADCRUMB — desktop */}
+            <div className="hidden lg:block max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                     <Home size={16} className="text-blue-600" />
                     <span className="text-blue-600 text-sm">Dashboard</span>
@@ -555,6 +556,21 @@ export default function VisibilityScore() {
                 open={rewardPointsInfoOpen}
                 onClose={() => setRewardPointsInfoOpen(false)}
             />
+        </>
+    );
+
+    if (isMobile) {
+        return (
+            <CandidateAppShell activeBottomTab="insights">
+                {visibilityInner}
+            </CandidateAppShell>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-[#EEF0F3]">
+            <AppNavbar />
+            {visibilityInner}
         </div>
     );
 }

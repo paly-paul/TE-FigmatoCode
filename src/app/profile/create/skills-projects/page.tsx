@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
@@ -9,10 +9,21 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { markProfileComplete } from "@/lib/profileOnboarding";
-import { CheckCircle2, X } from "lucide-react";
+import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
+import { readResumeProfile } from "@/lib/profileSession";
+import { getCandidateProfileData, saveProfile } from "@/services/profile";
+import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 
 interface ResumeSkillsData {
   skills?: string[];
+  tools?: string[];
+  projects?: Array<{
+    projectTitle?: string;
+    customerCompany?: string;
+    projectDescription?: string;
+    responsibilities?: string;
+  }>;
   projectDescription?: string;
   responsibilities?: string;
 }
@@ -53,18 +64,18 @@ type FormErrors = {
   projects?: Record<string, ProjectFieldErrors>;
 };
 
-const SKILL_OPTIONS = [
-  "React",
-  "Next.js",
-  "TypeScript",
-  "JavaScript",
-  "Node.js",
-  "Express",
-  "MongoDB",
-  "PostgreSQL",
-  "AWS",
-  "Docker",
-];
+// const SKILL_OPTIONS = [
+//   "React",
+//   "Next.js",
+//   "TypeScript",
+//   "JavaScript",
+//   "Node.js",
+//   "Express",
+//   "MongoDB",
+//   "PostgreSQL",
+//   "AWS",
+//   "Docker",
+// ];
 
 const fieldClass = (hasError: boolean) =>
   `w-full rounded-md border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary-500 ${
@@ -129,16 +140,42 @@ function isProjectEmpty(e: ProjectEntry) {
   );
 }
 
-export default function SkillsProjectsPage() {
+function SkillsProjectsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [lookingForJob, setLookingForJob] = useState(true);
   const [skills, setSkills] = useState<string[]>([]);
+  const [suggestedSkills, setSuggestedSkills] = useState<string[]>([]);
+  const [backendSkillsStatus, setBackendSkillsStatus] = useState("");
   const [selectedSkill, setSelectedSkill] = useState("");
   const [experiences, setExperiences] = useState<ExperienceEntry[]>(() => [createExperienceEntry()]);
   const [tools, setTools] = useState<ToolEntry[]>(() => [createToolEntry()]);
   const [projects, setProjects] = useState<ProjectEntry[]>(() => [createProjectEntry()]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
+  const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
+    keySkills: true,
+    experiences: false,
+    tools: false,
+    projects: false,
+  });
+
+  // Backend-only options: suggestedSkills holds key skills returned from the API.
+  // The dropdown offers those values, excluding ones already selected in `skills`.
+  const availableSkillOptions = dedupeSkills([...suggestedSkills]).filter(
+    (skill) => !skills.includes(skill)
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(MOBILE_MQ);
+    const sync = () => setIsMobileViewport(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   function isValidUrl(value: string): boolean {
     try {
@@ -154,9 +191,7 @@ export default function SkillsProjectsPage() {
     if (!entry.experience.trim()) sectionErrors.experience = "Experience is required.";
     if (!entry.experienceYears.trim()) sectionErrors.experienceYears = "Experience years are required.";
     const ref = entry.experienceReference.trim();
-    if (!ref) {
-      sectionErrors.experienceReference = "Reference link is required.";
-    } else if (!isValidUrl(ref)) {
+    if (ref && !isValidUrl(ref)) {
       sectionErrors.experienceReference = "Enter a valid URL (http/https).";
     }
     return sectionErrors;
@@ -167,9 +202,7 @@ export default function SkillsProjectsPage() {
     if (!entry.tool.trim()) sectionErrors.tool = "Tool is required.";
     if (!entry.toolYears.trim()) sectionErrors.toolYears = "Tool experience years are required.";
     const ref = entry.toolReference.trim();
-    if (!ref) {
-      sectionErrors.toolReference = "Reference link is required.";
-    } else if (!isValidUrl(ref)) {
+    if (ref && !isValidUrl(ref)) {
       sectionErrors.toolReference = "Enter a valid URL (http/https).";
     }
     return sectionErrors;
@@ -262,31 +295,127 @@ export default function SkillsProjectsPage() {
       const raw = window.sessionStorage.getItem("resumeSkills");
       if (!raw) return;
       const data = JSON.parse(raw) as ResumeSkillsData;
-      if (Array.isArray(data.skills)) setSkills(data.skills);
-      setProjects((prev) => {
-        const first = prev[0];
-        if (!first) return prev;
-        return [
-          {
-            ...first,
-            projectDescription:
-              typeof data.projectDescription === "string" ? data.projectDescription : first.projectDescription,
-            responsibilities:
-              typeof data.responsibilities === "string" ? data.responsibilities : first.responsibilities,
-          },
-          ...prev.slice(1),
-        ];
-      });
+      if (Array.isArray(data.skills) && data.skills.length) {
+        setSuggestedSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
+      }
+      if (Array.isArray(data.tools) && data.tools.length) {
+        setTools(
+          data.tools.map((tool) =>
+            createToolEntry({
+              tool,
+            })
+          )
+        );
+      }
+      if (Array.isArray(data.projects) && data.projects.length) {
+        setProjects(
+          data.projects.map((project) =>
+            createProjectEntry({
+              projectTitle: typeof project.projectTitle === "string" ? project.projectTitle : "",
+              customerCompany: typeof project.customerCompany === "string" ? project.customerCompany : "",
+              projectDescription:
+                typeof project.projectDescription === "string" ? project.projectDescription : "",
+              responsibilities:
+                typeof project.responsibilities === "string" ? project.responsibilities : "",
+            })
+          )
+        );
+      } else {
+        setProjects((prev) => {
+          const first = prev[0];
+          if (!first) return prev;
+          return [
+            {
+              ...first,
+              projectDescription:
+                typeof data.projectDescription === "string" ? data.projectDescription : first.projectDescription,
+              responsibilities:
+                typeof data.responsibilities === "string" ? data.responsibilities : first.responsibilities,
+            },
+            ...prev.slice(1),
+          ];
+        });
+      }
     } catch {
       // ignore invalid JSON
     }
   }, []);
 
   useEffect(() => {
+    const storedProfile = readResumeProfile();
+    if (!storedProfile?.keySkills?.length) return;
+    setSuggestedSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const candidateId = getCandidateId();
+        const queryProfileName = searchParams.get("profile_name")?.trim() || "";
+        let profileName = queryProfileName || getProfileName();
+
+        if (profileName && !isLikelyDocId(profileName)) {
+          profileName = "";
+        }
+
+        if (queryProfileName && queryProfileName !== getProfileName()) {
+          setProfileName(queryProfileName);
+        }
+
+        if (!profileName && candidateId) {
+          const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+          resolverUrl.searchParams.set("candidate_id", candidateId);
+          const resolverRes = await fetch(resolverUrl.toString());
+          if (resolverRes.ok) {
+            const resolverData = (await resolverRes.json()) as { profile_name?: string };
+            if (resolverData.profile_name) {
+              profileName = resolverData.profile_name;
+              setProfileName(profileName);
+            }
+          }
+        }
+
+        if (!profileName) return;
+
+        if (cancelled) return;
+
+        const backendProfile = await getCandidateProfileData(profileName);
+        if (cancelled) return;
+
+        if (backendProfile.keySkills?.length) {
+          setSuggestedSkills((prev) => dedupeSkills([...backendProfile.keySkills!, ...prev]));
+          setBackendSkillsStatus(`Loaded ${backendProfile.keySkills.length} skill(s) from backend profile.`);
+        } else {
+          setBackendSkillsStatus("Backend profile returned no saved key skills yet.");
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setBackendSkillsStatus(
+          error instanceof Error ? `Unable to load backend skills: ${error.message}` : "Unable to load backend skills."
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const first = projects[0];
     const payload: ResumeSkillsData = {
       skills,
+      tools: tools.map((tool) => tool.tool.trim()).filter(Boolean),
+      projects: projects
+        .filter((project) => !isProjectEmpty(project))
+        .map((project) => ({
+          projectTitle: project.projectTitle,
+          customerCompany: project.customerCompany,
+          projectDescription: project.projectDescription,
+          responsibilities: project.responsibilities,
+        })),
       projectDescription: first?.projectDescription ?? "",
       responsibilities: first?.responsibilities ?? "",
     };
@@ -361,6 +490,7 @@ export default function SkillsProjectsPage() {
       const next = [...prev, value];
       return next.slice(0, 30);
     });
+    setSuggestedSkills((prev) => prev.filter((skill) => skill !== value));
     setSelectedSkill("");
     setErrors((prev) => ({ ...prev, skills: undefined }));
   }
@@ -521,15 +651,141 @@ export default function SkillsProjectsPage() {
     );
   }
 
-  function handleFinish() {
+  async function handleFinish() {
     if (!validate()) return;
-    markProfileComplete();
-    setIsFinishModalOpen(true);
+
+    const storedProfile = readResumeProfile();
+    const queryProfileName = searchParams.get("profile_name")?.trim() || "";
+    let profileName = queryProfileName || getProfileName() || "";
+    const candidateId = getCandidateId();
+
+    if (profileName && !isLikelyDocId(profileName)) {
+      profileName = "";
+    }
+
+    if (candidateId) {
+      try {
+        const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+        resolverUrl.searchParams.set("candidate_id", candidateId);
+        const resolverRes = await fetch(resolverUrl.toString());
+        if (resolverRes.ok) {
+          const resolverData = (await resolverRes.json()) as { profile_name?: string };
+          const resolvedProfileName = resolverData.profile_name?.trim();
+          if (resolvedProfileName) {
+            profileName = resolvedProfileName;
+            setProfileName(resolvedProfileName);
+          }
+        }
+      } catch {
+        // ignore and allow create flow without explicit profile_name
+      }
+    }
+
+    const firstName = storedProfile?.firstName?.trim() || "";
+    const lastName = storedProfile?.lastName?.trim() || "";
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    const email = storedProfile?.email?.trim() || "";
+    if (!fullName || !email) {
+      alert("Missing profile basics. Please complete Basic Details again before finishing.");
+      return;
+    }
+
+    const keySkills = dedupeSkills([
+      ...skills,
+      ...tools.map((tool) => tool.tool.trim()).filter(Boolean),
+    ]).map((key_skill) => ({ key_skill }));
+
+    const educationDetails =
+      storedProfile?.education?.map((entry) => ({
+        degree: entry.title?.trim() || undefined,
+        institution: entry.institute?.trim() || undefined,
+        year: entry.graduationYear?.trim() || undefined,
+      })).filter((entry) => entry.degree || entry.institution || entry.year) ?? [];
+
+    const totalExperience = (() => {
+      const yearsRaw = storedProfile?.experienceYears?.trim() || "0";
+      const years = parseInt(yearsRaw, 10);
+      return Number.isFinite(years) && years >= 0 ? years : undefined;
+    })();
+
+    const workExperience = nonEmptyProjects()
+      .map((project) => ({
+        company: project.customerCompany.trim() || undefined,
+        role: project.projectTitle.trim() || undefined,
+        from_date: project.projectStartDate || undefined,
+        to_date: project.inProgress ? undefined : project.projectEndDate || undefined,
+      }))
+      .filter((entry) => entry.company || entry.role || entry.from_date || entry.to_date);
+
+    setIsSubmittingProfile(true);
+    try {
+      const response = await saveProfile({
+        profile_name: profileName || undefined,
+        full_name: fullName,
+        email,
+        professional_title: storedProfile?.professionalTitle?.trim() || undefined,
+        total_experience: totalExperience,
+        key_skills: keySkills.length ? keySkills : undefined,
+        work_experience: workExperience.length ? workExperience : undefined,
+        education_details: educationDetails.length ? educationDetails : undefined,
+        action: "submit",
+      });
+
+      const messageRoot =
+        response.message && typeof response.message === "object"
+          ? (response.message as Record<string, unknown>)
+          : null;
+      const savedProfileName =
+        (typeof response.profile_name === "string" && response.profile_name.trim()) ||
+        (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
+        "";
+
+      if (savedProfileName) {
+        setProfileName(savedProfileName);
+      }
+
+      markProfileComplete();
+      setIsFinishModalOpen(true);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to save profile.");
+    } finally {
+      setIsSubmittingProfile(false);
+    }
   }
 
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
     router.push("/dashboard");
+  }
+
+  function MobileAccordionCard({
+    title,
+    expanded,
+    onToggle,
+    children,
+  }: {
+    title: string;
+    expanded: boolean;
+    onToggle: () => void;
+    children: ReactNode;
+  }) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full flex items-center justify-between px-4 py-3"
+        >
+          <span className="text-base font-semibold text-gray-900">{title}</span>
+          {expanded ? (
+            <ChevronUp className="h-5 w-5 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-gray-500" />
+          )}
+        </button>
+        {expanded ? <div>{children}</div> : null}
+      </div>
+    );
   }
 
   return (
@@ -552,7 +808,431 @@ export default function SkillsProjectsPage() {
         <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
           <ProfileStepper currentStep={3} />
 
-          <div className="flex-1 min-w-0 space-y-4">
+          {isMobileViewport ? (
+            <div className="flex-1 min-w-0 space-y-4">
+              <ProfileProgressCard
+                percent={completionPercent}
+                className="!w-full"
+                description="Skills and projects with proficiency levels attract better-fit opportunities"
+              />
+
+              <section className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                <div className="w-16 h-16 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-3xl">
+                  <span aria-hidden="true">&#128077;</span>
+                </div>
+                <div>
+                  <h4 className="text-xl sm:text-2xl font-semibold text-gray-900">Nice Work!</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    You now have jobs matching your skills and project experience
+                  </p>
+                </div>
+              </section>
+
+              <MobileAccordionCard
+                title="Key Skills"
+                expanded={mobileAccordionOpen.keySkills}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({ ...prev, keySkills: !prev.keySkills }))
+                }
+              >
+                <div className="p-4 space-y-4">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Skills</span>
+                    <select
+                      value={selectedSkill}
+                      onChange={(e) => handleSkillsChange(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="">Select a skill</option>
+                      {availableSkillOptions.map((opt: string) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
+                    {backendSkillsStatus ? <p className="text-xs text-gray-500">{backendSkillsStatus}</p> : null}
+                  </div>
+
+                  {skills.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {skills.map((skill) => (
+                        <button
+                          key={skill}
+                          type="button"
+                          onClick={() => handleRemoveSkill(skill)}
+                          className="group inline-flex items-center gap-1 rounded-full bg-primary-50 text-primary-700 border border-primary-100 px-3 py-1 text-xs font-medium hover:bg-primary-100"
+                        >
+                          <span>{skill}</span>
+                          <span className="text-[11px] text-primary-500 group-hover:text-primary-700">x</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {errors.skills && <p className="text-xs text-red-500">{errors.skills}</p>}
+
+                  <div className="flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-2.5 text-sm text-gray-700">
+                    <span className="mt-0.5 text-primary-600">
+                      <LightbulbIcon />
+                    </span>
+                    <p>Skills linked to projects are prioritized in shortlisting.</p>
+                  </div>
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Experience"
+                expanded={mobileAccordionOpen.experiences}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    experiences: !prev.experiences,
+                  }))
+                }
+              >
+                <div className="p-4 space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-primary-600 font-semibold text-sm hover:text-primary-700"
+                      onClick={handleAddExperience}
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {experiences.map((entry, idx) => {
+                    const fe = errors.experiences?.[entry.id];
+                    return (
+                      <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-gray-600">Experience {idx + 1}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExperience(entry.id)}
+                            className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                          >
+                            <TrashIcon /> Delete
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Experience</span>
+                            <input
+                              type="text"
+                              value={entry.experience}
+                              onChange={(e) => updateExperience(entry.id, { experience: e.target.value })}
+                              placeholder="Enter experience"
+                              className={fieldClass(Boolean(fe?.experience))}
+                            />
+                            {fe?.experience && <p className="text-xs text-red-500">{fe.experience}</p>}
+                          </label>
+
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={entry.experienceYears}
+                              onChange={(e) =>
+                                updateExperience(entry.id, { experienceYears: e.target.value })
+                              }
+                              placeholder="0"
+                              className={fieldClass(Boolean(fe?.experienceYears))}
+                            />
+                            {fe?.experienceYears && (
+                              <p className="text-xs text-red-500">{fe.experienceYears}</p>
+                            )}
+                          </label>
+
+                          <label className="flex flex-col gap-2 col-span-2">
+                            <span className="text-sm font-medium text-gray-800">Reference (Link) (optional)</span>
+                            <input
+                              type="url"
+                              value={entry.experienceReference}
+                              onChange={(e) =>
+                                updateExperience(entry.id, { experienceReference: e.target.value })
+                              }
+                              placeholder="https://"
+                              className={fieldClass(Boolean(fe?.experienceReference))}
+                            />
+                            {fe?.experienceReference && (
+                              <p className="text-xs text-red-500">{fe.experienceReference}</p>
+                            )}
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Tools"
+                expanded={mobileAccordionOpen.tools}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    tools: !prev.tools,
+                  }))
+                }
+              >
+                <div className="p-4 space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-primary-600 font-semibold text-sm hover:text-primary-700"
+                      onClick={handleAddTool}
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {tools.map((entry, idx) => {
+                    const fe = errors.tools?.[entry.id];
+                    return (
+                      <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-gray-600">Tool {idx + 1}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTool(entry.id)}
+                            className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                          >
+                            <TrashIcon /> Delete
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Tools</span>
+                            <input
+                              type="text"
+                              value={entry.tool}
+                              onChange={(e) => updateTool(entry.id, { tool: e.target.value })}
+                              placeholder="Enter tool"
+                              className={fieldClass(Boolean(fe?.tool))}
+                            />
+                            {fe?.tool && <p className="text-xs text-red-500">{fe.tool}</p>}
+                          </label>
+
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={entry.toolYears}
+                              onChange={(e) => updateTool(entry.id, { toolYears: e.target.value })}
+                              placeholder="0"
+                              className={fieldClass(Boolean(fe?.toolYears))}
+                            />
+                            {fe?.toolYears && <p className="text-xs text-red-500">{fe.toolYears}</p>}
+                          </label>
+
+                          <label className="flex flex-col gap-2 col-span-2">
+                            <span className="text-sm font-medium text-gray-800">Reference (Link) (optional)</span>
+                            <input
+                              type="url"
+                              value={entry.toolReference}
+                              onChange={(e) => updateTool(entry.id, { toolReference: e.target.value })}
+                              placeholder="https://"
+                              className={fieldClass(Boolean(fe?.toolReference))}
+                            />
+                            {fe?.toolReference && (
+                              <p className="text-xs text-red-500">{fe.toolReference}</p>
+                            )}
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Projects"
+                expanded={mobileAccordionOpen.projects}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    projects: !prev.projects,
+                  }))
+                }
+              >
+                <div className="p-4 space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-primary-600 font-semibold text-sm hover:text-primary-700"
+                      onClick={handleAddProject}
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {projects.map((entry, idx) => {
+                    const fe = errors.projects?.[entry.id];
+                    return (
+                      <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-gray-600">Project {idx + 1}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProject(entry.id)}
+                            className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                          >
+                            <TrashIcon /> Delete
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Project Title</span>
+                            <input
+                              type="text"
+                              value={entry.projectTitle}
+                              onChange={(e) =>
+                                updateProject(entry.id, { projectTitle: e.target.value })
+                              }
+                              placeholder="Enter project title"
+                              className={fieldClass(Boolean(fe?.projectTitle))}
+                            />
+                            {fe?.projectTitle && <p className="text-xs text-red-500">{fe.projectTitle}</p>}
+                          </label>
+
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-gray-800">Customer / Company</span>
+                            <input
+                              type="text"
+                              value={entry.customerCompany}
+                              onChange={(e) =>
+                                updateProject(entry.id, { customerCompany: e.target.value })
+                              }
+                              placeholder="Enter customer or company"
+                              className={fieldClass(Boolean(fe?.customerCompany))}
+                            />
+                            {fe?.customerCompany && (
+                              <p className="text-xs text-red-500">{fe.customerCompany}</p>
+                            )}
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-3 col-span-full">
+                            <label className="flex flex-col gap-2">
+                              <span className="text-sm font-medium text-gray-800">Project Start Date</span>
+                              <input
+                                type="date"
+                                value={entry.projectStartDate}
+                                onChange={(e) =>
+                                  updateProject(entry.id, { projectStartDate: e.target.value })
+                                }
+                                className={fieldClass(Boolean(fe?.projectStartDate))}
+                              />
+                              {fe?.projectStartDate && (
+                                <p className="text-xs text-red-500">{fe.projectStartDate}</p>
+                              )}
+                            </label>
+
+                            <div className="flex flex-col gap-2">
+                              <span className="text-sm font-medium text-gray-800">Project End Date</span>
+                              <input
+                                type="date"
+                                value={entry.projectEndDate}
+                                onChange={(e) =>
+                                  updateProject(entry.id, { projectEndDate: e.target.value })
+                                }
+                                disabled={entry.inProgress}
+                                className={`${fieldClass(Boolean(fe?.projectEndDate))} ${
+                                  entry.inProgress ? "bg-gray-100 text-gray-500" : ""
+                                }`}
+                              />
+                              {fe?.projectEndDate && (
+                                <p className="text-xs text-red-500">{fe.projectEndDate}</p>
+                              )}
+                              <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-gray-700 mt-1">
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                  checked={entry.inProgress}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    updateProject(entry.id, {
+                                      inProgress: checked,
+                                      ...(checked ? { projectEndDate: "" } : {}),
+                                    });
+                                    setErrors((prev) => {
+                                      if (!prev.projects?.[entry.id]) return prev;
+                                      const fePrev = { ...prev.projects[entry.id] };
+                                      delete fePrev.projectEndDate;
+                                      const nextProj = { ...prev.projects, [entry.id]: fePrev };
+                                      if (Object.keys(nextProj[entry.id]).length === 0) {
+                                        const { [entry.id]: _, ...rest } = nextProj;
+                                        return {
+                                          ...prev,
+                                          projects: Object.keys(rest).length ? rest : undefined,
+                                        };
+                                      }
+                                      return { ...prev, projects: nextProj };
+                                    });
+                                  }}
+                                />
+                                <span>In progress — end date not required</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Description</span>
+                          <textarea
+                            value={entry.projectDescription}
+                            onChange={(e) =>
+                              updateProject(entry.id, { projectDescription: e.target.value })
+                            }
+                            maxLength={300}
+                            rows={5}
+                            placeholder="Describe the project"
+                            className={`${fieldClass(Boolean(fe?.projectDescription))} leading-6 resize-y`}
+                          />
+                          <div className="flex items-center justify-between">
+                            {fe?.projectDescription ? (
+                              <p className="text-xs text-red-500">{fe.projectDescription}</p>
+                            ) : (
+                              <span />
+                            )}
+                            <p className="text-xs text-gray-500">{entry.projectDescription.length} / 300</p>
+                          </div>
+                        </label>
+
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium text-gray-800">Responsibilities</span>
+                          <textarea
+                            value={entry.responsibilities}
+                            onChange={(e) =>
+                              updateProject(entry.id, { responsibilities: e.target.value })
+                            }
+                            maxLength={300}
+                            rows={5}
+                            placeholder="List your key responsibilities"
+                            className={`${fieldClass(Boolean(fe?.responsibilities))} leading-6 resize-y`}
+                          />
+                          <div className="flex items-center justify-between">
+                            {fe?.responsibilities ? (
+                              <p className="text-xs text-red-500">{fe.responsibilities}</p>
+                            ) : (
+                              <span />
+                            )}
+                            <p className="text-xs text-gray-500">{entry.responsibilities.length} / 300</p>
+                          </div>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </MobileAccordionCard>
+            </div>
+          ) : null}
+
+          {!isMobileViewport ? (
+            <div className="flex-1 min-w-0 space-y-4">
             <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Key Skills</h2>
@@ -567,13 +1247,14 @@ export default function SkillsProjectsPage() {
                     className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="">Select a skill</option>
-                    {SKILL_OPTIONS.map((opt) => (
+                    {availableSkillOptions.map((opt) => (
                       <option key={opt} value={opt}>
                         {opt}
                       </option>
                     ))}
                   </select>
                   <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
+                  {backendSkillsStatus ? <p className="text-xs text-gray-500">{backendSkillsStatus}</p> : null}
                 </div>
 
                 {skills.length > 0 && (
@@ -657,7 +1338,7 @@ export default function SkillsProjectsPage() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
+                          <span className="text-sm font-medium text-gray-800">Reference (Link) (optional)</span>
                           <input
                             type="url"
                             value={entry.experienceReference}
@@ -730,7 +1411,7 @@ export default function SkillsProjectsPage() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Reference (Link)</span>
+                          <span className="text-sm font-medium text-gray-800">Reference (Link) (optional)</span>
                           <input
                             type="url"
                             value={entry.toolReference}
@@ -896,27 +1577,30 @@ export default function SkillsProjectsPage() {
                 })}
               </div>
             </section>
-          </div>
+            </div>
+          ) : null}
 
-          <div className="w-full xl:w-96 flex flex-col gap-4 shrink-0 xl:sticky xl:top-4 self-start">
-            <ProfileProgressCard
-              percent={completionPercent}
-              className="!w-full"
-              description="Skills and projects with proficiency levels attract better-fit opportunities"
-            />
+          {!isMobileViewport ? (
+            <div className="w-full xl:w-96 flex flex-col gap-4 shrink-0 xl:sticky xl:top-4 self-start">
+              <ProfileProgressCard
+                percent={completionPercent}
+                className="!w-full"
+                description="Skills and projects with proficiency levels attract better-fit opportunities"
+              />
 
-            <section className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3">
-              <div className="w-16 h-16 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-3xl">
-                <span aria-hidden="true">&#128077;</span>
-              </div>
-              <div>
-                <h4 className="text-xl sm:text-2xl font-semibold text-gray-900">Nice Work!</h4>
-                <p className="text-sm text-gray-600 mt-1">
-                  You now have jobs matching your skills and project experience
-                </p>
-              </div>
-            </section>
-          </div>
+              <section className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                <div className="w-16 h-16 rounded-md bg-green-50 text-green-600 flex items-center justify-center text-3xl">
+                  <span aria-hidden="true">&#128077;</span>
+                </div>
+                <div>
+                  <h4 className="text-xl sm:text-2xl font-semibold text-gray-900">Nice Work!</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    You now have jobs matching your skills and project experience
+                  </p>
+                </div>
+              </section>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -929,8 +1613,8 @@ export default function SkillsProjectsPage() {
         >
           Previous
         </Button>
-        <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleFinish}>
-          Finish
+        <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => void handleFinish()} disabled={isSubmittingProfile}>
+          {isSubmittingProfile ? "Saving..." : "Finish"}
         </Button>
       </div>
 
@@ -978,4 +1662,51 @@ export default function SkillsProjectsPage() {
       ) : null}
     </div>
   );
+}
+
+export default function SkillsProjectsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SkillsProjectsPageContent />
+    </Suspense>
+  );
+}
+
+function dedupeSkills(values: string[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 30);
+}
+
+function mergeToolEntries(existing: ToolEntry[], toolNames: string[]) {
+  const existingNames = new Set(existing.map((tool) => tool.tool.trim().toLowerCase()).filter(Boolean));
+  const additions = toolNames
+    .filter((tool) => tool.trim())
+    .filter((tool) => !existingNames.has(tool.trim().toLowerCase()))
+    .map((tool) => createToolEntry({ tool }));
+
+  if (!additions.length) return existing;
+  const keepExisting = existing.filter((tool) => !isToolEmpty(tool));
+  return [...keepExisting, ...additions];
+}
+
+function mergeProjectEntries(existing: ProjectEntry[], next: ProjectEntry[]) {
+  const keepExisting = existing.filter((project) => !isProjectEmpty(project));
+  if (!keepExisting.length) return next;
+
+  const merged = [...keepExisting];
+  for (const project of next) {
+    const duplicate = merged.some(
+      (entry) =>
+        entry.projectTitle.trim() &&
+        project.projectTitle.trim() &&
+        entry.projectTitle.trim().toLowerCase() === project.projectTitle.trim().toLowerCase()
+    );
+    if (!duplicate) merged.push(project);
+  }
+  return merged;
 }

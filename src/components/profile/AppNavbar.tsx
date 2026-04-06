@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
-import { STATIC_NAV_DISPLAY_NAME } from "@/lib/dashboardWelcome";
+import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
+import { clearAuthSession } from "@/lib/authSession";
+import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
+import { clearResumeWizardSession } from "@/lib/profileSession";
 
 export default function AppNavbar() {
   const router = useRouter();
@@ -12,13 +15,38 @@ export default function AppNavbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const bellRef = useRef<HTMLButtonElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+  const [navDisplayName, setNavDisplayName] = useState(() =>
+    typeof window !== "undefined" ? getResolvedNavDisplayName() : "User"
+  );
 
-  const handleLogout = () => {
-    // Add your logout logic here
-    console.log("Logging out...");
+  useEffect(() => {
+    setNavDisplayName(getResolvedNavDisplayName());
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/method/logout", {
+        method: "POST",
+      });
+    } catch {
+      // Fall back to local sign-out even if the backend request fails.
+    } finally {
+      clearAuthSession();
+      clearSessionLoginEmail();
+      clearResumeWizardSession();
+      setMobileMenuOpen(false);
+      setProfileOpen(false);
+      router.push("/login");
+      router.refresh();
+      setIsLoggingOut(false);
+    }
   };
 
   const navItems = [
@@ -89,12 +117,12 @@ export default function AppNavbar() {
               onMouseLeave={() => setProfileOpen(false)}
             >
               <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(STATIC_NAV_DISPLAY_NAME)}`}
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(navDisplayName)}`}
                 className="w-8 h-8 sm:w-9 sm:h-9 rounded-full"
                 alt=""
               />
               <span className="text-sm font-medium text-gray-900 hidden md:block">
-                {STATIC_NAV_DISPLAY_NAME}
+                {navDisplayName}
               </span>
               <ChevronDown
                 className={`w-4 h-4 text-gray-500 hidden md:block transition-transform duration-200 ${
@@ -112,6 +140,7 @@ export default function AppNavbar() {
               >
                 <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden py-1">
                   <button
+                    type="button"
                     onClick={() => router.push("/profile")}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   >
@@ -122,11 +151,13 @@ export default function AppNavbar() {
                   <div className="mx-3 border-t border-gray-100" />
 
                   <button
-                    onClick={handleLogout}
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    disabled={isLoggingOut}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
-                    Logout
+                    {isLoggingOut ? "Logging out..." : "Logout"}
                   </button>
                 </div>
               </div>
@@ -134,6 +165,7 @@ export default function AppNavbar() {
 
             {/* Mobile Menu Button */}
             <button
+              type="button"
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
@@ -167,6 +199,7 @@ export default function AppNavbar() {
               {/* Mobile Profile Links */}
               <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
                 <button
+                  type="button"
                   onClick={() => router.push("/profile")}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100 text-left text-sm"
                 >
@@ -174,11 +207,13 @@ export default function AppNavbar() {
                   Profile
                 </button>
                 <button
-                  onClick={handleLogout}
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  disabled={isLoggingOut}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-red-600 hover:bg-red-50 text-left text-sm"
                 >
                   <LogOut className="w-4 h-4" />
-                  Logout
+                  {isLoggingOut ? "Logging out..." : "Logout"}
                 </button>
               </div>
             </nav>

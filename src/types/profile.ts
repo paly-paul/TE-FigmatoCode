@@ -20,6 +20,13 @@ export interface ResumeExternalLinkEntry {
   url?: string;
 }
 
+export interface ResumeProjectEntry {
+  projectTitle?: string;
+  customerCompany?: string;
+  projectDescription?: string;
+  responsibilities?: string;
+}
+
 export interface ResumeLanguageEntry {
   language?: string;
   read?: string;
@@ -49,4 +56,7 @@ export interface ResumeProfileData {
   certifications?: ResumeCertificationEntry[];
   externalLinks?: ResumeExternalLinkEntry[];
   languages?: ResumeLanguageEntry[];
+  keySkills?: string[];
+  tools?: string[];
+  projects?: ResumeProjectEntry[];
 }

@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "export",
+  experimental: {
+    instrumentationHook: true,
+  },
   trailingSlash: true,
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   images: {
     unoptimized: true,
   },

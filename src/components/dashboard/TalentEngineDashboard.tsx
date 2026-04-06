@@ -15,18 +15,18 @@ import {
   DollarSign,
   TrendingUp,
   User,
+  Zap,
 } from "lucide-react";
 
 import AppNavbar from "../profile/AppNavbar";
+import CandidateAppShell from "../mobile/CandidateAppShell";
 import ActionDrawer from "../ActionDrawer";
 import PauseJobSearchModal from "../PauseJobSearchModal";
 import ReferFriendModal from "../ReferFriendModal";
 import VisibilityScoreCard from "./VisibilityScoreCard";
 import WelcomeBackModal from "./WelcomeBackModal";
-import {
-  DASHBOARD_WELCOME_PENDING_KEY,
-  STATIC_NAV_DISPLAY_NAME,
-} from "@/lib/dashboardWelcome";
+import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
+import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { DEFAULT_LOCATIONS, LocationDrawer } from "../ui/LocationDrawer";
 import {
   DEFAULT_FILTERS,
@@ -34,6 +34,7 @@ import {
   FilterState,
 } from "../ui/FilterDrawer";
 import Image from "next/image";
+import { useIsMobile } from "@/lib/useResponsive";
 
 interface ActionCard {
   id: number;
@@ -225,7 +226,12 @@ const JOB_LISTINGS: JobListing[] = [
   },
 ];
 
+function formatActionSubtitleForMobile(subtitle: string) {
+  return subtitle.replace(/\s*-\s*/g, " | ");
+}
+
 export default function TalentEngineDashboard() {
+  const isMobile = useIsMobile();
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
   const [activeActionTab, setActiveActionTab] = useState<"Job" | "Profile" | "General">("Job");
@@ -251,7 +257,7 @@ export default function TalentEngineDashboard() {
     try {
       if (window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1") {
         window.sessionStorage.removeItem(DASHBOARD_WELCOME_PENDING_KEY);
-        setWelcomeUserName(STATIC_NAV_DISPLAY_NAME);
+        setWelcomeUserName(getResolvedNavDisplayName());
         setWelcomeModalOpen(true);
       }
     } catch {
@@ -478,6 +484,187 @@ export default function TalentEngineDashboard() {
     </div>
   );
 
+  const jobSearchToggle = (
+    <button
+      type="button"
+      onClick={() => {
+        if (isLookingForJob) {
+          setShowPauseModal(true);
+        } else {
+          setIsLookingForJob(false);
+        }
+      }}
+      className="flex items-center gap-3 group"
+      aria-pressed={isLookingForJob}
+    >
+      <span
+        className={`text-sm font-medium transition-colors ${
+          isLookingForJob ? "text-gray-900" : "text-gray-500"
+        }`}
+      >
+        {isLookingForJob ? "Looking for a Job" : "Not looking right now"}
+      </span>
+      <span
+        className={`relative h-7 w-12 rounded-full transition-colors ${
+          isLookingForJob ? "bg-green-500" : "bg-gray-300"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-white transition-transform duration-200 ${
+            isLookingForJob ? "translate-x-5" : "translate-x-0"
+          }`}
+        >
+          {isLookingForJob ? (
+            <svg
+              className="h-3 w-3 text-green-500"
+              viewBox="0 0 12 12"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M10 3L4.5 8.5L2 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : null}
+        </span>
+      </span>
+    </button>
+  );
+
+  const actionTabsRow = (
+    <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+      <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {(["Job", "Profile", "General"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => {
+              setActiveActionTab(tab);
+              setActionCenterSeeAll(false);
+            }}
+            className={`shrink-0 border px-4 py-2 text-sm font-medium transition-colors ${
+              isMobile ? "rounded-full" : "rounded-md"
+            } ${
+              activeActionTab === tab
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-gray-200 bg-white text-gray-800"
+            }`}
+          >
+            {tab} ({actionTabCounts[tab]})
+          </button>
+        ))}
+      </div>
+      {hasMoreActions ? (
+        <button
+          type="button"
+          onClick={() => setActionCenterSeeAll((prev) => !prev)}
+          className="flex shrink-0 items-center justify-center gap-1 text-sm font-medium text-blue-600 sm:justify-start"
+        >
+          {actionCenterSeeAll ? "Show less" : "See All"}
+          {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+      ) : (
+        <span className="hidden sm:block sm:w-[88px]" aria-hidden />
+      )}
+    </div>
+  );
+
+  const dashboardModals = (
+    <>
+      <ActionDrawer
+        open={isDrawerOpen}
+        action={selectedAction}
+        onClose={() => setIsDrawerOpen(false)}
+      />
+      <PauseJobSearchModal
+        open={showPauseModal}
+        onClose={() => setShowPauseModal(false)}
+        onSave={handlePauseSave}
+      />
+      <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
+      <LocationDrawer
+        open={locationDrawerOpen}
+        onClose={() => setLocationDrawerOpen(false)}
+        onApply={(locations) => setSelectedLocations(locations)}
+        triggerRef={locationButtonRef}
+        initialSelected={selectedLocations}
+      />
+      <FilterDrawer
+        open={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        onApply={(filters) => setActiveFilters(filters)}
+        triggerRef={filterButtonRef}
+        initialFilters={activeFilters}
+      />
+      <WelcomeBackModal
+        open={welcomeModalOpen}
+        userName={welcomeUserName}
+        onClose={() => setWelcomeModalOpen(false)}
+        onYesOpenToOpportunities={() => setIsLookingForJob(true)}
+        onNotRightNow={() => setIsLookingForJob(false)}
+      />
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <CandidateAppShell activeBottomTab="action">
+          <main className="px-4 pt-4">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400 shadow-sm ring-2 ring-amber-200/60">
+                <Zap className="h-6 w-6 text-white" strokeWidth={2.5} />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight text-gray-900">Action Center</h1>
+            </div>
+
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+              {jobSearchToggle}
+            </div>
+
+            <div className="mb-4">{actionTabsRow}</div>
+
+            <div className="flex flex-col gap-3">
+              {displayedActions.map((card) => {
+                const badge = getActionBadge(card.type);
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAction(card);
+                      setIsDrawerOpen(true);
+                    }}
+                    className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <div
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+                      >
+                        {badge.icon}
+                        {badge.label}
+                      </div>
+                      <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
+                    </div>
+                    <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
+                    <p className="text-sm text-slate-500">
+                      {formatActionSubtitleForMobile(card.subtitle)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </main>
+        </CandidateAppShell>
+        {dashboardModals}
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#EEF0F3]">
       <AppNavbar />
@@ -486,88 +673,10 @@ export default function TalentEngineDashboard() {
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-lg sm:text-xl font-semibold">Action Center</h2>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (isLookingForJob) {
-                  setShowPauseModal(true);
-                } else {
-                  setIsLookingForJob(false);
-                }
-              }}
-              className="flex items-center gap-3 group"
-              aria-pressed={isLookingForJob}
-            >
-              <span
-                className={`text-xs sm:text-sm font-medium transition-colors ${isLookingForJob ? "text-gray-900" : "text-gray-500"
-                  }`}
-              >
-                {isLookingForJob ? "Looking for a Job" : "Not looking right now"}
-              </span>
-
-              <span
-                className={`w-11 h-6 rounded-full relative transition-colors ${isLookingForJob ? "bg-green-500" : "bg-gray-300"
-                  }`}
-              >
-                <span
-                  className={`absolute w-5 h-5 bg-white rounded-full top-0.5 left-0.5 transition-transform duration-200 flex items-center justify-center ${isLookingForJob ? "translate-x-5" : "translate-x-0"
-                    }`}
-                >
-                  {isLookingForJob ? (
-                    <svg
-                      className="w-3 h-3 text-green-500"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M10 3L4.5 8.5L2 6"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : null}
-                </span>
-              </span>
-            </button>
+            <div className="sm:[&_span]:text-sm sm:[&_span]:text-xs">{jobSearchToggle}</div>
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
-            <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-              {(["Job", "Profile", "General"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => {
-                    setActiveActionTab(tab);
-                    setActionCenterSeeAll(false);
-                  }}
-                  className={`px-3 sm:px-4 py-2 rounded-md border text-xs sm:text-sm whitespace-nowrap ${activeActionTab === tab
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-white text-gray-600 border-gray-200"
-                    }`}
-                >
-                  {tab} ({actionTabCounts[tab]})
-                </button>
-              ))}
-            </div>
-
-            {hasMoreActions ? (
-              <button
-                type="button"
-                onClick={() => setActionCenterSeeAll((prev) => !prev)}
-                className="flex items-center justify-center sm:justify-start text-blue-600 text-sm font-medium gap-1 hover:text-blue-700"
-              >
-                {actionCenterSeeAll ? "Show less" : "See All"}
-                {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </button>
-            ) : (
-              <span className="hidden sm:block sm:w-[88px]" aria-hidden />
-            )}
-          </div>
+          <div className="mb-6 [&_button]:rounded-md">{actionTabsRow}</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {displayedActions.map((card) => {
@@ -1046,47 +1155,7 @@ export default function TalentEngineDashboard() {
           </div>
         </div>
       </main>
-
-      <ActionDrawer
-        open={isDrawerOpen}
-        action={selectedAction}
-        onClose={() => setIsDrawerOpen(false)}
-      />
-
-      <PauseJobSearchModal
-        open={showPauseModal}
-        onClose={() => setShowPauseModal(false)}
-        onSave={handlePauseSave}
-      />
-
-      <ReferFriendModal
-        open={showReferModal}
-        onClose={() => setShowReferModal(false)}
-      />
-
-      <LocationDrawer
-        open={locationDrawerOpen}
-        onClose={() => setLocationDrawerOpen(false)}
-        onApply={(locations) => setSelectedLocations(locations)}
-        triggerRef={locationButtonRef}
-        initialSelected={selectedLocations}
-      />
-
-      <FilterDrawer
-        open={filterDrawerOpen}
-        onClose={() => setFilterDrawerOpen(false)}
-        onApply={(filters) => setActiveFilters(filters)}
-        triggerRef={filterButtonRef}
-        initialFilters={activeFilters}
-      />
-
-      <WelcomeBackModal
-        open={welcomeModalOpen}
-        userName={welcomeUserName}
-        onClose={() => setWelcomeModalOpen(false)}
-        onYesOpenToOpportunities={() => setIsLookingForJob(true)}
-        onNotRightNow={() => setIsLookingForJob(false)}
-      />
+      {dashboardModals}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { RefObject, useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { type ReactNode, RefObject, useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { BaseDrawer } from "./BaseDrawer";
+import { useIsBelowLg } from "@/lib/useResponsive";
 
 export interface FilterState {
   skills: string[];
@@ -46,6 +47,35 @@ export const DEFAULT_FILTERS: FilterState = {
   salaryMin: 0,
   salaryMax: 50000,
 };
+
+function CollapsibleFilterSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-gray-900">{title}</span>
+        {open ? (
+          <ChevronUp className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+        )}
+      </button>
+      {open ? <div className="pb-4">{children}</div> : null}
+    </div>
+  );
+}
 
 function CheckboxGroup({
   options,
@@ -196,6 +226,7 @@ export function FilterDrawer({
   triggerRef,
   initialFilters = {},
 }: FilterDrawerProps) {
+  const isCompactFilterUi = useIsBelowLg();
   const [skillSearch, setSkillSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>({
     ...DEFAULT_FILTERS,
@@ -216,88 +247,173 @@ export function FilterDrawer({
   const setValue = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
 
+  const skillsSearchInput = (
+    <div className="relative mb-4">
+      {isCompactFilterUi ? (
+        <>
+          <input
+            type="text"
+            placeholder="Search by name..."
+            value={skillSearch}
+            onChange={(event) => setSkillSearch(event.target.value)}
+            className="w-full rounded-lg border border-gray-200 py-2.5 pl-3 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
+            <Search className="h-3.5 w-3.5 text-gray-500" aria-hidden />
+          </div>
+        </>
+      ) : (
+        <>
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name..."
+            value={skillSearch}
+            onChange={(event) => setSkillSearch(event.target.value)}
+            className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </>
+      )}
+    </div>
+  );
+
+  const skillsBody = (
+    <>
+      {!isCompactFilterUi ? <p className="mb-3 text-sm font-semibold text-gray-900">Skills</p> : null}
+      {skillsSearchInput}
+      <p className="mb-3 text-sm font-medium text-gray-700">Popular Skills</p>
+      <CheckboxGroup
+        options={filteredSkills}
+        selected={filters.skills}
+        onChange={(value) => setValue("skills", value)}
+      />
+    </>
+  );
+
+  const employmentBody = (
+    <CheckboxGroup
+      options={EMPLOYMENT_TYPES}
+      selected={filters.employmentTypes}
+      onChange={(value) => setValue("employmentTypes", value)}
+    />
+  );
+
+  const seniorityBody = (
+    <CheckboxGroup
+      options={SENIORITY_LEVELS}
+      selected={filters.seniorityLevels}
+      onChange={(value) => setValue("seniorityLevels", value)}
+    />
+  );
+
+  const salaryBody = (
+    <SalaryRange
+      min={filters.salaryMin}
+      max={filters.salaryMax}
+      onMinChange={(value) => setValue("salaryMin", value)}
+      onMaxChange={(value) => setValue("salaryMax", value)}
+    />
+  );
+
   return (
     <BaseDrawer
       open={open}
       onClose={onClose}
       title="Filter"
       triggerRef={triggerRef}
-      footer={
-        <div className="flex items-center justify-between gap-3">
+      placement={isCompactFilterUi ? "bottom" : "right"}
+      headerActions={
+        isCompactFilterUi ? (
           <button
             type="button"
             onClick={() => setFilters(DEFAULT_FILTERS)}
-            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            className="text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             Reset
           </button>
-
+        ) : undefined
+      }
+      bodyClassName={isCompactFilterUi ? "px-4 pb-2 pt-0" : "px-5 py-5"}
+      contentClassName={isCompactFilterUi ? "space-y-0" : "space-y-6"}
+      footer={
+        isCompactFilterUi ? (
           <button
             type="button"
             onClick={() => {
               onApply(filters);
               onClose();
             }}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-2 rounded-md transition-colors focus:outline-none"
+            className="w-full rounded-lg bg-blue-600 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             Apply
           </button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setFilters(DEFAULT_FILTERS)}
+              className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
+            >
+              Reset
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onApply(filters);
+                onClose();
+              }}
+              className="rounded-md bg-blue-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none"
+            >
+              Apply
+            </button>
+          </div>
+        )
       }
     >
-      <div>
-        <p className="text-sm font-semibold text-gray-900 mb-3">Skills</p>
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={skillSearch}
-            onChange={(event) => setSkillSearch(event.target.value)}
-            className="w-full pl-8 pr-4 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+      {isCompactFilterUi ? (
+        <div>
+          <CollapsibleFilterSection title="Skills">
+            {skillsBody}
+          </CollapsibleFilterSection>
+          <CollapsibleFilterSection title="Type of Employment">
+            {employmentBody}
+          </CollapsibleFilterSection>
+          <CollapsibleFilterSection title="Seniority Level">
+            {seniorityBody}
+          </CollapsibleFilterSection>
+          <CollapsibleFilterSection title="Salary Range">
+            <div className="pt-1">{salaryBody}</div>
+          </CollapsibleFilterSection>
         </div>
-        <p className="text-sm font-medium text-gray-700 mb-3">Popular Skills</p>
-        <CheckboxGroup
-          options={filteredSkills}
-          selected={filters.skills}
-          onChange={(value) => setValue("skills", value)}
-        />
-      </div>
+      ) : (
+        <>
+          <div>
+            {skillsBody}
+          </div>
 
-      <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-100" />
 
-      <div>
-        <p className="text-sm font-semibold text-gray-900 mb-3">Type of Employment</p>
-        <CheckboxGroup
-          options={EMPLOYMENT_TYPES}
-          selected={filters.employmentTypes}
-          onChange={(value) => setValue("employmentTypes", value)}
-        />
-      </div>
+          <div>
+            <p className="mb-3 text-sm font-semibold text-gray-900">Type of Employment</p>
+            {employmentBody}
+          </div>
 
-      <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-100" />
 
-      <div>
-        <p className="text-sm font-semibold text-gray-900 mb-3">Seniority Level</p>
-        <CheckboxGroup
-          options={SENIORITY_LEVELS}
-          selected={filters.seniorityLevels}
-          onChange={(value) => setValue("seniorityLevels", value)}
-        />
-      </div>
+          <div>
+            <p className="mb-3 text-sm font-semibold text-gray-900">Seniority Level</p>
+            {seniorityBody}
+          </div>
 
-      <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-100" />
 
-      <div>
-        <p className="text-sm font-semibold text-gray-900 mb-4">Salary Range</p>
-        <SalaryRange
-          min={filters.salaryMin}
-          max={filters.salaryMax}
-          onMinChange={(value) => setValue("salaryMin", value)}
-          onMaxChange={(value) => setValue("salaryMax", value)}
-        />
-      </div>
+          <div>
+            <p className="mb-4 text-sm font-semibold text-gray-900">Salary Range</p>
+            {salaryBody}
+          </div>
+        </>
+      )}
     </BaseDrawer>
   );
 }

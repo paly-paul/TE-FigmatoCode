@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
-import { RightPanel } from "./RightPanel";
+import { RightPanel } from "@/components/desktop/RightPanel";
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -8,6 +8,14 @@ interface AuthLayoutProps {
   footerLinkLabel?: string;
   footerLinkHref?: string;
   showFooter?: boolean;
+  /** Renders below the white card (e.g. success stories on reset-password sent). */
+  belowCard?: ReactNode;
+  /** When true, the decorative right panel is hidden (avoids duplicating success stories with `belowCard`). */
+  hideRightPanel?: boolean;
+  /** Replaces the default testimonial `RightPanel` (e.g. Swiper Success Stories on new password). */
+  rightPanel?: ReactNode;
+  /** Subtle grid pattern over the left column (matches desktop split-screen mocks). */
+  leftPanelGrid?: boolean;
 }
 
 export function AuthLayout({
@@ -16,27 +24,47 @@ export function AuthLayout({
   footerLinkLabel,
   footerLinkHref,
   showFooter = false,
+  belowCard,
+  hideRightPanel = false,
+  rightPanel,
+  leftPanelGrid = false,
 }: AuthLayoutProps) {
   return (
     <div className="flex min-h-screen">
       {/*  Left Panel  */}
-      <div className="flex flex-col w-full lg:w-[45%] bg-[#F3F4F6] relative">
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-8 pt-7 pb-0">
-          <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-sm tracking-wide">
-              TE
+      <div
+        className={`relative flex flex-col bg-[#F3F4F6] ${
+          hideRightPanel ? "w-full" : "w-full lg:w-[45%]"
+        }`}
+      >
+        {leftPanelGrid ? (
+          <div
+            className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-[0.35]"
+            aria-hidden
+          />
+        ) : null}
+
+        <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5 px-8 pt-7 pb-0">
+            <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
+              <span className="text-white font-bold text-sm tracking-wide">
+                TE
+              </span>
+            </div>
+            <span className="font-semibold text-gray-800 text-base">
+              Talent Engine
             </span>
           </div>
-          <span className="font-semibold text-gray-800 text-base">
-            Talent Engine
-          </span>
-        </div>
 
-        {/* Card container — grows to fill remaining height */}
-        <div className="flex flex-1 items-center justify-center px-6 py-10">
+          {/* Card container — grows to fill remaining height */}
+          <div
+            className={`flex flex-1 flex-col px-6 py-10 ${
+              belowCard ? "items-center justify-start gap-8 overflow-y-auto" : "items-center justify-center"
+            }`}
+          >
           {/* White card */}
-          <div className="w-full max-w-[480px] bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="w-full max-w-[480px] shrink-0 bg-white rounded-2xl shadow-sm overflow-hidden">
             {/* Form content */}
             <div className="px-8 pt-8 pb-6">{children}</div>
 
@@ -53,11 +81,15 @@ export function AuthLayout({
               </div>
             )}
           </div>
+
+          {belowCard ? (
+            <div className="w-full max-w-[480px] shrink-0">{belowCard}</div>
+          ) : null}
+          </div>
         </div>
       </div>
 
-      {/*  Right Panel  */}
-      <RightPanel />
+      {!hideRightPanel ? (rightPanel ?? <RightPanel />) : null}
     </div>
   );
 }
