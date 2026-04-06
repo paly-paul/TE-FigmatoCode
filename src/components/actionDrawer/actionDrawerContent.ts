@@ -102,26 +102,60 @@ export const actionDrawerTimeline = {
 
 export const actionDrawerJobDescription = {
   overview: {
-    title: "Job Overview",
+    title: "Overview",
     body:
-      "We are seeking a Senior Engineer to join our team in Atlanta. This is an exciting opportunity to work on cutting-edge projects in a collaborative environment.",
+      "The Mechanical Completion (MC) Inspector plays a critical role in ensuring the successful execution of CO2 compression and pipeline projects. This position is based in Houston, United States, and involves conducting thorough inspections to guarantee compliance with project specifications and industry standards.",
   },
   responsibilities: {
     title: "Key Responsibilities",
     items: [
-      "Lead technical architecture and design decisions",
-      "Mentor junior engineers and conduct code reviews",
-      "Collaborate with cross-functional teams",
-      "Ensure high-quality code and best practices",
+      "Conduct mechanical completion inspections to ensure adherence to project specifications.",
+      "Review and validate inspection reports, documenting findings and recommendations.",
+      "Coordinate with project teams to facilitate timely completion of project milestones.",
+      "Monitor safety compliance during inspections and assist in resolving non-conformance issues.",
+      "Provide technical support to project stakeholders and participate in project meetings and updates.",
+      "Assist in final project handover documentation to ensure all aspects meet quality standards.",
     ],
   },
+  requirements: {
+    title: "Requirements",
+  },
   qualifications: {
-    title: "Required Qualifications",
+    title: "Qualifications",
     items: [
-      "5+ years of software engineering experience",
-      "Strong knowledge of modern web technologies",
-      "Experience with cloud platforms (AWS, Azure, or GCP)",
-      "Excellent communication and leadership skills",
+      "Mandatory certification as a Certified Welding Inspector (CWI).",
+      "Preferred certifications include NACE - Corrosion Technician and API 570 - Piping Inspector.",
+      "Strong knowledge of international codes, standards, and regulations related to mechanical completion and pipeline systems.",
+    ],
+  },
+  skillsAndExperience: {
+    title: "Skills and Experience",
+    items: [
+      "5-10 years of experience in Mechanical Inspection Techniques (Mandatory).",
+      "3-7 years of experience in Quality Assurance Procedures (Mandatory).",
+      "3-5 years of experience in Project Coordination (Preferred).",
+      "3-5 years of experience in Safety Compliance Standards (Mandatory).",
+      "3-5 years of experience in Documentation and Reporting (Preferred).",
+    ],
+  },
+  technicalSkills: {
+    title: "Technical Skills",
+    items: [
+      "Proficient in AutoCAD (Mandatory).",
+      "Familiarity with SmartPlant, SAP PM, and MS Project (Preferred).",
+      "Experience with NDT Equipment (Mandatory).",
+    ],
+  },
+  languageRequirements: {
+    title: "Language Requirements",
+    items: [
+      "Fluent in English, with good reading, speaking, and writing skills (Mandatory).",
+    ],
+  },
+  keySkills: {
+    title: "Key Skills",
+    items: [
+      "Proficient in SAP PM, Mechanical Completion, Safety Compliance, Welding inspection, Quality Management Systems, Commissioning documentation, Pipeline Operations, NDT, and Pipeline commissioning management.",
     ],
   },
 } as const;

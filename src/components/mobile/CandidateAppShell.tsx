@@ -34,6 +34,9 @@ type CandidateAppShellProps = {
   children: React.ReactNode;
   /** Highlights the bottom tab; omit on routes like /timesheet (none active). */
   activeBottomTab?: CandidateBottomTab;
+  onActionCenterClick?: () => void;
+  onJobsClick?: () => void;
+  onInsightsClick?: () => void;
   /** Set false for full-screen flows (e.g. mobile Jobs) with no tab bar. */
   showBottomNav?: boolean;
   /**
@@ -49,6 +52,9 @@ type CandidateAppShellProps = {
 export default function CandidateAppShell({
   children,
   activeBottomTab,
+  onActionCenterClick,
+  onJobsClick,
+  onInsightsClick,
   showBottomNav = true,
   timesheetNav,
 }: CandidateAppShellProps) {
@@ -94,7 +100,7 @@ export default function CandidateAppShell({
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#EEF0F3] flex flex-col">
+    <div className="flex h-[100svh] min-h-[100svh] flex-col overflow-hidden bg-[#EEF0F3]">
       <header className="sticky top-0 z-40 flex-shrink-0 bg-white border-b border-gray-200">
         <div className="flex h-14 items-center justify-between px-4">
           <Link
@@ -102,7 +108,8 @@ export default function CandidateAppShell({
             className="flex items-center gap-2 min-w-0"
             onClick={() => setMenuOpen(false)}
           >
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600">
+            <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-tl-xl rounded-br-xl bg-blue-600">
+              {/* <span className="absolute bottom-0 left-0 h-3 w-3 rounded-tr-[10px] bg-white" /> */}
               <span className="text-xs font-bold text-white">TE</span>
             </div>
             <span className="truncate text-base font-semibold text-gray-900">
@@ -195,7 +202,7 @@ export default function CandidateAppShell({
       <div
         className={`flex-1 min-h-0 overflow-y-auto ${
           showBottomNav
-            ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]"
+            ? "pb-0"
             : "pb-[env(safe-area-inset-bottom,0px)]"
         }`}
       >
@@ -204,7 +211,7 @@ export default function CandidateAppShell({
 
       {showBottomNav ? (
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)]"
+        className="sticky bottom-0 left-0 right-0 z-40 mt-auto border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)]"
         aria-label="Primary"
       >
         {timesheetNav ? (
@@ -258,8 +265,9 @@ export default function CandidateAppShell({
           </div>
         ) : (
           <div className="mx-auto grid h-[4.5rem] max-w-lg grid-cols-3">
-            <Link
-              href="/dashboard/"
+            <button
+              type="button"
+              onClick={onActionCenterClick ?? (() => router.push("/dashboard/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <span
@@ -278,10 +286,11 @@ export default function CandidateAppShell({
               >
                 Action Center
               </span>
-            </Link>
+            </button>
 
-            <Link
-              href="/jobs/"
+            <button
+              type="button"
+              onClick={onJobsClick ?? (() => router.push("/jobs/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <BriefcaseBusiness
@@ -297,10 +306,11 @@ export default function CandidateAppShell({
               >
                 Jobs
               </span>
-            </Link>
+            </button>
 
-            <Link
-              href="/dashboard/visibility-score/"
+            <button
+              type="button"
+              onClick={onInsightsClick ?? (() => router.push("/dashboard/visibility-score/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <BarChart3
@@ -320,7 +330,7 @@ export default function CandidateAppShell({
               >
                 Insights
               </span>
-            </Link>
+            </button>
           </div>
         )}
       </nav>

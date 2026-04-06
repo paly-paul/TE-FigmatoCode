@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, RefObject, useEffect, useRef } from "react";
+import { ReactNode, RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 export type DrawerPlacement = "right" | "bottom";
@@ -42,6 +42,28 @@ export function BaseDrawer({
 }: BaseDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const isBottom = placement === "bottom";
+  const [rendered, setRendered] = useState(open);
+  const [visible, setVisible] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      return;
+    }
+
+    setVisible(false);
+    const timeout = window.setTimeout(() => setRendered(false), 300);
+    return () => window.clearTimeout(timeout);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!rendered || !open) return;
+
+    // Force one paint in the hidden position before activating the transition.
+    setVisible(false);
+    const timeout = window.setTimeout(() => setVisible(true), 20);
+    return () => window.clearTimeout(timeout);
+  }, [rendered, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +77,24 @@ export function BaseDrawer({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previousTouchAction = document.body.style.touchAction;
+    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    document.body.style.overscrollBehavior = "none";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction = previousTouchAction;
+      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,13 +116,15 @@ export function BaseDrawer({
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [open, onClose, triggerRef]);
 
+  if (!rendered) return null;
+
   return (
     <>
       <div
         aria-hidden="true"
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-black/20 transition-opacity duration-300 ${
-          open ? "visible opacity-100" : "invisible opacity-0"
+        className={`fixed inset-0 z-40 overscroll-none bg-black/20 transition-opacity duration-300 ${
+          visible ? "opacity-100" : "opacity-0"
         }`}
       />
 
@@ -91,13 +133,13 @@ export function BaseDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? title}
-        className={`z-50 flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${
+        className={`z-50 flex flex-col overscroll-contain bg-white shadow-2xl transition-transform duration-300 ease-out ${
           isBottom
-            ? `fixed bottom-0 left-0 right-0 max-h-[min(92vh,900px)] w-full rounded-t-2xl ${panelClassName} ${
-                open ? "translate-y-0" : "translate-y-full pointer-events-none"
-              }`
+            ? `fixed bottom-0 left-0 right-0 max-h-[min(92svh,900px)] w-full rounded-t-2xl ${
+                visible ? "translate-y-0" : "translate-y-full"
+              } ${panelClassName}`
             : `fixed top-0 right-0 h-full w-full ${widthClassName} ${
-                open ? "translate-x-0" : "translate-x-full pointer-events-none"
+                visible ? "translate-x-0" : "translate-x-full"
               }`
         }`}
       >

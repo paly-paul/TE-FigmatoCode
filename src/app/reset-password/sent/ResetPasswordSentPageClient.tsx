@@ -7,10 +7,10 @@ import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessS
 import { MobileResetPasswordSentScreen } from "@/components/mobile/MobileResetPasswordSentScreen";
 import { Button } from "@/components/ui/Button";
 import { EnvelopeCheckIllustration } from "@/components/icons";
-import { getViewportIsMobile, MOBILE_MQ } from "@/lib/mobileViewport";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 
 export default function ResetPasswordSentPageClient() {
-  const [isMobileViewport, setIsMobileViewport] = useState(getViewportIsMobile);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);

@@ -227,6 +227,9 @@ export function FilterDrawer({
   initialFilters = {},
 }: FilterDrawerProps) {
   const isCompactFilterUi = useIsBelowLg();
+  const [resolvedPlacement, setResolvedPlacement] = useState<"bottom" | "right">(
+    isCompactFilterUi ? "bottom" : "right"
+  );
   const [skillSearch, setSkillSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>({
     ...DEFAULT_FILTERS,
@@ -234,10 +237,16 @@ export function FilterDrawer({
   });
 
   useEffect(() => {
+    if (open) return;
+    setResolvedPlacement(isCompactFilterUi ? "bottom" : "right");
+  }, [isCompactFilterUi, open]);
+
+  useEffect(() => {
     if (!open) return;
 
     setFilters({ ...DEFAULT_FILTERS, ...initialFilters });
     setSkillSearch("");
+    setResolvedPlacement(isCompactFilterUi ? "bottom" : "right");
   }, [open, initialFilters]);
 
   const filteredSkills = SKILLS.filter((skill) =>
@@ -321,9 +330,9 @@ export function FilterDrawer({
       onClose={onClose}
       title="Filter"
       triggerRef={triggerRef}
-      placement={isCompactFilterUi ? "bottom" : "right"}
+      placement={resolvedPlacement}
       headerActions={
-        isCompactFilterUi ? (
+        resolvedPlacement === "bottom" ? (
           <button
             type="button"
             onClick={() => setFilters(DEFAULT_FILTERS)}
@@ -333,10 +342,10 @@ export function FilterDrawer({
           </button>
         ) : undefined
       }
-      bodyClassName={isCompactFilterUi ? "px-4 pb-2 pt-0" : "px-5 py-5"}
-      contentClassName={isCompactFilterUi ? "space-y-0" : "space-y-6"}
+      bodyClassName={resolvedPlacement === "bottom" ? "px-4 pb-2 pt-0" : "px-5 py-5"}
+      contentClassName={resolvedPlacement === "bottom" ? "space-y-0" : "space-y-6"}
       footer={
-        isCompactFilterUi ? (
+        resolvedPlacement === "bottom" ? (
           <button
             type="button"
             onClick={() => {
@@ -371,7 +380,7 @@ export function FilterDrawer({
         )
       }
     >
-      {isCompactFilterUi ? (
+      {resolvedPlacement === "bottom" ? (
         <div>
           <CollapsibleFilterSection title="Skills">
             {skillsBody}

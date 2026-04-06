@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/Input";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
-import { getViewportIsMobile, MOBILE_MQ } from "@/lib/mobileViewport";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { useCandidateLogin } from "@/services/login";
 
 export default function LoginPageClient() {
@@ -23,7 +23,7 @@ export default function LoginPageClient() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const { submit, isLoading, error } = useCandidateLogin();
-  const [isMobileViewport, setIsMobileViewport] = useState(getViewportIsMobile);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);

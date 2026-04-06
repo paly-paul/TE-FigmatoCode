@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { BaseDrawer } from "./ui/BaseDrawer";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 import {
   actionDrawerChrome,
   actionDrawerFirstRecruiterCardId,
@@ -52,6 +53,7 @@ const metaIcons = {
 } as const;
 
 export default function ActionDrawer({ open, onClose, action }: ActionDrawerProps) {
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [activeTab, setActiveTab] = useState<ActionDrawerTab>("Job Action");
   const [availableDate, setAvailableDate] = useState<string>(actionDrawerFormDefaults.availableDate);
   const [expectedSalary, setExpectedSalary] = useState<string>(actionDrawerFormDefaults.expectedSalary);
@@ -68,6 +70,15 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
       setIsProposalExpanded(true);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(MOBILE_MQ);
+    const sync = () => setIsMobileViewport(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const normalizedTitle = action?.title.toLowerCase() ?? "";
   const isRecruiterInterestReceived =
@@ -314,11 +325,120 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
     <div className="flex justify-end">
       <button
         type="button"
-        className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6"
+        className={`rounded-md bg-[#1447E6] text-sm font-medium text-white transition hover:bg-[#103CC1] ${
+          isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
+        }`}
       >
-        {actionDrawerFooter.submit}
+        {isMobileViewport ? "Apply" : actionDrawerFooter.submit}
       </button>
     </div>
+  );
+
+  const mobileDrawerContent = (
+    <>
+      <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A]">
+            {actionDrawerJobSummary.matchBadge}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#5E7397]">{actionDrawerJobSummary.postedAgo}</span>
+            <ChevronDown className="h-4 w-4 text-[#202939]" />
+          </div>
+        </div>
+
+        <h3 className="text-base font-semibold text-[#202939]">{roleTitle}</h3>
+        <p className="mt-2 flex items-center gap-2 text-sm text-[#5E7397]">
+          <MapPin size={16} className="shrink-0" />
+          <span>
+            {locationLabel} | {actionDrawerJobSummary.locationCountrySuffix}
+          </span>
+        </p>
+      </div>
+
+      <div className="space-y-5 rounded-sm border border-[#D8E3F8] bg-white p-4">
+        <section>
+          <h3 className="mb-4 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.overview.title}
+          </h3>
+          <p className="text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.overview.body}
+          </p>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.responsibilities.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.responsibilities.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.requirements.title}
+          </h4>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.qualifications.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.qualifications.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.skillsAndExperience.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.skillsAndExperience.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.technicalSkills.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.technicalSkills.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.languageRequirements.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.languageRequirements.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
+            {actionDrawerJobDescription.keySkills.title}
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
+            {actionDrawerJobDescription.keySkills.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </>
   );
 
   return (
@@ -326,9 +446,10 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
       open={open}
       onClose={onClose}
       title={actionDrawerChrome.drawerTitle}
+      placement={isMobileViewport ? "bottom" : "right"}
       widthClassName="w-full sm:w-[94%] lg:w-[90%] xl:w-[1120px]"
-      bodyClassName="px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"
-      contentClassName="mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"
+      bodyClassName={isMobileViewport ? "px-4 py-3" : "px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"}
+      contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
       footer={footerContent}
       headerActions={
         <div className="text-right">
@@ -336,6 +457,8 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
         </div>
       }
     >
+      {isMobileViewport ? mobileDrawerContent : (
+        <>
       <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
@@ -482,6 +605,8 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
           </div>
         </div>
       ) : null}
+        </>
+      )}
     </BaseDrawer>
   );
 }

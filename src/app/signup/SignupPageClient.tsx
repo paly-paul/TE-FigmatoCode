@@ -9,7 +9,7 @@ import {
 } from "@/components/auth/SocialButtons";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { getViewportIsMobile, MOBILE_MQ } from "@/lib/mobileViewport";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { useSignupSubmit } from "@/services/signup";
 
 export default function SignupPageClient() {
@@ -20,7 +20,7 @@ export default function SignupPageClient() {
     lastName: "",
     password: "",
   });
-  const [isMobileViewport, setIsMobileViewport] = useState(getViewportIsMobile);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);

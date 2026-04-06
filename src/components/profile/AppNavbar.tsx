@@ -19,9 +19,8 @@ export default function AppNavbar() {
 
   const bellRef = useRef<HTMLButtonElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
-  const [navDisplayName, setNavDisplayName] = useState(() =>
-    typeof window !== "undefined" ? getResolvedNavDisplayName() : "User"
-  );
+  // Keep the initial render deterministic (server + first client render must match).
+  const [navDisplayName, setNavDisplayName] = useState("User");
 
   useEffect(() => {
     setNavDisplayName(getResolvedNavDisplayName());
@@ -69,7 +68,7 @@ export default function AppNavbar() {
             onClick={() => router.push("/dashboard")}
             className="flex items-center gap-2 sm:gap-3"
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-tl-xl rounded-br-xl flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">TE</span>
             </div>
             <span className="text-base sm:text-lg font-semibold text-gray-900">

@@ -7,14 +7,14 @@ import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessS
 import { MobileNewPasswordScreen } from "@/components/mobile/MobileNewPasswordScreen";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { getViewportIsMobile, MOBILE_MQ } from "@/lib/mobileViewport";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 
 export default function NewPasswordPageClient() {
   const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [isMobileViewport, setIsMobileViewport] = useState(getViewportIsMobile);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);

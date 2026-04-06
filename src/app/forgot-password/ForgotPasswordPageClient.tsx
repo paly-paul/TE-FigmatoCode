@@ -6,12 +6,12 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { MobileForgotPasswordScreen } from "@/components/mobile/MobileForgotPasswordScreen";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { getViewportIsMobile, MOBILE_MQ } from "@/lib/mobileViewport";
+import { MOBILE_MQ } from "@/lib/mobileViewport";
 
 export default function ForgotPasswordPageClient() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [isMobileViewport, setIsMobileViewport] = useState(getViewportIsMobile);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);

@@ -6,6 +6,7 @@ import {
   Search,
   MapPin,
   Bookmark,
+  Clock3,
   Repeat,
   Share2,
   SlidersHorizontal,
@@ -13,6 +14,7 @@ import {
   ChevronUp,
   Calendar,
   DollarSign,
+  EllipsisVertical,
   TrendingUp,
   User,
   Zap,
@@ -232,8 +234,11 @@ function formatActionSubtitleForMobile(subtitle: string) {
 
 export default function TalentEngineDashboard() {
   const isMobile = useIsMobile();
+  const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
+  const [mobileApplicationSource, setMobileApplicationSource] = useState<"Applied By You" | "Recruiter Added">("Applied By You");
+  const [mobileApplicationStage, setMobileApplicationStage] = useState("Stage");
   const [activeActionTab, setActiveActionTab] = useState<"Job" | "Profile" | "General">("Job");
   const [actionCenterSeeAll, setActionCenterSeeAll] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -498,21 +503,18 @@ export default function TalentEngineDashboard() {
       aria-pressed={isLookingForJob}
     >
       <span
-        className={`text-sm font-medium transition-colors ${
-          isLookingForJob ? "text-gray-900" : "text-gray-500"
-        }`}
+        className={`text-sm font-medium transition-colors ${isLookingForJob ? "text-gray-900" : "text-gray-500"
+          }`}
       >
         {isLookingForJob ? "Looking for a Job" : "Not looking right now"}
       </span>
       <span
-        className={`relative h-7 w-12 rounded-full transition-colors ${
-          isLookingForJob ? "bg-green-500" : "bg-gray-300"
-        }`}
+        className={`relative h-7 w-12 rounded-full transition-colors ${isLookingForJob ? "bg-green-500" : "bg-gray-300"
+          }`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-white transition-transform duration-200 ${
-            isLookingForJob ? "translate-x-5" : "translate-x-0"
-          }`}
+          className={`absolute top-0.5 left-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-white transition-transform duration-200 ${isLookingForJob ? "translate-x-5" : "translate-x-0"
+            }`}
         >
           {isLookingForJob ? (
             <svg
@@ -546,13 +548,11 @@ export default function TalentEngineDashboard() {
               setActiveActionTab(tab);
               setActionCenterSeeAll(false);
             }}
-            className={`shrink-0 border px-4 py-2 text-sm font-medium transition-colors ${
-              isMobile ? "rounded-full" : "rounded-md"
-            } ${
-              activeActionTab === tab
+            className={`shrink-0 border px-4 py-2 text-sm font-medium transition-colors ${isMobile ? "rounded-full" : "rounded-md"
+              } ${activeActionTab === tab
                 ? "border-blue-500 bg-blue-50 text-blue-700"
                 : "border-gray-200 bg-white text-gray-800"
-            }`}
+              }`}
           >
             {tab} ({actionTabCounts[tab]})
           </button>
@@ -611,54 +611,393 @@ export default function TalentEngineDashboard() {
   );
 
   if (isMobile) {
+    const mobileActionCenter = (
+      <main className="px-4 pt-4">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400 shadow-sm ring-2 ring-amber-200/60">
+            <Zap className="h-6 w-6 text-white" strokeWidth={2.5} />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-gray-900">Action Center</h1>
+        </div>
+
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+          {jobSearchToggle}
+        </div>
+
+        <div className="mb-4">{actionTabsRow}</div>
+
+        <div className="flex flex-col gap-3">
+          {displayedActions.map((card) => {
+            const badge = getActionBadge(card.type);
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => {
+                  setSelectedAction(card);
+                  setIsDrawerOpen(true);
+                }}
+                className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+                  >
+                    {badge.icon}
+                    {badge.label}
+                  </div>
+                  <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
+                </div>
+                <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
+                <p className="text-sm text-slate-500">
+                  {formatActionSubtitleForMobile(card.subtitle)}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </main>
+    );
+
+    const mobileJobs = (
+      <main className="px-4 pt-4 pb-6">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Jobs</h1>
+          {jobSearchToggle}
+        </div>
+
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {(["Recommended", "Your Applications"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`min-h-[40px] shrink-0 rounded-full border px-5 text-sm font-medium transition-colors ${activeTab === tab
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 bg-white text-gray-700"
+                }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "Recommended" ? (
+          <>
+            <div className="relative mb-3">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                type="search"
+                placeholder="Search by job name..."
+                autoComplete="off"
+                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
+                <Search className="h-4 w-4 text-gray-500" aria-hidden />
+              </div>
+            </div>
+
+            <div className="mb-5 flex gap-2">
+              <button
+                ref={locationButtonRef}
+                type="button"
+                onClick={() => setLocationDrawerOpen(true)}
+                className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-left text-sm text-gray-900"
+              >
+                <MapPin className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{primaryLocation}</span>
+                {extraCount > 0 ? (
+                  <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    +{extraCount}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                aria-label={showSavedOnly ? "Show all jobs" : "Show saved jobs only"}
+                aria-pressed={showSavedOnly}
+                onClick={() => setShowSavedOnly((prev) => !prev)}
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-white ${showSavedOnly ? "border-blue-600 text-blue-600" : "border-gray-200 text-gray-700"
+                  }`}
+              >
+                <Bookmark className="h-4 w-4" />
+              </button>
+              <button
+                ref={filterButtonRef}
+                type="button"
+                onClick={() => setFilterDrawerOpen(true)}
+                aria-label="Filters"
+                className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-white ${activeFilterCount > 0 ? "border-blue-600 text-blue-600" : "border-gray-200 text-gray-700"
+                  }`}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+
+            {recommendedJobs.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {recommendedJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    className="group flex min-h-[240px] flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
+                  >
+                    <div className="mb-3 flex justify-between">
+                      <span className={`rounded-full px-3 py-1 text-xs ${getStatusColor(job.status)}`}>
+                        {job.status}
+                      </span>
+                      <span className="text-xs text-gray-500">{job.postedTime}</span>
+                    </div>
+
+                    <div className="mb-3">
+                      <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                    </div>
+
+                    <div className="mb-4 space-y-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="h-4 w-4 shrink-0 text-blue-600" />
+                        <span className="truncate">{job.location} | {job.locationFull}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <DollarSign size={16} className="h-4 w-4 shrink-0 text-slate-500" />
+                        <span>{job.salary}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar size={16} className="h-4 w-4 shrink-0 text-slate-500" />
+                        <span>{job.startDate}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Match</span>
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4, 5].map((bar) => (
+                            <div
+                              key={bar}
+                              className={`h-2.5 w-2.5 rounded-[2px] ${bar <= Math.ceil(job.matchPercentage / 20)
+                                  ? getMatchColor(job.matchPercentage)
+                                  : "bg-gray-200"
+                                }`}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{job.matchPercentage}%</span>
+                      </div>
+
+                      <div className="flex w-full items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowReferModal(true)}
+                          className="h-10 w-10 shrink-0 rounded-lg border border-gray-200"
+                        >
+                          <Share2 size={16} className="mx-auto" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
+                          aria-pressed={savedJobIds.has(job.id)}
+                          onClick={() => handleToggleSavedJob(job.id)}
+                          className={`h-10 w-10 shrink-0 rounded-lg border transition-colors ${savedJobIds.has(job.id)
+                              ? "border-blue-600 bg-transparent text-blue-600"
+                              : "border-gray-200 text-gray-700"
+                            }`}
+                        >
+                          <Bookmark size={16} className="mx-auto" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleJobApplyClick(job)}
+                          className="flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-sm text-gray-800 transition-all hover:border-blue-600 hover:bg-blue-600 hover:text-white"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              renderEmptyJobs("Try broadening your search, location, or salary range.")
+            )}
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex border-b border-[#D8E2F1]">
+              {(["Applied By You", "Recruiter Added"] as const).map((source) => (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => setMobileApplicationSource(source)}
+                  className={`flex items-center gap-2 border-b-4 px-2 pb-3 pt-1 text-sm font-medium ${mobileApplicationSource === source
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-[#60708F]"
+                    }`}
+                >
+                  <Clock3 className="h-4 w-4" />
+                  {source}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative mb-3">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                type="search"
+                placeholder="Search by job name..."
+                autoComplete="off"
+                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
+                <Search className="h-4 w-4 text-gray-500" aria-hidden />
+              </div>
+            </div>
+
+            <div className="mb-5 flex justify-between gap-2">
+              <div className="relative mb-4 w-full">
+                <select
+                  value={mobileApplicationStage}
+                  onChange={(event) => setMobileApplicationStage(event.target.value)}
+                  className="h-11 w-full appearance-none rounded-lg border border-gray-200 bg-white pl-4 pr-10 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {["Stage", "Received", "Shortlisted", "Interview", "Rejected"].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+
+              <button
+                ref={filterButtonRef}
+                type="button"
+                onClick={() => setFilterDrawerOpen(true)}
+                aria-label="Filters"
+                className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-white ${activeFilterCount > 0 ? "border-blue-600 text-blue-600" : "border-gray-200 text-gray-700"
+                  }`}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+
+            {applicationJobs.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {applicationJobs
+                  .filter((job) => mobileApplicationStage === "Stage" || job.stage === mobileApplicationStage)
+                  .map((job) => (
+                    <div
+                      key={job.id}
+                      className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="mb-4">
+                        <span className={`inline-flex rounded px-2.5 py-1 text-xs font-medium ${getStageStyle(job.stage)}`}>
+                          {job.stage}
+                        </span>
+                      </div>
+
+                      <div className="mb-4">
+                        <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                        <p className="mt-1 text-sm text-gray-700">{job.company}</p>
+                        <p className="mt-1 text-sm text-[#60708F]">
+                          {job.location} | {job.locationFull}
+                        </p>
+                      </div>
+
+                      <div className="mb-5 flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Match</span>
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4, 5].map((bar) => (
+                            <div
+                              key={bar}
+                              className={`h-2.5 w-2.5 rounded-[2px] ${bar <= Math.ceil(job.matchPercentage / 20)
+                                  ? getMatchColor(job.matchPercentage)
+                                  : "bg-gray-200"
+                                }`}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{job.matchPercentage}%</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
+                        >
+                          <Clock3 className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleJobApplyClick(job)}
+                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
+                        >
+                          <Repeat className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
+                        >
+                          <EllipsisVertical className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              renderEmptyJobs("No applications match the current filter combination.")
+            )}
+          </>
+        )}
+      </main>
+    );
+
+    const mobileInsights = (
+      <main className="px-4 pt-4 pb-6">
+        <h1 className="mb-5 text-2xl font-bold tracking-tight text-gray-900">Insights</h1>
+
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex gap-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm bg-[#EDF2FA] text-blue-600">
+              <TrendingUp className="h-7 w-7" strokeWidth={2} />
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900">Matching roles found!</h3>
+              <p className="mt-1 text-sm leading-6 text-[#60708F]">
+                Your profile matches {visibleJobs.length} active {visibleJobs.length === 1 ? "role" : "roles"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <VisibilityScoreCard value={80} className="shadow-sm" />
+      </main>
+    );
+
     return (
       <>
-        <CandidateAppShell activeBottomTab="action">
-          <main className="px-4 pt-4">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400 shadow-sm ring-2 ring-amber-200/60">
-                <Zap className="h-6 w-6 text-white" strokeWidth={2.5} />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight text-gray-900">Action Center</h1>
-            </div>
-
-            <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-              {jobSearchToggle}
-            </div>
-
-            <div className="mb-4">{actionTabsRow}</div>
-
-            <div className="flex flex-col gap-3">
-              {displayedActions.map((card) => {
-                const badge = getActionBadge(card.type);
-                return (
-                  <button
-                    key={card.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedAction(card);
-                      setIsDrawerOpen(true);
-                    }}
-                    className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
-                  >
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                      <div
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
-                      >
-                        {badge.icon}
-                        {badge.label}
-                      </div>
-                      <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
-                    </div>
-                    <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
-                    <p className="text-sm text-slate-500">
-                      {formatActionSubtitleForMobile(card.subtitle)}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </main>
+        <CandidateAppShell
+          activeBottomTab={mobileBottomTab}
+          onActionCenterClick={() => setMobileBottomTab("action")}
+          onJobsClick={() => setMobileBottomTab("jobs")}
+          onInsightsClick={() => setMobileBottomTab("insights")}
+        >
+          {mobileBottomTab === "jobs"
+            ? mobileJobs
+            : mobileBottomTab === "insights"
+              ? mobileInsights
+              : mobileActionCenter}
         </CandidateAppShell>
         {dashboardModals}
       </>
