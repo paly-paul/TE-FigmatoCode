@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/Button";
 import { BaseDrawer } from "@/components/ui/BaseDrawer";
 import { SmallUploadIcon, TrashIcon } from "@/components/icons";
 import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
-import { getCandidateId } from "@/lib/authSession";
+import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { getCandidateProfileData } from "@/services/profile";
+import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
@@ -33,6 +33,7 @@ const languageRatings = [
   "Basic",
 ];
 const languageOptions = ["English", "Spanish", "French", "Hindi", "Portuguese", "Other"];
+const supportedCountryCodes = ["+1", "+91", "+44"];
 
 interface EducationEntry {
   id: string;
@@ -157,6 +158,56 @@ function normalizeExperienceMonths(value: string | undefined): string {
   return String(Math.min(11, Math.max(0, n)));
 }
 
+function normalizeGender(value: string | undefined): string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (["m", "male", "man"].includes(normalized)) return "Male";
+  if (["f", "female", "woman"].includes(normalized)) return "Female";
+  if (["other", "others", "non-binary", "non binary"].includes(normalized)) return "Other";
+  return value?.trim() ?? "";
+}
+
+function normalizeCountryCode(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  const match = trimmed.match(/^\+\d{1,4}/);
+  return match?.[0] ?? trimmed;
+}
+
+function normalizeDateForInput(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const direct = new Date(trimmed);
+  if (!Number.isNaN(direct.getTime())) {
+    return direct.toISOString().slice(0, 10);
+  }
+
+  const dmy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, "0");
+    const month = dmy[2].padStart(2, "0");
+    const year = dmy[3].length === 2 ? `19${dmy[3]}` : dmy[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  const monthName = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (monthName) {
+    const parsed = new Date(`${monthName[1]} ${monthName[2]}, ${monthName[3]}`);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+  }
+
+  return "";
+}
+
+function withCurrentOption(options: string[], currentValue: string) {
+  const value = currentValue.trim();
+  return value && !options.includes(value) ? [value, ...options] : options;
+}
+
 const initialForm: BasicDetailsForm = {
   professionalTitle: "",
   expYears: "",
@@ -182,26 +233,252 @@ const fieldClass = (hasError: boolean) =>
     hasError ? "border-red-400" : "border-gray-300"
   }`;
 
-function buildGeneratedSummary(form: BasicDetailsForm, prompt: string) {
-  const title = form.professionalTitle.trim() || "professional";
-  const years = form.expYears ? `${form.expYears}+ years` : "several years";
-  const months = form.expMonths && form.expMonths !== "0" ? ` and ${form.expMonths} months` : "";
-  const location = form.currentLocation.trim();
-  const preferences = prompt.trim().replace(/\s+/g, " ");
-  const focusAreas = [
-    form.preferredLocation.trim() ? `open to opportunities in ${form.preferredLocation.trim()}` : "",
-    form.nationality ? `bringing a ${form.nationality} market perspective` : "",
-    preferences ? `with emphasis on ${preferences}` : "",
+function buildGeneratedSummary(
+  form: BasicDetailsForm,
+  prompt: string,
+  profile: ResumeProfileData = {}
+) {
+  return buildGeneratedSummaryFromProfile(form, prompt, profile);
+}
+
+function cleanPhrase(value: string | undefined | null) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function sentenceCase(value: string) {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function dedupeStrings(values: Array<string | undefined | null>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => cleanPhrase(value))
+        .filter(Boolean)
+    )
+  );
+}
+
+function formatList(values: string[]) {
+  if (values.length <= 1) return values[0] ?? "";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
+
+function stripTrailingPeriod(value: string) {
+  return value.replace(/\.+$/, "").trim();
+}
+
+function trimToSentenceBoundary(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+
+  const sliced = normalized.slice(0, maxLength);
+  const lastBoundary = Math.max(
+    sliced.lastIndexOf(". "),
+    sliced.lastIndexOf("; "),
+    sliced.lastIndexOf(", ")
+  );
+
+  if (lastBoundary > 120) {
+    return sliced.slice(0, lastBoundary).trim().replace(/[;,]$/, "");
+  }
+
+  return sliced.trim().replace(/[;,]$/, "");
+}
+
+function extractPromptFocus(prompt: string) {
+  const cleaned = cleanPhrase(prompt)
+    .replace(/^generate\s+(me\s+)?/i, "")
+    .replace(/^create\s+(me\s+)?/i, "")
+    .replace(/^write\s+(me\s+)?/i, "")
+    .replace(/^a\s+professional\s+summary\s+/i, "")
+    .replace(/^professional\s+summary\s+/i, "")
+    .replace(/^summary\s+/i, "")
+    .replace(/^for\s+/i, "")
+    .replace(/^an?\s+/i, "");
+
+  return stripTrailingPeriod(cleaned);
+}
+
+function looksLikeResumeNoise(value: string) {
+  const normalized = value.toLowerCase();
+  return (
+    /^languages?\s*:/i.test(value) ||
+    /^certifications?\s*:/i.test(value) ||
+    /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(value) ||
+    /\b\d{4}\b/.test(value) ||
+    /\bintern\b/i.test(value) ||
+    value.length > 140
+  );
+}
+
+function isRelevantSkillForPrompt(skill: string, promptFocus: string, title: string) {
+  const normalizedSkill = skill.toLowerCase();
+  const normalizedPrompt = promptFocus.toLowerCase();
+  const normalizedTitle = title.toLowerCase();
+
+  if (!normalizedPrompt) return true;
+  if (normalizedPrompt.includes("backend")) {
+    return /(api|node|java|python|sql|spring|backend|server|database|microservice|aws|docker|kubernetes)/i.test(normalizedSkill);
+  }
+  if (normalizedPrompt.includes("frontend")) {
+    return /(react|javascript|typescript|html|css|ui|frontend|angular|vue)/i.test(normalizedSkill);
+  }
+  if (normalizedPrompt.includes("mobile")) {
+    return /(flutter|dart|android|ios|react native|mobile)/i.test(normalizedSkill);
+  }
+  if (normalizedPrompt.includes("devops")) {
+    return /(aws|docker|kubernetes|ci\/cd|terraform|devops|linux)/i.test(normalizedSkill);
+  }
+
+  return normalizedPrompt.includes(normalizedSkill) || normalizedTitle.includes(normalizedSkill);
+}
+
+function pickProjectHighlight(projects: ResumeProfileData["projects"], promptFocus: string) {
+  if (!projects?.length) return "";
+
+  const promptTokens = normalizePromptTokens(promptFocus);
+  const candidates = projects
+    .map((project) => {
+      const bits = [
+        cleanPhrase(project.projectTitle),
+        cleanPhrase(project.projectDescription),
+        cleanPhrase(project.responsibilities),
+      ].filter(Boolean);
+      const text = bits.join(". ");
+      const lowered = text.toLowerCase();
+      const score = promptTokens.reduce((count, token) => (lowered.includes(token) ? count + 1 : count), 0);
+      return { text, score };
+    })
+    .filter((item) => item.text && !looksLikeResumeNoise(item.text))
+    .sort((a, b) => b.score - a.score || a.text.length - b.text.length);
+
+  return candidates[0]?.text ? trimToSentenceBoundary(candidates[0].text, 140) : "";
+}
+
+function normalizePromptTokens(prompt: string) {
+  return cleanPhrase(prompt)
+    .toLowerCase()
+    .split(/[^a-z0-9+#./-]+/)
+    .filter((token) => token.length >= 3);
+}
+
+function pickRelevantSkills(prompt: string, candidates: string[]) {
+  const promptTokens = normalizePromptTokens(prompt);
+  if (!promptTokens.length) return candidates.slice(0, 4);
+
+  const scored = candidates
+    .map((skill) => {
+      const normalized = skill.toLowerCase();
+      const score = promptTokens.reduce((count, token) => {
+        return normalized.includes(token) ? count + 1 : count;
+      }, 0);
+      return { skill, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const matched = scored.filter((item) => item.score > 0).map((item) => item.skill);
+  return (matched.length ? matched : candidates).slice(0, 4);
+}
+
+function buildGeneratedSummaryFromProfile(
+  form: BasicDetailsForm,
+  prompt: string,
+  profile: ResumeProfileData
+) {
+  const normalizedPrompt = cleanPhrase(prompt);
+  const promptFocus = extractPromptFocus(prompt);
+  const title = cleanPhrase(form.professionalTitle) || cleanPhrase(profile.professionalTitle) || "professional";
+  const years = cleanPhrase(form.expYears) || cleanPhrase(profile.experienceYears);
+  const months = cleanPhrase(form.expMonths) || cleanPhrase(profile.experienceMonths);
+  const experienceText = years
+    ? `${years}${months && months !== "0" ? ` years and ${months} months` : "+ years"}`
+    : "";
+  const currentLocation =
+    cleanPhrase(form.currentLocation) || cleanPhrase(profile.currentLocation);
+  const preferredLocation =
+    cleanPhrase(form.preferredLocation) || cleanPhrase(profile.preferredLocation);
+  const nationality = cleanPhrase(form.nationality) || cleanPhrase(profile.nationality);
+  const existingSummary =
+    cleanPhrase(form.summary) || cleanPhrase(profile.summary);
+
+  const skills = dedupeStrings([...(profile.keySkills ?? []), ...(profile.tools ?? [])]).filter(
+    (skill) => !looksLikeResumeNoise(skill)
+  );
+  const promptMatchedSkills = pickRelevantSkills(promptFocus || normalizedPrompt, skills).filter((skill) =>
+    isRelevantSkillForPrompt(skill, promptFocus, title)
+  );
+  const relevantSkills = (promptMatchedSkills.length ? promptMatchedSkills : skills).slice(0, 4);
+
+  const projectHighlight = pickProjectHighlight(profile.projects, promptFocus || normalizedPrompt);
+
+  const educationSignals = dedupeStrings(
+    (profile.education ?? []).flatMap((entry) => [entry.title, entry.specialization, entry.institute])
+  );
+  const educationPhrase = educationSignals[0] ? stripTrailingPeriod(sentenceCase(educationSignals[0])) : "";
+
+  const languages = dedupeStrings((profile.languages ?? []).map((entry) => entry.language));
+  const focusLine = promptFocus
+    ? `focused on ${stripTrailingPeriod(promptFocus)}`
+    : "";
+
+  const firstSentenceParts = [
+    title !== "professional" ? title : "Professional",
+    experienceText ? `with ${experienceText} of experience` : "",
+    currentLocation ? `based in ${currentLocation}` : "",
   ].filter(Boolean);
 
-  const summaryParts = [
-    `Results-driven ${title} with ${years}${months} of experience delivering high-impact work across cross-functional teams.`,
-    location ? `Based in ${location}, with a strong track record of translating business needs into practical execution.` : "",
-    focusAreas.length ? `${focusAreas.join(", ")}.` : "",
-    "Known for clear communication, ownership, and building reliable outcomes in fast-moving environments.",
+  const firstSentence = `${firstSentenceParts.join(" ")}.`.replace(/\s+/g, " ");
+
+  const secondSentenceParts = [
+    relevantSkills.length ? `Brings hands-on strength in ${formatList(relevantSkills)}` : "",
+    focusLine,
+    projectHighlight ? `with experience delivering ${stripTrailingPeriod(projectHighlight)}` : "",
   ].filter(Boolean);
 
-  return summaryParts.join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
+  const secondSentence = secondSentenceParts.length
+    ? `${secondSentenceParts.join(", ")}.`
+    : "";
+
+  const thirdSentenceParts = [
+    educationPhrase ? `Backed by ${educationPhrase}` : "",
+    languages.length ? `comfortable communicating in ${formatList(languages.slice(0, 3))}` : "",
+    preferredLocation
+      ? `open to opportunities in ${preferredLocation}`
+      : nationality
+        ? `bringing a ${nationality} market perspective`
+        : "",
+  ].filter(Boolean);
+
+  const thirdSentence = thirdSentenceParts.length
+    ? `${sentenceCase(thirdSentenceParts.join(", "))}.`
+    : "";
+
+  const fallbackSummary = [firstSentence, secondSentence, thirdSentence]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!existingSummary) {
+    return trimToSentenceBoundary(fallbackSummary, 600);
+  }
+
+  const condensedExisting = looksLikeResumeNoise(existingSummary)
+    ? ""
+    : trimToSentenceBoundary(existingSummary, 260);
+  const enrichedSummaryParts = [
+    condensedExisting ? `${stripTrailingPeriod(condensedExisting)}.` : "",
+    secondSentence,
+    thirdSentence,
+  ].filter(Boolean);
+
+  return trimToSentenceBoundary(
+    enrichedSummaryParts.join(" ").replace(/\s+/g, " ").trim() || fallbackSummary,
+    600
+  );
 }
 
 export default function BasicDetailsPage() {
@@ -322,6 +599,9 @@ export default function BasicDetailsPage() {
   function applyProfileToForm(profile: ResumeProfileData) {
     const expYearsNorm = normalizeExperienceYears(profile.experienceYears);
     const expMonthsNorm = normalizeExperienceMonths(profile.experienceMonths);
+    const normalizedGender = normalizeGender(profile.gender);
+    const normalizedCountryCode = normalizeCountryCode(profile.countryCode);
+    const normalizedDob = normalizeDateForInput(profile.dob);
     setForm((prev) => ({
       ...prev,
       professionalTitle: profile.professionalTitle ?? prev.professionalTitle,
@@ -332,9 +612,9 @@ export default function BasicDetailsPage() {
       summary: profile.summary ?? prev.summary,
       firstName: profile.firstName ?? prev.firstName,
       lastName: profile.lastName ?? prev.lastName,
-      dob: profile.dob ?? prev.dob,
-      gender: profile.gender ?? prev.gender,
-      countryCode: profile.countryCode ?? prev.countryCode,
+      dob: normalizedDob || prev.dob,
+      gender: normalizedGender || prev.gender,
+      countryCode: normalizedCountryCode || prev.countryCode,
       contact: profile.phone ?? prev.contact,
       email: profile.email ?? prev.email,
       altEmail: profile.altEmail ?? prev.altEmail,
@@ -405,19 +685,37 @@ export default function BasicDetailsPage() {
   }, []);
 
   useEffect(() => {
-    const candidateId = getCandidateId();
-    if (!candidateId) return;
-
-    const sessionProfile = readResumeProfile();
-    if (sessionProfile) return;
-
     let cancelled = false;
     (async () => {
       try {
-        const backendProfile = await getCandidateProfileData(candidateId);
+        const candidateId = getCandidateId();
+        let profileName = getProfileName() || "";
+
+        if (profileName && !isLikelyDocId(profileName)) {
+          profileName = "";
+        }
+
+        if (!profileName && candidateId && isLikelyDocId(candidateId)) {
+          const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+          resolverUrl.searchParams.set("candidate_id", candidateId);
+          const resolverRes = await fetch(resolverUrl.toString());
+          if (resolverRes.ok) {
+            const resolverData = (await resolverRes.json()) as { profile_name?: string };
+            const resolvedProfileName = resolverData.profile_name?.trim() || "";
+            if (resolvedProfileName && isLikelyDocId(resolvedProfileName)) {
+              profileName = resolvedProfileName;
+              setProfileName(resolvedProfileName);
+            }
+          }
+        }
+
+        if (!profileName) return;
+
+        const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
 
-        const merged = { ...backendProfile };
+        const sessionProfile = readResumeProfile() ?? {};
+        const merged = { ...backendProfile, ...sessionProfile };
 
         upsertResumeProfile(merged);
         applyProfileToForm(merged);
@@ -626,7 +924,34 @@ export default function BasicDetailsPage() {
 
     setIsGeneratingSummary(true);
     window.setTimeout(() => {
-      setGeneratedSummary(buildGeneratedSummary(form, prompt));
+      const profileSnapshot = readResumeProfile() ?? {};
+      const mergedProfile: ResumeProfileData = {
+        ...profileSnapshot,
+        professionalTitle: form.professionalTitle.trim() || profileSnapshot.professionalTitle,
+        experienceYears: form.expYears || profileSnapshot.experienceYears,
+        experienceMonths: form.expMonths || profileSnapshot.experienceMonths,
+        currentLocation: form.currentLocation.trim() || profileSnapshot.currentLocation,
+        preferredLocation: form.preferredLocation.trim() || profileSnapshot.preferredLocation,
+        nationality: form.nationality || profileSnapshot.nationality,
+        education: education
+          .map(({ title, institute, specialization, graduationYear, score }) => ({
+            title: title.trim(),
+            institute: institute.trim(),
+            specialization: specialization.trim(),
+            graduationYear: graduationYear.trim(),
+            score: score.trim(),
+          }))
+          .filter((entry) => entry.title || entry.institute || entry.specialization || entry.graduationYear || entry.score),
+        languages: languages
+          .map(({ language, read, write, speak }) => ({
+            language: language.trim(),
+            read: read.trim(),
+            write: write.trim(),
+            speak: speak.trim(),
+          }))
+          .filter((entry) => entry.language),
+      };
+      setGeneratedSummary(buildGeneratedSummary(form, prompt, mergedProfile));
       setIsGeneratingSummary(false);
     }, 450);
   }
@@ -637,7 +962,7 @@ export default function BasicDetailsPage() {
     setIsSummaryDrawerOpen(false);
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (!validate()) return;
 
     const trimmedEducation = education
@@ -702,6 +1027,49 @@ export default function BasicDetailsPage() {
     };
 
     upsertResumeProfile(payload);
+    try {
+      const fullName = [payload.firstName, payload.lastName].filter(Boolean).join(" ").trim();
+      const email = payload.email?.trim() || "";
+      let profileName = getProfileName() || "";
+
+      if (profileName && !isLikelyDocId(profileName)) {
+        profileName = "";
+      }
+
+      if (fullName && email) {
+        const response = await saveProfile({
+          profile_name: profileName || undefined,
+          full_name: fullName,
+          email,
+          professional_title: payload.professionalTitle,
+          total_experience: payload.experienceYears ? parseInt(payload.experienceYears, 10) : undefined,
+          current_location: payload.currentLocation,
+          education_details: trimmedEducation.length
+            ? trimmedEducation.map((entry) => ({
+                degree: entry.title || undefined,
+                institution: entry.institute || undefined,
+                year: entry.graduationYear || undefined,
+              }))
+            : undefined,
+          action: "save",
+        });
+
+        const messageRoot =
+          response.message && typeof response.message === "object"
+            ? (response.message as Record<string, unknown>)
+            : null;
+        const savedProfileName =
+          (typeof response.profile_name === "string" && response.profile_name.trim()) ||
+          (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
+          "";
+
+        if (savedProfileName) {
+          setProfileName(savedProfileName);
+        }
+      }
+    } catch (error) {
+      console.warn("Unable to create draft profile from Basic Details.", error);
+    }
     router.push("/profile/create/skills-projects");
   }
 
@@ -823,9 +1191,11 @@ export default function BasicDetailsPage() {
                         className={`${fieldClass(Boolean(errors.gender))} bg-white`}
                       >
                         <option value="">Select gender</option>
-                        <option>Male</option>
-                        <option>Female</option>
-                        <option>Other</option>
+                        {withCurrentOption(["Male", "Female", "Other"], form.gender).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
                       </select>
                       {errors.gender && (
                         <p className="text-xs text-red-500">{errors.gender}</p>
@@ -843,9 +1213,11 @@ export default function BasicDetailsPage() {
                         style={{ width: 96 }}
                       >
                         <option value="">Code</option>
-                        <option value="+1">US (+1)</option>
-                        <option value="+91">IN (+91)</option>
-                        <option value="+44">UK (+44)</option>
+                        {withCurrentOption(supportedCountryCodes, form.countryCode).map((code) => (
+                          <option key={code} value={code}>
+                            {code === "+1" ? "US (+1)" : code === "+91" ? "IN (+91)" : code === "+44" ? "UK (+44)" : code}
+                          </option>
+                        ))}
                       </select>
                       <input
                         type="tel"
@@ -886,16 +1258,16 @@ export default function BasicDetailsPage() {
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Nationality</span>
-                    <select
-                      value={form.nationality}
-                      onChange={(e) => setField("nationality", e.target.value)}
-                      className={`${fieldClass(Boolean(errors.nationality))} bg-white`}
-                    >
-                      <option value="">Select nationality</option>
-                      {nationalityOptions.map((country) => (
-                        <option key={country} value={country}>
-                          {country}
-                        </option>
+                      <select
+                        value={form.nationality}
+                        onChange={(e) => setField("nationality", e.target.value)}
+                        className={`${fieldClass(Boolean(errors.nationality))} bg-white`}
+                      >
+                        <option value="">Select nationality</option>
+                        {withCurrentOption(nationalityOptions, form.nationality).map((country) => (
+                          <option key={country} value={country}>
+                            {country}
+                          </option>
                       ))}
                     </select>
                     {errors.nationality && (
@@ -1977,9 +2349,11 @@ export default function BasicDetailsPage() {
                       className={`${fieldClass(Boolean(errors.gender))} bg-white`}
                     >
                       <option value="">Select gender</option>
-                      <option>Male</option>
-                      <option>Female</option>
-                      <option>Other</option>
+                      {withCurrentOption(["Male", "Female", "Other"], form.gender).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
                     </select>
                     {errors.gender && <p className="text-xs text-red-500">{errors.gender}</p>}
                   </label>
@@ -2017,7 +2391,7 @@ export default function BasicDetailsPage() {
                       className={`${fieldClass(Boolean(errors.nationality))} bg-white`}
                     >
                       <option value="">Select nationality</option>
-                      {nationalityOptions.map((country) => (
+                      {withCurrentOption(nationalityOptions, form.nationality).map((country) => (
                         <option key={country} value={country}>
                           {country}
                         </option>
@@ -2059,9 +2433,11 @@ export default function BasicDetailsPage() {
                       className={`${fieldClass(Boolean(errors.countryCode))} bg-white px-2`}
                     >
                       <option value="">Code</option>
-                      <option>+1</option>
-                      <option>+91</option>
-                      <option>+44</option>
+                      {withCurrentOption(supportedCountryCodes, form.countryCode).map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
+                      ))}
                     </select>
                     <input
                       type="tel"

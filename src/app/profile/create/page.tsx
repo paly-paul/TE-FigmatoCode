@@ -10,9 +10,16 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
 import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
-import { setCandidateId, setProfileName } from "@/lib/authSession";
+import { getCandidateId, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
+import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { uploadProfileFile } from "@/services/profile";
+import {
+  createPreProfile,
+  generateProfileFromPreProfile,
+  getGeneratedProfile,
+  uploadProfileFile,
+} from "@/services/profile";
+import type { GeneratedResumeProfileData } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 
 interface UploadedFile {
@@ -20,11 +27,27 @@ interface UploadedFile {
   uploadDate: string;
 }
 
-type GeneratedResumeProfileData = ResumeProfileData & {
-  profileName?: string;
-  profileVersionName?: string;
-  preProfileName?: string;
-};
+function hasMeaningfulResumeData(profile: ResumeProfileData) {
+  return (
+    Boolean(profile.firstName) ||
+    Boolean(profile.lastName) ||
+    Boolean(profile.email) ||
+    Boolean(profile.phone) ||
+    Boolean(profile.professionalTitle) ||
+    Boolean(profile.summary) ||
+    Boolean(profile.currentLocation) ||
+    Boolean(profile.preferredLocation) ||
+    Boolean(profile.experienceYears) ||
+    Boolean(profile.experienceMonths) ||
+    Boolean(profile.education?.length) ||
+    Boolean(profile.certifications?.length) ||
+    Boolean(profile.languages?.length) ||
+    Boolean(profile.externalLinks?.length) ||
+    Boolean(profile.keySkills?.length) ||
+    Boolean(profile.tools?.length) ||
+    Boolean(profile.projects?.length)
+  );
+}
 
 function preferResumeData(
   parsedFromResume: ResumeProfileData,
@@ -110,6 +133,15 @@ export default function CreateProfilePage() {
 
     let parsedFromResume: ResumeProfileData = {};
     let generatedFromBackend: GeneratedResumeProfileData = {};
+    let uploadedFileData: Record<string, unknown> | null = null;
+
+    try {
+      uploadedFileData = await uploadProfileFile(file);
+      console.log("Uploaded resume file:", uploadedFileData);
+    } catch (err) {
+      console.log("Upload profile file error:", err);
+    }
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -139,7 +171,8 @@ export default function CreateProfilePage() {
       const formData = new FormData();
       formData.append("file", file);
       // Provide identity explicitly so backend doesn't fall back to "Guest".
-      const email = readCookie("user_id") || parsedFromResume.email || "";
+      const sessionLoginEmail = getSessionLoginEmail();
+      const email = sessionLoginEmail || readCookie("user_id") || parsedFromResume.email || "";
       const parsedFullName = [parsedFromResume.firstName, parsedFromResume.lastName]
         .filter(Boolean)
         .join(" ")
@@ -153,68 +186,57 @@ export default function CreateProfilePage() {
         return /^\+\d{7,15}$/.test(phone.replace(/\s+/g, "")) ? phone.replace(/\s+/g, "") : "";
       })();
       const currentLocation = parsedFromResume.currentLocation || "";
+      const candidateIdRaw = getCandidateId() || "";
+      const candidateId = isLikelyDocId(candidateIdRaw) ? candidateIdRaw : "";
       if (email) formData.append("email", email);
       if (fullName) formData.append("full_name", fullName);
       if (parsedFromResume.firstName) formData.append("first_name", parsedFromResume.firstName);
       if (parsedFromResume.lastName) formData.append("last_name", parsedFromResume.lastName);
       if (phoneNumber) formData.append("phone_number", phoneNumber);
       if (currentLocation) formData.append("current_location", currentLocation);
-      console.log("Sending file to /api/method/generate_profile_from_resume:", file.name);
-      console.log("Generate profile identity:", {
-        cookieEmail: readCookie("user_id"),
-        cookieFullName: readCookie("full_name"),
-        parsedEmail: parsedFromResume.email,
-        parsedFullName,
-        effectiveEmail: email,
-        effectiveFullName: fullName,
-        phoneNumber,
-        currentLocation,
+      if (candidateId) formData.append("candidate_id", candidateId);
+      const uploadedMessage =
+        uploadedFileData?.message && typeof uploadedFileData.message === "object"
+          ? (uploadedFileData.message as Record<string, unknown>)
+          : null;
+      const uploadedFileUrl =
+        uploadedMessage && typeof uploadedMessage.file_url === "string" ? uploadedMessage.file_url : "";
+      const uploadedFileName =
+        uploadedMessage && typeof uploadedMessage.file_name === "string" ? uploadedMessage.file_name : "";
+      if (uploadedFileUrl) formData.append("updated_resume", uploadedFileUrl);
+      console.log("Generating profile with explicit API flow:", {
+        candidateId: candidateId || null,
+        candidateIdRaw,
+        sessionLoginEmail: sessionLoginEmail || null,
+        email: email || null,
+        fullName: fullName || null,
+        updatedResume: uploadedFileUrl || null,
+        uploadedFileName: uploadedFileName || null,
       });
 
-      const response = await fetch("/api/method/generate_profile_from_resume/", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (response.ok) {
-        generatedFromBackend = (await response.json()) as GeneratedResumeProfileData;
-        console.log("Generated backend profile data:", generatedFromBackend);
-      } else {
-        const errorText = await response.text();
-        console.error("Generate profile from resume failed:", response.status, errorText);
-      }
+      const { preProfileName } = await createPreProfile(formData);
+      const { profileName } = await generateProfileFromPreProfile(preProfileName);
+      generatedFromBackend = await getGeneratedProfile(candidateId || profileName, profileName);
+      generatedFromBackend.preProfileName = preProfileName;
+      generatedFromBackend.profileName = generatedFromBackend.profileName || profileName;
+      console.log("Generated backend profile data:", generatedFromBackend);
     } catch (err) {
-      console.log("Generate profile from resume error:", err);
+      console.log("Generate profile flow error:", err);
     }
 
-    const hasMeaningfulBackendData =
-      Boolean(generatedFromBackend.firstName) ||
-      Boolean(generatedFromBackend.lastName) ||
-      Boolean(generatedFromBackend.email) ||
-      Boolean(generatedFromBackend.phone) ||
-      Boolean(generatedFromBackend.professionalTitle) ||
-      Boolean(generatedFromBackend.experienceYears) ||
-      Boolean(generatedFromBackend.currentLocation) ||
-      Boolean(generatedFromBackend.keySkills?.length) ||
-      Boolean(generatedFromBackend.education?.length);
-
-    const hasMeaningfulParsedData =
-      Boolean(parsedFromResume.firstName) ||
-      Boolean(parsedFromResume.lastName) ||
-      Boolean(parsedFromResume.email) ||
-      Boolean(parsedFromResume.phone) ||
-      Boolean(parsedFromResume.professionalTitle) ||
-      Boolean(parsedFromResume.summary);
+    const parsedWithFallback: ResumeProfileData = { ...baseData, ...parsedFromResume };
+    const hasMeaningfulBackendData = hasMeaningfulResumeData(generatedFromBackend);
+    const hasMeaningfulParsedData = hasMeaningfulResumeData(parsedWithFallback);
 
     const mergedData: ResumeProfileData = hasMeaningfulBackendData
       ? preferResumeData(
-          hasMeaningfulParsedData ? parsedFromResume : { ...baseData, ...parsedFromResume },
+          parsedWithFallback,
           generatedFromBackend,
           baseData
         )
       : hasMeaningfulParsedData
-        ? parsedFromResume
-        : { ...baseData, ...parsedFromResume };
+        ? parsedWithFallback
+        : parsedWithFallback;
 
     console.log("Storing in session:", mergedData);
     upsertResumeProfile(mergedData)
@@ -239,12 +261,6 @@ export default function CreateProfilePage() {
       } catch {
         // ignore storage errors
       }
-    }
-
-    try {
-      await uploadProfileFile(file);
-    } catch {
-      // Resume text is already merged into session; upload can be retried later.
     }
 
     setUploadedFile(meta);

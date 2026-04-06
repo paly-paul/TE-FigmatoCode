@@ -71,6 +71,7 @@ export async function GET(request: Request) {
 
   const hints = uniqueNonEmpty([
     searchParams.get("candidate_id"),
+    searchParams.get("email"),
     searchParams.get("profile_name"),
     getCookieValue(cookieHeader, "user_id"),
     getCookieValue(cookieHeader, "full_name"),
@@ -86,6 +87,9 @@ export async function GET(request: Request) {
   if (cookieHeader) headers.Cookie = cookieHeader;
 
   const filterFields = ["name", "email", "user", "candidate_id", "owner", "full_name"];
+  let lastUpstreamError:
+    | { status: number; ok: boolean; url: string; data: JsonRecord; hint: string; field?: string }
+    | undefined;
 
   for (const hint of hints) {
     for (const field of filterFields) {
@@ -100,7 +104,10 @@ export async function GET(request: Request) {
           ok: response.ok,
           data,
         });
-        if (!response.ok) continue;
+        if (!response.ok) {
+          lastUpstreamError = { status: response.status, ok: response.ok, url, data, hint, field };
+          continue;
+        }
         const name = pickFirstProfileName(data);
         if (name) {
           const res = NextResponse.json({ profile_name: name });
@@ -124,7 +131,10 @@ export async function GET(request: Request) {
         ok: response.ok,
         data,
       });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        lastUpstreamError = { status: response.status, ok: response.ok, url: lookupUrl, data, hint: email };
+        continue;
+      }
       const name = pickProfileNameFromLookup(data);
       if (name) {
         const res = NextResponse.json({ profile_name: name });
@@ -134,6 +144,21 @@ export async function GET(request: Request) {
     }
   } catch {
     // ignore
+  }
+
+  if (lastUpstreamError && (lastUpstreamError.status === 401 || lastUpstreamError.status === 403)) {
+    const res = NextResponse.json(
+      {
+        error:
+          lastUpstreamError.status === 401
+            ? "Backend unauthorized while resolving profile name. Login session may be missing/expired."
+            : "Backend permission denied while resolving profile name. This user may not have read access to Profile.",
+        detail: lastUpstreamError.data,
+      },
+      { status: lastUpstreamError.status }
+    );
+    res.headers.set("x-upstream-url", lastUpstreamError.url);
+    return res;
   }
 
   console.warn("[resolve_profile_name] not-found", { hints });
