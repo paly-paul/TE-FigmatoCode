@@ -119,20 +119,5 @@ export async function GET(request: Request) {
     // ignore
   }
 
-  try {
-    const fallbackUrl = `${backendBase}/api/resource/Profile?fields=${encodeURIComponent(JSON.stringify(["name"]))}&limit_page_length=1`;
-    const { response, data } = await fetchJson(fallbackUrl, headers);
-    if (response.ok) {
-      const name = pickFirstProfileName(data);
-      if (name) {
-        const res = NextResponse.json({ profile_name: name });
-        res.headers.set("x-upstream-url", fallbackUrl);
-        return res;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
   return NextResponse.json({ error: "Profile document ID could not be resolved." }, { status: 404 });
 }
