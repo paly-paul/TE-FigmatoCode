@@ -296,28 +296,26 @@ function SkillsProjectsPageContent() {
       if (!raw) return;
       const data = JSON.parse(raw) as ResumeSkillsData;
       if (Array.isArray(data.skills) && data.skills.length) {
+        setSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
         setSuggestedSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
       }
       if (Array.isArray(data.tools) && data.tools.length) {
-        setTools(
-          data.tools.map((tool) =>
-            createToolEntry({
-              tool,
-            })
-          )
-        );
+        setTools((prev) => mergeToolEntries(prev, data.tools!));
       }
       if (Array.isArray(data.projects) && data.projects.length) {
-        setProjects(
-          data.projects.map((project) =>
-            createProjectEntry({
-              projectTitle: typeof project.projectTitle === "string" ? project.projectTitle : "",
-              customerCompany: typeof project.customerCompany === "string" ? project.customerCompany : "",
-              projectDescription:
-                typeof project.projectDescription === "string" ? project.projectDescription : "",
-              responsibilities:
-                typeof project.responsibilities === "string" ? project.responsibilities : "",
-            })
+        setProjects((prev) =>
+          mergeProjectEntries(
+            prev,
+            data.projects!.map((project) =>
+              createProjectEntry({
+                projectTitle: typeof project.projectTitle === "string" ? project.projectTitle : "",
+                customerCompany: typeof project.customerCompany === "string" ? project.customerCompany : "",
+                projectDescription:
+                  typeof project.projectDescription === "string" ? project.projectDescription : "",
+                responsibilities:
+                  typeof project.responsibilities === "string" ? project.responsibilities : "",
+              })
+            )
           )
         );
       } else {
@@ -343,8 +341,32 @@ function SkillsProjectsPageContent() {
 
   useEffect(() => {
     const storedProfile = readResumeProfile();
-    if (!storedProfile?.keySkills?.length) return;
-    setSuggestedSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
+    if (!storedProfile) return;
+
+    if (storedProfile.keySkills?.length) {
+      setSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
+      setSuggestedSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
+    }
+
+    if (storedProfile.tools?.length) {
+      setTools((prev) => mergeToolEntries(prev, storedProfile.tools!));
+    }
+
+    if (storedProfile.projects?.length) {
+      setProjects((prev) =>
+        mergeProjectEntries(
+          prev,
+          storedProfile.projects!.map((project) =>
+            createProjectEntry({
+              projectTitle: project.projectTitle ?? "",
+              customerCompany: project.customerCompany ?? "",
+              projectDescription: project.projectDescription ?? "",
+              responsibilities: project.responsibilities ?? "",
+            })
+          )
+        )
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -424,7 +446,7 @@ function SkillsProjectsPageContent() {
     } catch {
       // ignore storage errors
     }
-  }, [skills, projects]);
+  }, [skills, tools, projects]);
 
   function updateExperience(id: string, patch: Partial<Omit<ExperienceEntry, "id">>) {
     setExperiences((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));

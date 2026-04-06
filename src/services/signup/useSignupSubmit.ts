@@ -24,10 +24,10 @@ export function useSignupSubmit() {
       const candidateId =
         (msg && typeof msg === "object" && typeof (msg as { user?: unknown }).user === "string"
           ? (msg as { user: string }).user
-          : null) ?? form.email.trim();
+          : null);
       const profileName = extractProfileName(data) ?? `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
       clearResumeWizardSession();
-      setCandidateId(candidateId);
+      if (candidateId) setCandidateId(candidateId);
       if (profileName) setProfileName(profileName);
       const displayName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
       if (displayName) setUserDisplayName(displayName);

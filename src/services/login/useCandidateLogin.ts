@@ -32,7 +32,7 @@ export function useCandidateLogin() {
       clearSessionLoginEmail();
       const data = await candidateLogin(values);
       console.log("[login] submit:response", data);
-      const candidateId = extractProfileId(data) ?? values.email.trim();
+      const profileId = extractProfileId(data);
       let profileName = extractProfileName(data, values.email.trim());
       let isProfileGenerated = extractIsProfileGenerated(data);
 
@@ -45,16 +45,22 @@ export function useCandidateLogin() {
       if (profileName) {
         isProfileGenerated = true;
       }
+      const effectiveProfileId = [profileId, profileName].find(
+        (value): value is string => typeof value === "string" && isLikelyDocId(value)
+      ) ?? null;
       clearResumeWizardSession();
-      setCandidateId(candidateId);
-      if (profileName) setProfileName(profileName);
+      if (effectiveProfileId) setCandidateId(effectiveProfileId);
+      // The backend candidate_login response often returns the Profile document id in `profile`.
+      // Treat that as the canonical profileName for subsequent routing + API calls.
+      if (effectiveProfileId) setProfileName(effectiveProfileId);
+      else if (profileName) setProfileName(profileName);
       setProfileGenerated(isProfileGenerated);
       const displayName = extractDisplayNameFromLogin(data);
       if (displayName) setUserDisplayName(displayName);
       setSessionLoginEmail(values.email.trim().toLowerCase());
       console.log("[login] submit:derived-state", {
-        candidateId,
-        profileName,
+        candidateId: effectiveProfileId,
+        profileName: effectiveProfileId ?? profileName,
         isProfileGenerated,
         displayName,
       });
@@ -200,7 +206,7 @@ async function resolveProfileNameForLogin(email: string): Promise<string | null>
 
   try {
     const url = new URL("/api/method/resolve_profile_name/", window.location.origin);
-    url.searchParams.set("candidate_id", normalized);
+    url.searchParams.set("email", normalized);
     const response = await fetch(url.toString(), { credentials: "same-origin" });
     const data = (await response.json()) as { profile_name?: string; error?: string };
     console.log("[login] submit:resolve-profile", {

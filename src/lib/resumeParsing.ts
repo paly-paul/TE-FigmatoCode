@@ -2,7 +2,6 @@ import { inflateRawSync, inflateSync } from "zlib";
 import path from "path";
 import { ResumeProfileData } from "@/types/profile";
 
-const SECTION_BREAK = /\n(?=[A-Z][A-Z\s/&,-]{2,}\n)/g;
 const DEGREE_KEYWORDS = [
   "b.tech",
   "btech",
@@ -78,6 +77,38 @@ const SKILL_KEYWORDS = [
   "graphql",
   "rest api",
 ];
+const COMMON_SECTION_HEADINGS = new Set(
+  [
+    "summary",
+    "profile",
+    "about",
+    "professional summary",
+    "career summary",
+    "objective",
+    "skills",
+    "technical skills",
+    "key skills",
+    "core competencies",
+    "technical proficiencies",
+    "technologies",
+    "tools",
+    "software tools",
+    "frameworks",
+    "projects",
+    "project experience",
+    "personal projects",
+    "academic projects",
+    "work experience",
+    "experience",
+    "employment history",
+    "professional experience",
+    "education",
+    "certifications",
+    "certification",
+    "languages",
+    "contact",
+  ].map((heading) => cleanHeadingToken(heading))
+);
 
 export async function parseResumeFile(file: File): Promise<ResumeProfileData> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -405,22 +436,53 @@ function findSummary(text: string) {
 
 function findExperience(text: string) {
   const match = text.match(
-    /\b(\d{1,2})\+?\s*(?:years|yrs)(?:\s*(?:and|&)\s*(\d{1,2})\s*(?:months|mos))?/i
+    /\b(\d{1,2})\+?\s*(?:years|yrs)(?:\s*(?:and|&|,)\s*(\d{1,2})\s*(?:months|mos))?/i
   );
-  if (!match) return { years: undefined, months: undefined };
+  if (match) {
+    return {
+      years: match[1],
+      months: match[2] ?? "0",
+    };
+  }
 
-  return {
-    years: match[1],
-    months: match[2] ?? "0",
-  };
+  const decimalMatch = text.match(/\b(\d{1,2})(?:\.(\d))?\+?\s*(?:years|yrs)\b/i);
+  if (!decimalMatch) return { years: undefined, months: undefined };
+
+  const years = decimalMatch[1];
+  const decimal = decimalMatch[2] ? parseInt(decimalMatch[2], 10) : 0;
+  const months = decimal ? String(Math.min(11, Math.round((decimal / 10) * 12))) : "0";
+  return { years, months };
 }
 
 function extractSection(text: string, headings: string[]) {
-  const blocks = text.split(SECTION_BREAK);
-  for (const block of blocks) {
-    const [firstLine, ...rest] = block.split("\n");
-    if (headings.some((heading) => firstLine.trim().toLowerCase() === heading)) {
-      return rest.join(" ").trim();
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line, index, all) => Boolean(line) || (index > 0 && index < all.length - 1));
+  const normalizedHeadings = new Set(headings.map((heading) => cleanHeadingToken(heading)));
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line) continue;
+    const normalizedLine = cleanHeadingToken(line);
+    if (!normalizedHeadings.has(normalizedLine)) continue;
+
+    const sectionLines: string[] = [];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = lines[j];
+      if (!next) {
+        if (sectionLines.length) sectionLines.push("");
+        continue;
+      }
+      if (isResumeSectionHeading(next) && !normalizedHeadings.has(cleanHeadingToken(next))) {
+        break;
+      }
+      sectionLines.push(next);
+    }
+
+    const joined = sectionLines.join("\n").trim();
+    if (joined) {
+      return joined;
     }
   }
   return undefined;
@@ -517,6 +579,12 @@ function findKeySkills(text: string, lines: string[]) {
     }
   }
 
+  if (skillSection) {
+    for (const candidate of extractSkillCandidates(skillSection)) {
+      found.add(candidate);
+    }
+  }
+
   return Array.from(found).slice(0, 20);
 }
 
@@ -537,6 +605,12 @@ function findTools(text: string, lines: string[]) {
     }
   }
 
+  if (toolSection) {
+    for (const candidate of extractSkillCandidates(toolSection)) {
+      found.add(candidate);
+    }
+  }
+
   return Array.from(found).slice(0, 12);
 }
 
@@ -550,20 +624,18 @@ function findProjects(text: string) {
 
   if (!section) return [];
 
-  const chunks = section
-    .split(/\n{2,}|(?:^|\n)(?:project\s*\d+[:\-]?\s*)/i)
-    .map((chunk) => chunk.replace(/\s+/g, " ").trim())
-    .filter((chunk) => chunk.length >= 40);
+  const chunks = splitProjectChunks(section);
 
   const projects: NonNullable<ResumeProfileData["projects"]> = [];
 
   for (const chunk of chunks.slice(0, 3)) {
-    const sentences = chunk.split(/(?<=[.?!])\s+/).filter(Boolean);
-    const titleCandidate = chunk.split(/[:|\n-]/)[0]?.trim();
+    const normalizedChunk = chunk.replace(/\s+/g, " ").trim();
+    const sentences = normalizedChunk.split(/(?<=[.?!])\s+/).filter(Boolean);
+    const titleCandidate = chunk.split("\n")[0]?.trim();
     const title =
       titleCandidate &&
       titleCandidate.length >= 3 &&
-      titleCandidate.length <= 60 &&
+      titleCandidate.length <= 80 &&
       !looksLikeContactBlock(titleCandidate) &&
       !looksLikeLocation(titleCandidate)
         ? titleCandidate
@@ -837,6 +909,97 @@ function normalizeSkillLabel(value: string) {
 
 function looksLikeSectionHeader(line: string) {
   return /^[A-Z][A-Z\s/&,-]{2,}$/.test(line.trim());
+}
+
+function cleanHeadingToken(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[:|-]+$/g, "")
+    .replace(/[^\w\s/&]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isResumeSectionHeading(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 80) return false;
+  if (looksLikeSectionHeader(trimmed)) return true;
+
+  const normalized = cleanHeadingToken(trimmed);
+  if (COMMON_SECTION_HEADINGS.has(normalized)) return true;
+
+  if (/:$/.test(trimmed) && COMMON_SECTION_HEADINGS.has(normalized)) return true;
+
+  const words = normalized.split(" ").filter(Boolean);
+  if (words.length >= 1 && words.length <= 4 && COMMON_SECTION_HEADINGS.has(words.join(" "))) {
+    return true;
+  }
+
+  return false;
+}
+
+function extractSkillCandidates(section: string) {
+  const tokens = section
+    .split(/\n|,|•|\||\/{2,}|;|·/g)
+    .map((token) => token.replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean);
+
+  return Array.from(
+    new Set(
+      tokens
+        .filter((token) => token.length >= 2 && token.length <= 40)
+        .filter((token) => !/\d{4}/.test(token))
+        .filter((token) => !/@|https?:\/\/|www\./i.test(token))
+        .filter((token) => token.split(/\s+/).length <= 4)
+        .map((token) => normalizeSkillLabel(token))
+        .filter(Boolean)
+    )
+  ).slice(0, 20);
+}
+
+function splitProjectChunks(section: string) {
+  const lines = section
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const chunks: string[] = [];
+  let current: string[] = [];
+
+  const flush = () => {
+    const value = current.join("\n").trim();
+    if (value.length >= 30) chunks.push(value);
+    current = [];
+  };
+
+  for (const line of lines) {
+    const startsNewProject =
+      current.length > 0 &&
+      line.length >= 3 &&
+      line.length <= 80 &&
+      !/[.?!]$/.test(line) &&
+      line.split(/\s+/).length <= 10 &&
+      !/^[-*]/.test(line) &&
+      !/^(responsibilities?|description|role|tech stack|team size)\b/i.test(line);
+
+    if (startsNewProject) {
+      flush();
+    }
+
+    current.push(line.replace(/^[-*]\s*/, ""));
+  }
+
+  flush();
+
+  return chunks.length
+    ? chunks
+    : [
+        section
+          .replace(/\s+/g, " ")
+          .trim(),
+      ];
 }
 
 function capitalize(value: string) {

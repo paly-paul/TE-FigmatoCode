@@ -1,6 +1,6 @@
 import { parseApiErrorMessage } from "@/services/signup/parseApiError";
 
-export async function uploadProfileFile(file: File): Promise<void> {
+export async function uploadProfileFile(file: File): Promise<Record<string, unknown>> {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -29,5 +29,7 @@ export async function uploadProfileFile(file: File): Promise<void> {
   ) {
     throw new Error(parseApiErrorMessage(data));
   }
+
+  return data;
 }
 
