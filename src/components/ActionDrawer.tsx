@@ -336,6 +336,8 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
 
   const mobileDrawerContent = (
     <>
+      <p className="-mt-1 text-sm text-[#5E7397]">{actionDrawerChrome.referenceId}</p>
+
       <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <span className="rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A]">
@@ -451,11 +453,11 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
       bodyClassName={isMobileViewport ? "px-4 py-3" : "px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"}
       contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
       footer={footerContent}
-      headerActions={
+      headerActions={isMobileViewport ? undefined : (
         <div className="text-right">
           <p className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerChrome.referenceId}</p>
         </div>
-      }
+      )}
     >
       {isMobileViewport ? mobileDrawerContent : (
         <>

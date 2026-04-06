@@ -1,6 +1,6 @@
 "use client";
 
-import { getProfileGenerated, setProfileName } from "@/lib/authSession";
+import { getProfileGenerated, getProfileName, setProfileName } from "@/lib/authSession";
 import { isProfileComplete } from "@/lib/profileOnboarding";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
@@ -16,10 +16,12 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
 
   const localProfileComplete = isProfileComplete();
   const sessionProfileGenerated = getProfileGenerated();
+  const sessionProfileName = getProfileName();
   console.log("[login-routing] start", {
     email: email.trim().toLowerCase(),
     localProfileComplete,
     sessionProfileGenerated,
+    sessionProfileName,
   });
 
   if (localProfileComplete) {
@@ -28,6 +30,14 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
   }
   if (sessionProfileGenerated === true) {
     console.log("[login-routing] decision", { reason: "session-profile-generated", skipWizard: true });
+    return true;
+  }
+  if (sessionProfileName) {
+    console.log("[login-routing] decision", {
+      reason: "session-profile-name",
+      skipWizard: true,
+      profileName: sessionProfileName,
+    });
     return true;
   }
 

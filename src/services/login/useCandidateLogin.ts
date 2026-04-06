@@ -40,8 +40,10 @@ export function useCandidateLogin() {
         const resolvedProfileName = await resolveProfileNameForLogin(values.email.trim());
         if (resolvedProfileName) {
           profileName = resolvedProfileName;
-          isProfileGenerated = true;
         }
+      }
+      if (profileName) {
+        isProfileGenerated = true;
       }
       clearResumeWizardSession();
       setCandidateId(candidateId);
