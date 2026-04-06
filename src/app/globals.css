@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@layer base {
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  .mobile-success-stories-swiper .swiper-pagination {
+    @apply bottom-0;
+  }
+
+  .mobile-success-stories-swiper .swiper-pagination-bullet {
+    @apply h-2 w-2 bg-primary-200 opacity-100;
+  }
+
+  .mobile-success-stories-swiper .swiper-pagination-bullet-active {
+    @apply bg-primary-600;
+  }
+}
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-image: linear-gradient(
+        rgba(203, 213, 225, 0.4) 1px,
+        transparent 1px
+      ),
+      linear-gradient(90deg, rgba(203, 213, 225, 0.4) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+}

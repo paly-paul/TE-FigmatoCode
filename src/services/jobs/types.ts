@@ -1,0 +1,45 @@
+export type RecommendedJobApi = {
+  job_title: string;
+  job_id: string;
+  location: string;
+  minimum_bill_rate: number | null;
+  maximum_bill_rate: number | null;
+  billing_currency?: string;
+  billing_frequency?: string;
+  status?: string;
+  rotation?: string;
+  match_score: number;
+  action?: string;
+};
+
+export type JobApplicationApi = {
+  id: string;
+  job_title: string;
+  job_id: string;
+  status: string;
+  date?: string;
+};
+
+export type CandidateActionableSlotApi = {
+  slot_date?: string;
+  slot_time?: string;
+  slot_timezone?: string;
+  slot_status?: string;
+};
+
+export type CandidateActionableInfoApi = {
+  interview_mode?: string;
+  interview_type?: string;
+  interview_round?: number;
+  interview_slots?: CandidateActionableSlotApi[];
+};
+
+export type CandidateActionableApi = {
+  job_title: string;
+  job_id: string;
+  rr_candidate: string;
+  stage: string;
+  status: string;
+  name: string;
+  info?: CandidateActionableInfoApi;
+};
