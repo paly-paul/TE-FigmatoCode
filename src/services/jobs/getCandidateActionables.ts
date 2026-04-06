@@ -15,7 +15,7 @@ function parseActionablesPayload(data: Record<string, unknown>): {
   }
 
   const raw = inner.actions;
-  const partialFailure = data.partial_failure === true;
+  const partialFailure = inner.partial_failure === true;
 
   if (!Array.isArray(raw)) {
     return { actions: [], partialFailure };
