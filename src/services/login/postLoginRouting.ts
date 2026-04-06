@@ -1,6 +1,6 @@
 "use client";
 
-import { setProfileName } from "@/lib/authSession";
+import { getProfileGenerated, setProfileName } from "@/lib/authSession";
 import { isProfileComplete } from "@/lib/profileOnboarding";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
@@ -15,6 +15,7 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
   if (typeof window === "undefined") return false;
 
   if (isProfileComplete()) return true;
+  if (getProfileGenerated() === true) return true;
 
   const normalized = email.trim().toLowerCase();
   if (!normalized) return false;

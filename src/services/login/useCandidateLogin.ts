@@ -6,6 +6,7 @@ import { candidateLogin } from "./candidateLogin";
 import type { CandidateLoginValues } from "./types";
 import {
   clearAuthSession,
+  setProfileGenerated,
   isLikelyDocId,
   setCandidateId,
   setProfileName,
@@ -31,6 +32,7 @@ export function useCandidateLogin() {
       clearResumeWizardSession();
       setCandidateId(candidateId);
       if (profileName) setProfileName(profileName);
+      setProfileGenerated(extractIsProfileGenerated(data));
       const displayName = extractDisplayNameFromLogin(data);
       if (displayName) setUserDisplayName(displayName);
       setSessionLoginEmail(values.email.trim().toLowerCase());
@@ -145,4 +147,26 @@ function extractDisplayNameFromLogin(data: Record<string, unknown>): string | nu
   }
 
   return null;
+}
+
+function extractIsProfileGenerated(data: Record<string, unknown>): boolean {
+  const candidateUser =
+    data.candidate_user && typeof data.candidate_user === "object"
+      ? (data.candidate_user as Record<string, unknown>)
+      : null;
+  const message = data.message;
+  const root = message && typeof message === "object" ? (message as Record<string, unknown>) : data;
+  const nestedCu =
+    root.candidate_user && typeof root.candidate_user === "object"
+      ? (root.candidate_user as Record<string, unknown>)
+      : null;
+
+  const candidates = [
+    candidateUser?.is_profile_generated,
+    candidateUser?.isProfileGenerated,
+    nestedCu?.is_profile_generated,
+    nestedCu?.isProfileGenerated,
+  ];
+
+  return candidates.some((candidate) => candidate === true);
 }

@@ -1,6 +1,7 @@
 const CANDIDATE_ID_KEY = "te_candidate_id";
 const PROFILE_NAME_KEY = "te_profile_name";
 const USER_DISPLAY_NAME_KEY = "te_user_display_name";
+const PROFILE_GENERATED_KEY = "te_profile_generated";
 
 export function isLikelyDocId(value: string | null | undefined) {
   if (!value) return false;
@@ -48,6 +49,24 @@ export function clearProfileName() {
   window.sessionStorage.removeItem(PROFILE_NAME_KEY);
 }
 
+export function setProfileGenerated(isGenerated: boolean) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(PROFILE_GENERATED_KEY, isGenerated ? "1" : "0");
+}
+
+export function getProfileGenerated(): boolean | null {
+  if (typeof window === "undefined") return null;
+  const stored = window.sessionStorage.getItem(PROFILE_GENERATED_KEY);
+  if (stored === "1") return true;
+  if (stored === "0") return false;
+  return null;
+}
+
+export function clearProfileGenerated() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(PROFILE_GENERATED_KEY);
+}
+
 /** Human-readable name for nav / welcome (not the Profile document id). */
 export function setUserDisplayName(name: string) {
   if (typeof window === "undefined") return;
@@ -72,5 +91,5 @@ export function clearAuthSession() {
   clearCandidateId();
   clearProfileName();
   clearUserDisplayName();
+  clearProfileGenerated();
 }
-
