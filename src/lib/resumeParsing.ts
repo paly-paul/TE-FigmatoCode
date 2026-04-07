@@ -128,11 +128,15 @@ export async function parseResumeFile(file: File): Promise<ResumeProfileData> {
   } else if (lowerName.endsWith(".pdf")) {
     text = await extractTextFromPdf(buffer); // ← IMPORTANT: Added await
   } else {
-    console.warn("⚠️ Unsupported file type:", file.name);
+    throw new Error("Unsupported file type. Please upload a PDF or DOCX resume.");
   }
 
   console.log("📝 Total extracted text length:", text.length);
   console.log("📝 First 300 chars:", text.slice(0, 300));
+
+  if (!hasUsefulResumeText(text)) {
+    throw new Error("Resume text could not be read clearly. Please upload a text-based PDF or DOCX file.");
+  }
 
   const profile = sanitizeResumeProfile(buildProfileFromText(text, file.name), normalizedTextForFiltering(text));
   
@@ -351,7 +355,18 @@ function normalizeResumeText(text: string) {
 
 function deriveNameFromFileName(fileName: string) {
   const base = fileName.replace(/\.[^/.]+$/, "");
-  const ignoredTokens = new Set(["resume", "cv", "profile", "updated", "final", "draft", "new"]);
+  const ignoredTokens = new Set([
+    "resume",
+    "cv",
+    "profile",
+    "updated",
+    "final",
+    "draft",
+    "new",
+    "ats",
+    "tb",
+    "template",
+  ]);
   const parts = base
     .split(/[\s_-]+/)
     .filter(Boolean)
@@ -369,11 +384,14 @@ function deriveNameFromFileName(fileName: string) {
 }
 
 function findName(lines: string[]) {
-  const ignoredTokens = new Set(["resume", "cv", "profile"]);
+  const ignoredTokens = new Set(["resume", "cv", "profile", "ats", "tb", "template"]);
   for (const line of lines.slice(0, 6)) {
     if (line.length < 3 || line.length > 50) continue;
     if (/@|http|www\.|\d{5,}/i.test(line)) continue;
-    const parts = line.split(/\s+/).filter(Boolean);
+    const parts = line
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((part) => !ignoredTokens.has(part.toLowerCase()));
     if (parts.length < 2 || parts.length > 4) continue;
     if (!parts.every((part) => /^[A-Za-z.'-]+$/.test(part))) continue;
     if (parts.some((part) => ignoredTokens.has(part.toLowerCase()))) continue;
@@ -971,7 +989,7 @@ function sanitizeNamePart(value?: string) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   if (!/^[A-Za-z.'-]+(?: [A-Za-z.'-]+)*$/.test(trimmed)) return undefined;
-  if (/\b(resume|cv|profile|summary|developer|engineer)\b/i.test(trimmed)) return undefined;
+  if (/\b(resume|cv|profile|summary|developer|engineer|ats|template)\b/i.test(trimmed)) return undefined;
   return capitalize(trimmed);
 }
 
@@ -1560,6 +1578,9 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 
   const customScore = scoreExtractedResumeText(extracted);
   const libraryScore = scoreExtractedResumeText(extractedByLibrary);
+  if (customScore < 20 && libraryScore < 20) {
+    throw new Error("Unable to extract readable text from this PDF. Please upload a text-based PDF or DOCX file.");
+  }
   const selected = libraryScore > customScore ? extractedByLibrary : extracted;
 
   console.log("📊 PDF extraction quality scores:", {
