@@ -34,7 +34,7 @@ export const DEFAULT_SUCCESS_STORIES: SuccessStoryItem[] = [
   },
   {
     quote:
-      "Found roles that matched my skills within days. The SSO login was seamless.",
+      "Found roles that matched my skills within days. The LinkedIn login was seamless.",
     name: "Marcus Webb",
     role: "DevOps Lead",
     company: "Skyline Tech",

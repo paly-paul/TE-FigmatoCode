@@ -1,4 +1,4 @@
-import { GoogleIcon, LockIcon } from "@/components/icons";
+import { GoogleIcon, LinkedInIcon } from "@/components/icons";
 
 export function SocialLoginDivider() {
   return (
@@ -26,8 +26,8 @@ export function SocialLoginButtons() {
         type="button"
         className="flex items-center justify-center gap-2 border border-gray-300 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
       >
-        <LockIcon />
-        SSO
+        <LinkedInIcon />
+        LinkedIn
       </button>
     </div>
   );
