@@ -139,7 +139,11 @@ async function parseJsonResponse(response: Response) {
 
 function ensureSuccessfulResponse(response: Response, data: UnknownRecord, fallback: string) {
   if (!response.ok) {
-    throw new Error(parseApiErrorMessage(data) || `${fallback} (${response.status})`);
+    const err = new Error(parseApiErrorMessage(data) || `${fallback} (${response.status})`) as Error & {
+      raw?: UnknownRecord;
+    };
+    err.raw = data;
+    throw err;
   }
 
   if (
@@ -148,7 +152,11 @@ function ensureSuccessfulResponse(response: Response, data: UnknownRecord, fallb
     typeof data.exc === "string" ||
     isFailedEnvelope(data)
   ) {
-    throw new Error(parseApiErrorMessage(data) || fallback);
+    const err = new Error(parseApiErrorMessage(data) || fallback) as Error & {
+      raw?: UnknownRecord;
+    };
+    err.raw = data;
+    throw err;
   }
 }
 
@@ -198,11 +206,15 @@ export async function generateProfileFromPreProfile(preProfileName: string): Pro
   ensureSuccessfulResponse(response, data, "Unable to generate profile from pre-profile.");
 
   const profileName =
-    pickString(data, "profile_name", "name") ??
-    (data.message && typeof data.message === "object" ? pickString(data.message as UnknownRecord, "profile_name", "name") : undefined) ??
-    (data.data && typeof data.data === "object" ? pickString(data.data as UnknownRecord, "profile_name", "name") : undefined) ??
+    pickString(data, "profile_name", "profile", "name") ??
+    (data.message && typeof data.message === "object"
+      ? pickString(data.message as UnknownRecord, "profile_name", "profile", "name")
+      : undefined) ??
+    (data.data && typeof data.data === "object"
+      ? pickString(data.data as UnknownRecord, "profile_name", "profile", "name")
+      : undefined) ??
     (data.data && typeof data.data === "object" && (data.data as UnknownRecord).message
-      ? pickString((((data.data as UnknownRecord).message as UnknownRecord) || {}) as UnknownRecord, "profile_name", "name")
+      ? pickString((((data.data as UnknownRecord).message as UnknownRecord) || {}) as UnknownRecord, "profile_name", "profile", "name")
       : undefined);
 
   if (!profileName) {

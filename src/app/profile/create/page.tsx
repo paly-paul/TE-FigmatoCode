@@ -10,26 +10,18 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
 import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
-import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
-import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import {
-  createPreProfile,
-  generateProfileFromPreProfile,
-  getGeneratedProfile,
-  saveProfile,
-  uploadProfileFile,
-} from "@/services/profile";
-import type { GeneratedResumeProfileData } from "@/services/profile";
+import { uploadProfileFile } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 
 interface UploadedFile {
   name: string;
   uploadDate: string;
+  updated_resume?: string;
 }
 
-function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null): string | null {
-  if (!uploadResponse) return null;
+function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null): string {
+  if (!uploadResponse) return "";
   const roots: Array<Record<string, unknown>> = [
     uploadResponse,
     uploadResponse.message && typeof uploadResponse.message === "object"
@@ -40,74 +32,21 @@ function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null)
       : {},
   ];
   const candidateKeys = ["file_url", "fileUrl", "url", "name", "file_name", "fileName"];
-
   for (const root of roots) {
     for (const key of candidateKeys) {
       const value = root[key];
-      if (typeof value === "string" && value.trim()) {
-        return value.trim();
-      }
+      if (typeof value === "string" && value.trim()) return value.trim();
     }
   }
-  return null;
+  return "";
 }
 
-function hasMeaningfulResumeData(profile: ResumeProfileData) {
-  return (
-    Boolean(profile.firstName) ||
-    Boolean(profile.lastName) ||
-    Boolean(profile.email) ||
-    Boolean(profile.phone) ||
-    Boolean(profile.professionalTitle) ||
-    Boolean(profile.summary) ||
-    Boolean(profile.currentLocation) ||
-    Boolean(profile.preferredLocation) ||
-    Boolean(profile.experienceYears) ||
-    Boolean(profile.experienceMonths) ||
-    Boolean(profile.education?.length) ||
-    Boolean(profile.certifications?.length) ||
-    Boolean(profile.languages?.length) ||
-    Boolean(profile.externalLinks?.length) ||
-    Boolean(profile.keySkills?.length) ||
-    Boolean(profile.tools?.length) ||
-    Boolean(profile.projects?.length)
-  );
-}
-
-function preferResumeData(
-  parsedFromResume: ResumeProfileData,
-  generatedFromBackend: ResumeProfileData,
-  baseData: ResumeProfileData
-): ResumeProfileData {
-  const preferredParsed = {
-    ...(Object.keys(parsedFromResume).length ? parsedFromResume : {}),
-  };
-
-  const merged: ResumeProfileData = {
-    ...baseData,
-    ...generatedFromBackend,
-    ...preferredParsed,
-  };
-
-  if (parsedFromResume.keySkills?.length) merged.keySkills = parsedFromResume.keySkills;
-  else if (generatedFromBackend.keySkills?.length) merged.keySkills = generatedFromBackend.keySkills;
-
-  if (parsedFromResume.tools?.length) merged.tools = parsedFromResume.tools;
-  else if (generatedFromBackend.tools?.length) merged.tools = generatedFromBackend.tools;
-
-  if (parsedFromResume.projects?.length) merged.projects = parsedFromResume.projects;
-  else if (generatedFromBackend.projects?.length) merged.projects = generatedFromBackend.projects;
-
-  if (parsedFromResume.education?.length) merged.education = parsedFromResume.education;
-  else if (generatedFromBackend.education?.length) merged.education = generatedFromBackend.education;
-
-  return merged;
-}
 
 export default function CreateProfilePage() {
   const router = useRouter();
   const [lookingForJob, setLookingForJob] = useState(true);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [isProcessingResume, setIsProcessingResume] = useState(false);
   // Keep initial render identical to server HTML to avoid hydration mismatch.
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
@@ -144,223 +83,94 @@ export default function CreateProfilePage() {
   }
 
   async function handleUpload(file: File) {
-    const meta: UploadedFile = {
-      name: file.name,
-      uploadDate: formatDate(new Date()),
-    };
-    const baseData = deriveFallbackResumeData(file.name);
-
-    function readCookie(cookieName: string): string | null {
-      if (typeof document === "undefined") return null;
-      const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`));
-      return match?.[1] ? decodeURIComponent(match[1]).trim() : null;
-    }
-
-    let parsedFromResume: ResumeProfileData = {};
-    let generatedFromBackend: GeneratedResumeProfileData = {};
-    let uploadedFileData: Record<string, unknown> | null = null;
-
+    setIsProcessingResume(true);
     try {
-      uploadedFileData = await uploadProfileFile(file);
-      console.log("Uploaded resume file:", uploadedFileData);
-    } catch (err) {
-      console.log("Upload profile file error:", err);
-    }
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      console.log("Sending file to /api/parse-resume:", file.name);
-
-      const response = await fetch("/api/parse-resume", {
-        method: "POST",
-        body: formData,
-      });
-
-      console.log("Response status:", response.status);
-
-      if (response.ok) {
-        parsedFromResume = (await response.json()) as ResumeProfileData;
-        console.log("Parsed resume data:", parsedFromResume);
-        console.log("Fields extracted:", Object.keys(parsedFromResume));
-      } else {
-        const errorText = await response.text();
-        console.error("Parse resume failed:", response.status, errorText);
-      }
-    } catch (err) {
-      // Keep filename-based fallback only
-      console.log("Parse resume error:", err)
-    }
-
-    try {
-      const formData = new FormData();
-      // Provide identity explicitly so backend doesn't fall back to "Guest".
-      const sessionLoginEmail = getSessionLoginEmail();
-      const email = sessionLoginEmail || readCookie("user_id") || parsedFromResume.email || "";
-      const parsedFullName = [parsedFromResume.firstName, parsedFromResume.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      const fullName = readCookie("full_name") || parsedFullName;
-      const phoneNumber = (() => {
-        const phone = parsedFromResume.phone?.trim() || "";
-        const countryCode = parsedFromResume.countryCode?.trim() || "";
-        if (!phone) return "";
-        if (countryCode) return `${countryCode}${phone.replace(/\s+/g, "")}`;
-        return /^\+\d{7,15}$/.test(phone.replace(/\s+/g, "")) ? phone.replace(/\s+/g, "") : "";
-      })();
-      const currentLocation = parsedFromResume.currentLocation || "";
-      const updatedResumeRef = extractUpdatedResumeRef(uploadedFileData);
-      const candidateIdRaw = getCandidateId() || "";
-      const candidateId = isLikelyDocId(candidateIdRaw) ? candidateIdRaw : "";
-      if (email) formData.append("email", email);
-      if (fullName) formData.append("full_name", fullName);
-      if (parsedFromResume.firstName) formData.append("first_name", parsedFromResume.firstName);
-      if (parsedFromResume.lastName) formData.append("last_name", parsedFromResume.lastName);
-      if (phoneNumber) formData.append("phone_number", phoneNumber);
-      if (currentLocation) formData.append("current_location", currentLocation);
-      if (updatedResumeRef) formData.append("updated_resume", updatedResumeRef);
-      console.log("Generating profile with explicit API flow:", {
-        sessionLoginEmail: sessionLoginEmail || null,
-        email: email || null,
-        fullName: fullName || null,
-        phoneNumber: phoneNumber || null,
-        currentLocation: currentLocation || null,
-        updatedResume: updatedResumeRef || null,
-      });
-      const runGenerateFromResumeFallback = async () => {
-        const effectiveProfileName = candidateId || getProfileName() || "";
-        if (!effectiveProfileName) {
-          throw new Error("Missing profile id for create_edit_profile fallback.");
-        }
-
-        const totalExperience = (() => {
-          const yearsRaw = parsedFromResume.experienceYears?.trim() || "";
-          const years = parseInt(yearsRaw, 10);
-          return Number.isFinite(years) && years >= 0 ? years : undefined;
-        })();
-
-        const keySkills = Array.from(
-          new Set([...(parsedFromResume.keySkills ?? []), ...(parsedFromResume.tools ?? [])].filter(Boolean))
-        )
-          .slice(0, 30)
-          .map((key_skill) => ({ key_skill }));
-
-        const educationDetails =
-          parsedFromResume.education
-            ?.map((entry) => ({
-              degree: entry.title?.trim() || undefined,
-              institution: entry.institute?.trim() || undefined,
-              year: entry.graduationYear?.trim() || undefined,
-            }))
-            .filter((entry) => entry.degree || entry.institution || entry.year) ?? [];
-
-        await saveProfile({
-          profile_name: effectiveProfileName,
-          full_name: fullName,
-          email,
-          professional_title: parsedFromResume.professionalTitle?.trim() || undefined,
-          total_experience: totalExperience,
-          current_location: currentLocation || undefined,
-          key_skills: keySkills.length ? keySkills : undefined,
-          education_details: educationDetails.length ? educationDetails : undefined,
-          action: "save",
-        });
-
-        generatedFromBackend = await getGeneratedProfile(effectiveProfileName, effectiveProfileName);
-        generatedFromBackend.profileName = generatedFromBackend.profileName || effectiveProfileName;
-        console.log("create_edit_profile fallback result:", {
-          profileName: generatedFromBackend.profileName ?? null,
-        });
+      const meta: UploadedFile = {
+        name: file.name,
+        uploadDate: formatDate(new Date()),
       };
+      const baseData = deriveFallbackResumeData(file.name);
+      let parsedFromResume: ResumeProfileData = {};
+      let parseSucceeded = false;
+      let updatedResumeRef = "";
 
       try {
-        // If this email already maps to a profile, skip create_pre_profile because
-        // backend rejects duplicate-email pre-profile creation.
-        let existingProfileName = "";
-        if (email && typeof window !== "undefined") {
-          const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-          resolverUrl.searchParams.set("email", email);
-          const resolverRes = await fetch(resolverUrl.toString(), { credentials: "same-origin" });
-          if (resolverRes.ok) {
-            const resolverData = (await resolverRes.json()) as { profile_name?: string };
-            existingProfileName = resolverData.profile_name?.trim() || "";
-          }
-        }
+        const uploadedFileData = await uploadProfileFile(file);
+        console.log("Uploaded resume file:", uploadedFileData);
+        updatedResumeRef = extractUpdatedResumeRef(uploadedFileData);
+      } catch (err) {
+        console.log("Upload profile file error:", err);
+      }
 
-        if (existingProfileName) {
-          await runGenerateFromResumeFallback();
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        console.log("Sending file to /api/parse-resume:", file.name);
+
+        const response = await fetch("/api/parse-resume", {
+          method: "POST",
+          body: formData,
+        });
+
+        console.log("Response status:", response.status);
+
+        if (response.ok) {
+          parsedFromResume = (await response.json()) as ResumeProfileData;
+          parseSucceeded = true;
+          console.log("Parsed resume data:", parsedFromResume);
+          console.log("Fields extracted:", Object.keys(parsedFromResume));
         } else {
-          const { preProfileName } = await createPreProfile(formData);
-          const { profileName } = await generateProfileFromPreProfile(preProfileName);
-          generatedFromBackend = await getGeneratedProfile(candidateId || profileName, profileName);
-          generatedFromBackend.preProfileName = preProfileName;
-          generatedFromBackend.profileName = generatedFromBackend.profileName || profileName;
-          console.log("Generated backend profile data:", generatedFromBackend);
+          const errorText = await response.text();
+          console.error("Parse resume failed:", response.status, errorText);
         }
       } catch (err) {
-        console.log("Generate profile flow error:", err);
+        console.log("Parse resume error:", err);
+      }
+
+      if (!parseSucceeded) {
+        alert("Resume parsing failed. Please try uploading again.");
+        return;
+      }
+
+      const mergedData: ResumeProfileData = { ...baseData, ...parsedFromResume };
+      console.log("Storing in session:", mergedData);
+      upsertResumeProfile(mergedData);
+
+      if (typeof window !== "undefined") {
         try {
-          await runGenerateFromResumeFallback();
-        } catch (fallbackErr) {
-          console.log("Fallback generate_profile_from_resume error:", fallbackErr);
+          const firstProject = mergedData.projects?.[0];
+          window.sessionStorage.setItem(
+            "resumeSkills",
+            JSON.stringify({
+              skills: mergedData.keySkills ?? [],
+              tools: mergedData.tools ?? [],
+              projects: mergedData.projects ?? [],
+              projectDescription: firstProject?.projectDescription ?? "",
+              responsibilities: firstProject?.responsibilities ?? "",
+            })
+          );
+        } catch {
+          // ignore storage errors
         }
       }
-    } catch (err) {
-      // Fallback to resume-only data if anything unexpected fails.
-      console.log("Resume upload -> profile flow error:", err);
-    }
 
-    const parsedWithFallback: ResumeProfileData = { ...baseData, ...parsedFromResume };
-    const hasMeaningfulBackendData = hasMeaningfulResumeData(generatedFromBackend);
-    const hasMeaningfulParsedData = hasMeaningfulResumeData(parsedWithFallback);
+      setUploadedFile(meta);
 
-    const mergedData: ResumeProfileData = hasMeaningfulBackendData
-      ? preferResumeData(
-          parsedWithFallback,
-          generatedFromBackend,
-          baseData
-        )
-      : hasMeaningfulParsedData
-        ? parsedWithFallback
-        : parsedWithFallback;
-
-    console.log("Storing in session:", mergedData);
-    upsertResumeProfile(mergedData)
-
-    if (generatedFromBackend.profileName) {
-      setProfileName(generatedFromBackend.profileName);
-    }
-
-    if (typeof window !== "undefined") {
-      try {
-        const firstProject = mergedData.projects?.[0];
-        window.sessionStorage.setItem(
-          "resumeSkills",
-          JSON.stringify({
-            skills: mergedData.keySkills ?? [],
-            tools: mergedData.tools ?? [],
-            projects: mergedData.projects ?? [],
-            projectDescription: firstProject?.projectDescription ?? "",
-            responsibilities: firstProject?.responsibilities ?? "",
-          })
-        );
-      } catch {
-        // ignore storage errors
+      if (typeof window !== "undefined") {
+        try {
+          const storedMeta: UploadedFile = updatedResumeRef
+            ? { ...meta, updated_resume: updatedResumeRef }
+            : meta;
+          window.sessionStorage.setItem(
+            "uploadedResumeMeta",
+            JSON.stringify(storedMeta)
+          );
+        } catch {
+          // ignore storage errors
+        }
       }
-    }
-
-    setUploadedFile(meta);
-
-    if (typeof window !== "undefined") {
-      try {
-        window.sessionStorage.setItem(
-          "uploadedResumeMeta",
-          JSON.stringify(meta)
-        );
-      } catch {
-        // ignore storage errors
-      }
+    } finally {
+      setIsProcessingResume(false);
     }
   }
 
@@ -485,15 +295,12 @@ export default function CreateProfilePage() {
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-3">
         <Button
-          variant="outline"
           fullWidth={false}
-          onClick={() => router.back()}
+          onClick={handleNext}
           className="px-6 sm:px-8"
+          disabled={!uploadedFile || isProcessingResume}
         >
-          Previous
-        </Button>
-        <Button fullWidth={false} onClick={handleNext} className="px-6 sm:px-8">
-          Next
+          {isProcessingResume ? "Processing..." : "Next"}
         </Button>
       </div>
     </div>
