@@ -19,10 +19,22 @@ export async function POST(request: Request) {
     console.log("API Route: Parsing complete. Fields:", Object.keys(parsed));
     console.log("API Route: Full parsed data:", JSON.stringify(parsed, null));
 
-    return NextResponse.json(parsed);
+    return NextResponse.json(parsed, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
   } catch (error) {
     console.error("API Route: Error parsing resume:", error);
     const message = error instanceof Error ? error.message : "Unable to parse resume.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isUserInputParseIssue =
+      /Unsupported file type|could not be read clearly|Unable to extract readable text/i.test(
+        message
+      );
+    return NextResponse.json(
+      { error: message },
+      {
+        status: isUserInputParseIssue ? 422 : 500,
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+      }
+    );
   }
 }
