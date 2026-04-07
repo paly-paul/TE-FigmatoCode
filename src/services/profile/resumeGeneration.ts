@@ -17,6 +17,18 @@ function pickString(obj: UnknownRecord, ...keys: string[]) {
   return undefined;
 }
 
+function normalizePreProfileName(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value).toString();
+  }
+  return undefined;
+}
+
 function isFailedEnvelope(data: UnknownRecord) {
   if (typeof data.status === "string" && data.status.toLowerCase() === "failed") return true;
   if (data.message && typeof data.message === "object") {
@@ -148,11 +160,26 @@ export async function createPreProfile(formData: FormData): Promise<{ preProfile
   const data = await parseJsonResponse(response);
   ensureSuccessfulResponse(response, data, "Unable to create pre-profile.");
 
-  const preProfileName =
+  // Frappe/ERPNext responses can place the created doc name in different locations:
+  // - root: { pre_profile_name: "..."} or { name: "..." }
+  // - root.message: { pre_profile_name: "..."} or { name: "..." }
+  // - root.data: { pre_profile_name: "..."} or { name: "..." }
+  const preProfileNameRaw =
     pickString(data, "pre_profile_name", "name") ??
+    (data.message && typeof data.message === "object" ? pickString(data.message as UnknownRecord, "pre_profile_name", "name") : undefined) ??
+    (data.data && typeof data.data === "object" ? pickString(data.data as UnknownRecord, "pre_profile_name", "name") : undefined) ??
+    (data.data && typeof data.data === "object" && (data.data as UnknownRecord).message
+      ? pickString(((data.data as UnknownRecord).message as UnknownRecord) || {}, "pre_profile_name", "name")
+      : undefined) ??
     (data.message && typeof data.message === "object"
-      ? pickString(data.message as UnknownRecord, "pre_profile_name", "name")
+      ? normalizePreProfileName((data.message as UnknownRecord).pre_profile)
+      : undefined) ??
+    normalizePreProfileName(data.pre_profile) ??
+    (data.data && typeof data.data === "object"
+      ? normalizePreProfileName((data.data as UnknownRecord).pre_profile)
       : undefined);
+
+  const preProfileName = normalizePreProfileName(preProfileNameRaw);
 
   if (!preProfileName) {
     throw new Error("pre_profile_name was not returned by create_pre_profile.");
@@ -172,8 +199,10 @@ export async function generateProfileFromPreProfile(preProfileName: string): Pro
 
   const profileName =
     pickString(data, "profile_name", "name") ??
-    (data.message && typeof data.message === "object"
-      ? pickString(data.message as UnknownRecord, "profile_name", "name")
+    (data.message && typeof data.message === "object" ? pickString(data.message as UnknownRecord, "profile_name", "name") : undefined) ??
+    (data.data && typeof data.data === "object" ? pickString(data.data as UnknownRecord, "profile_name", "name") : undefined) ??
+    (data.data && typeof data.data === "object" && (data.data as UnknownRecord).message
+      ? pickString((((data.data as UnknownRecord).message as UnknownRecord) || {}) as UnknownRecord, "profile_name", "name")
       : undefined);
 
   if (!profileName) {

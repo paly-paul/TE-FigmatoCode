@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
+import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessStoriesPanel";
 import { MobileSignupScreen } from "@/components/mobile/MobileSignupScreen";
 import {
   SocialLoginDivider,
@@ -49,6 +50,7 @@ export default function SignupPageClient() {
       footerText="Already have an account?"
       footerLinkLabel="Login"
       footerLinkHref="/login"
+      rightPanel={<DesktopSuccessStoriesPanel />}
     >
       <div className="mb-6">
         <h1 className="mb-1 text-2xl font-bold text-gray-900">Create An Account</h1>

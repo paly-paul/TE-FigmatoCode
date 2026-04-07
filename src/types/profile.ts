@@ -27,6 +27,13 @@ export interface ResumeProjectEntry {
   responsibilities?: string;
 }
 
+export interface ResumeWorkExperienceEntry {
+  jobTitle?: string;
+  company?: string;
+  duration?: string;
+  responsibilities?: string[];
+}
+
 export interface ResumeLanguageEntry {
   language?: string;
   read?: string;
@@ -59,4 +66,6 @@ export interface ResumeProfileData {
   keySkills?: string[];
   tools?: string[];
   projects?: ResumeProjectEntry[];
+  workExperience?: ResumeWorkExperienceEntry[];
+  cgpa?: string;
 }

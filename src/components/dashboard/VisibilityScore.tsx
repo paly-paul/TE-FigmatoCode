@@ -13,16 +13,17 @@ import {
 
 import {
     Home,
+    ChevronDown,
     ChevronRight,
-    Star,
-    CheckCircle,
-    X,
     ThumbsUp,
-    Target,
+    X,
+    Plus,
     TrendingUp,
-    Lock,
     ExternalLink,
-    BarChart3
+    Lightbulb,
+    Flame,
+    BookOpen,
+    Newspaper
 } from "lucide-react";
 import AppNavbar from "../profile/AppNavbar";
 import CandidateAppShell from "../mobile/CandidateAppShell";
@@ -63,14 +64,15 @@ export default function VisibilityScore() {
     const isMobile = useIsMobile();
     const [visibilityInfoOpen, setVisibilityInfoOpen] = useState(false);
     const [rewardPointsInfoOpen, setRewardPointsInfoOpen] = useState(false);
-    const activityChartRef = useRef<HTMLCanvasElement>(null);
+    const [mobileActiveTab, setMobileActiveTab] = useState<"overview" | "insights">("overview");
+    const [mobileSkillGapsOpen, setMobileSkillGapsOpen] = useState(true);
+    const [mobileLearningsOpen, setMobileLearningsOpen] = useState(true);
+    const [mobileCatchupOpen, setMobileCatchupOpen] = useState(true);
+    const desktopActivityChartRef = useRef<HTMLCanvasElement>(null);
+    const mobileActivityChartRef = useRef<HTMLCanvasElement>(null);
 
     const visibilityScore = 80;
     const rewardPoints = 280;
-
-    const radius = 80;
-    const circumference = Math.PI * radius;
-    const offset = circumference - (visibilityScore / 100) * circumference;
 
     const courses: CourseCard[] = [
         {
@@ -187,9 +189,15 @@ export default function VisibilityScore() {
     ];
 
     useEffect(() => {
-        if (!activityChartRef.current) return;
+        const activeCanvas = isMobile
+            ? mobileActiveTab === "insights"
+                ? mobileActivityChartRef.current
+                : null
+            : desktopActivityChartRef.current;
 
-        const chart = new Chart(activityChartRef.current, {
+        if (!activeCanvas) return;
+
+        const chart = new Chart(activeCanvas, {
             type: "bar",
             data: {
                 labels: activityData.map(d => d.month),
@@ -240,7 +248,7 @@ export default function VisibilityScore() {
         });
 
         return () => chart.destroy();
-    }, []);
+    }, [isMobile, mobileActiveTab]);
 
     const visibilityInner = (
         <>
@@ -532,7 +540,7 @@ export default function VisibilityScore() {
 
                             {/* Chart.js Bar Chart */}
                             <div className="mb-4" style={{ position: "relative", width: "100%", height: "180px" }}>
-                                <canvas ref={activityChartRef}></canvas>
+                                <canvas ref={desktopActivityChartRef}></canvas>
                             </div>
 
                             {/* Activity Message */}
@@ -559,10 +567,367 @@ export default function VisibilityScore() {
         </>
     );
 
+    const mobileInsightsContent = (
+        <>
+            <section className="border border-[#DCE4F0] bg-white px-4 py-4">
+                <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFF4DB]">
+                        <Image src="/icons/reward-points.svg" width={26} height={26} alt="" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-[16px] font-semibold text-[#202939]">Reward Points</h3>
+                                <p className="mt-1 max-w-[150px] text-[14px] leading-6 text-[#5E7397]">
+                                    Redeem your reward points to access courses.
+                                </p>
+                            </div>
+                            <div className="rounded-full bg-[#F3F7FF] px-4 py-2 text-[14px] font-medium text-[#1447E6]">
+                                {rewardPoints} pts
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setRewardPointsInfoOpen(true)}
+                            className="mt-4 border border-[#D6DCEA] bg-white px-4 py-2.5 text-[14px] font-medium text-[#202939]"
+                        >
+                            Know More
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section className="mt-4 border border-[#DCE4F0] bg-white px-4 py-4">
+                <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EAFBF0]">
+                        <Image width={26} height={26} src="/icons/verified.svg" alt="" />
+                    </div>
+                    <div>
+                        <h3 className="text-[16px] font-semibold text-[#202939]">SIXFE Verified Profile</h3>
+                        <p className="mt-1 text-[14px] text-[#5E7397]">You earned +10 visibility points.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section className="mt-4 border border-[#DCE4F0] bg-white">
+                <div className="border-b border-[#E6ECF6] px-4 py-4">
+                    <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[#202939]">Profile Rank</h3>
+                    <p className="mt-1 text-[14px] leading-6 text-[#5E7397]">
+                        Your profile rank across skills, activity, and recruiter interest.
+                    </p>
+                </div>
+                <div className="px-4">
+                    {profileRanks.map((rank, index) => (
+                        <div
+                            key={rank.id}
+                            className={`flex items-center justify-between gap-3 py-4 ${
+                                index !== profileRanks.length - 1 ? "border-b border-[#E6ECF6]" : ""
+                            }`}
+                        >
+                            <div className={`flex items-center gap-2 rounded-full px-3 py-2 ${rank.bgColor}`}>
+                                <div className={rank.color}>{rank.icon}</div>
+                                <span className={`text-[14px] font-medium ${rank.color}`}>{rank.title}</span>
+                            </div>
+                            <span className="text-[14px] text-[#5E7397]">{rank.description}</span>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <section className="mt-4 border border-[#DCE4F0] bg-white">
+                <div className="border-b border-[#E6ECF6] px-4 py-4">
+                    <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[#202939]">Activity</h3>
+                    <p className="mt-1 text-[14px] text-[#5E7397]">Days Active - Monthly</p>
+                </div>
+                <div className="px-4 py-4">
+                    <div className="mb-4" style={{ position: "relative", width: "100%", height: "180px" }}>
+                        <canvas ref={mobileActivityChartRef}></canvas>
+                    </div>
+                    <div className="flex items-start gap-2 border border-[#CBEFD5] bg-[#ECFFF1] px-3 py-3">
+                        <ThumbsUp size={16} className="mt-0.5 shrink-0 text-[#16A34A]" />
+                        <p className="text-[14px] leading-6 text-[#202939]">
+                            Your days active is above Average when compared to users with similar skill set.
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </>
+    );
+
+    const mobileVisibilityInner = (
+        <div className="min-h-full bg-[#EEF0F3] pb-[5.5rem]">
+            <main className="px-3.5 py-4">
+                <div className="mb-4">
+                    <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#202939]">
+                        Visibility Score
+                    </h1>
+                </div>
+
+                {mobileActiveTab === "overview" ? (
+                    <>
+                <section className="relative overflow-hidden rounded-[2px] bg-[#1843DE] px-5 py-7 text-white">
+                    <div className="absolute inset-0 opacity-30">
+                        <div className="absolute -right-10 -top-6 h-36 w-36 rounded-full border border-white/25" />
+                        <div className="absolute right-8 top-10 h-28 w-28 rounded-full border border-white/20" />
+                        <div className="absolute left-24 top-4 h-24 w-24 rounded-full border border-white/15" />
+                        <div className="absolute bottom-[-30px] left-1/2 h-40 w-40 -translate-x-1/2 rounded-full border border-white/15" />
+                    </div>
+
+                    <div className="relative z-10">
+                        <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-[#E9FBEA]">
+                            <span className="text-[26px] font-semibold text-[#12A150]">{visibilityScore}</span>
+                        </div>
+
+                        <h2 className="max-w-[240px] text-[24px] font-semibold leading-[1.1] tracking-[-0.02em]">
+                            Profile Visibility Score
+                        </h2>
+                        <p className="mt-3 max-w-[260px] text-[16px] leading-6 text-white/90">
+                            Improve your visibility to appear in more recruiter searches.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setVisibilityInfoOpen(true)}
+                            className="mt-5 border border-white/60 px-5 py-2.5 text-[14px] font-medium text-white transition hover:bg-white/10"
+                        >
+                            Know More
+                        </button>
+                    </div>
+                </section>
+
+                <section className="mt-4 border border-[#DCE4F0] bg-white">
+                    <button
+                        type="button"
+                        onClick={() => setMobileSkillGapsOpen((current) => !current)}
+                        className="flex w-full items-start justify-between px-4 py-4 text-left"
+                    >
+                        <div>
+                            <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[#202939]">Skill Gaps</h3>
+                            <p className="text-[14px] leading-5 text-[#5E7397]">Based on jobs you are targeting</p>
+                        </div>
+                        <ChevronDown
+                            className={`mt-1 h-5 w-5 text-[#202939] transition-transform ${
+                                mobileSkillGapsOpen ? "rotate-180" : ""
+                            }`}
+                        />
+                    </button>
+
+                    {mobileSkillGapsOpen ? (
+                        <div className="border-t border-[#E6ECF6] px-3.5 py-4">
+                            <div className="mb-4 flex items-start gap-3 border border-[#FFB923] bg-[#FFF9ED] px-3.5 py-3">
+                                <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-[#FFB200]" />
+                                <p className="text-[14px] leading-6 text-[#202939]">
+                                    You&apos;re missing 3 of the top 10 in-demand skills for your target roles.
+                                </p>
+                            </div>
+
+                            <div>
+                                <div className="mb-3 flex items-center gap-2">
+                                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#FF4D4F]">
+                                        <X className="h-3 w-3 text-[#FF4D4F]" />
+                                    </div>
+                                    <h4 className="text-[16px] font-medium text-[#202939]">Missing Skills</h4>
+                                </div>
+                                <div className="mb-4 flex flex-wrap gap-2.5">
+                                    {missingSkills.map((skill) => (
+                                        <span
+                                            key={skill}
+                                            className="rounded-full border border-[#D5E0F1] bg-[#F3F8FF] px-4 py-2 text-[14px] text-[#202939]"
+                                        >
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center gap-2 border border-[#D6DCEA] bg-white px-4 py-2.5 text-[14px] font-medium text-[#202939]"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    Add to Profile
+                                </button>
+                            </div>
+
+                            <div className="my-4 border-t border-[#E6ECF6]" />
+
+                            <div>
+                                <div className="mb-3 flex items-center gap-2">
+                                    <Flame className="h-4 w-4 text-[#FF9F0A]" />
+                                    <h4 className="text-[16px] font-medium text-[#202939]">Trending Skills</h4>
+                                </div>
+                                <div className="mb-4 flex flex-wrap gap-2.5">
+                                    {trendingSkills.map((skill) => (
+                                        <span
+                                            key={skill}
+                                            className="rounded-full border border-[#D5E0F1] bg-[#F3F8FF] px-4 py-2 text-[14px] text-[#202939]"
+                                        >
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center gap-2 border border-[#D6DCEA] bg-white px-4 py-2.5 text-[14px] font-medium text-[#202939]"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    Add to Profile
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
+                </section>
+
+                <section className="mt-4 border border-[#DCE4F0] bg-white">
+                    <button
+                        type="button"
+                        onClick={() => setMobileLearningsOpen((current) => !current)}
+                        className="flex w-full items-start justify-between px-4 py-4 text-left"
+                    >
+                        <div>
+                            <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[#202939]">Recommended Learnings</h3>
+                            <p className="max-w-[260px] text-[14px] leading-5 text-[#5E7397]">
+                                Boost your chances of faster redeployment with new certifications
+                            </p>
+                        </div>
+                        <ChevronDown
+                            className={`mt-1 h-5 w-5 text-[#202939] transition-transform ${
+                                mobileLearningsOpen ? "rotate-180" : ""
+                            }`}
+                        />
+                    </button>
+
+                    {mobileLearningsOpen ? (
+                        <div className="border-t border-[#E6ECF6] px-3.5 py-4">
+                            <div className="space-y-4">
+                                {courses.map((course) => (
+                                    <article key={course.id} className="border border-[#DCE4F0] bg-white p-3">
+                                        <div className="relative mb-3 h-[135px] overflow-hidden bg-gray-200">
+                                            <img
+                                                src={course.image}
+                                                alt={course.title}
+                                                className="h-full w-full object-cover"
+                                            />
+                                        </div>
+                                        <span className="inline-flex rounded-full bg-[#F0EEFE] px-3 py-1 text-[12px] text-[#7E59F8]">
+                                            {course.category}
+                                        </span>
+                                        <div className="mt-3 flex items-center gap-1 text-[14px] text-[#202939]">
+                                            <span>{course.provider}</span>
+                                            <ExternalLink className="h-4 w-4 text-[#5E7397]" />
+                                        </div>
+                                        <h4 className="mt-1 text-[16px] font-medium leading-8 text-[#202939]">
+                                            {course.title}
+                                        </h4>
+                                        <div className="my-3 border-t border-[#E6ECF6]" />
+                                        <button
+                                            type="button"
+                                            className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F3F7FF] text-[14px] text-[#202939]"
+                                        >
+                                            <Image width={16} height={16} src="/icons/square-unlock.svg" alt="" />
+                                            Unlock with {course.pointsRequired} pts
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </section>
+
+                <section className="mt-4 border border-[#DCE4F0] bg-white">
+                    <button
+                        type="button"
+                        onClick={() => setMobileCatchupOpen((current) => !current)}
+                        className="flex w-full items-start justify-between px-4 py-4 text-left"
+                    >
+                        <div>
+                            <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[#202939]">Weekly Catchup</h3>
+                            <p className="text-[14px] leading-5 text-[#5E7397]">Latest happenings relevant to you</p>
+                        </div>
+                        <ChevronDown
+                            className={`mt-1 h-5 w-5 text-[#202939] transition-transform ${
+                                mobileCatchupOpen ? "rotate-180" : ""
+                            }`}
+                        />
+                    </button>
+
+                    {mobileCatchupOpen ? (
+                        <div className="border-t border-[#E6ECF6] px-3.5 py-4">
+                            <div className="space-y-4">
+                                {newsItems.map((item) => (
+                                    <article key={item.id} className="flex gap-3 border border-[#DCE4F0] bg-white p-3">
+                                        <img
+                                            src={item.image}
+                                            alt={item.title}
+                                            className="h-16 w-16 shrink-0 object-cover"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <h4 className="text-[16px] leading-8 text-[#202939]">
+                                                    {item.title}
+                                                </h4>
+                                                <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#5E7397]" />
+                                            </div>
+                                            <p className="mt-2 text-[14px] text-[#5E7397]">{item.timestamp}</p>
+                                        </div>
+                                    </article>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </section>
+                    </>
+                ) : mobileInsightsContent}
+            </main>
+
+            <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#E6ECF6] bg-white pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="mx-auto grid h-[4.5rem] max-w-lg grid-cols-2">
+                    <button
+                        type="button"
+                        onClick={() => setMobileActiveTab("overview")}
+                        className={`flex flex-col items-center justify-center gap-1 text-xs font-medium ${
+                            mobileActiveTab === "overview" ? "text-[#1447E6]" : "text-[#5E7397]"
+                        }`}
+                    >
+                        <BookOpen
+                            className={`h-6 w-6 ${
+                                mobileActiveTab === "overview" ? "text-[#1447E6]" : "text-[#5E7397]"
+                            }`}
+                            strokeWidth={1.75}
+                        />
+                        <span className={mobileActiveTab === "overview" ? "font-semibold" : ""}>Overview</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMobileActiveTab("insights")}
+                        className={`flex flex-col items-center justify-center gap-1 text-xs font-medium ${
+                            mobileActiveTab === "insights" ? "text-[#1447E6]" : "text-[#5E7397]"
+                        }`}
+                    >
+                        <Newspaper
+                            className={`h-6 w-6 ${
+                                mobileActiveTab === "insights" ? "text-[#1447E6]" : "text-[#5E7397]"
+                            }`}
+                            strokeWidth={1.75}
+                        />
+                        <span className={mobileActiveTab === "insights" ? "font-semibold" : ""}>Insights</span>
+                    </button>
+                </div>
+            </nav>
+
+            <ProfileVisibilityInfoDrawer
+                open={visibilityInfoOpen}
+                onClose={() => setVisibilityInfoOpen(false)}
+            />
+
+            <RewardPointsInfoDrawer
+                open={rewardPointsInfoOpen}
+                onClose={() => setRewardPointsInfoOpen(false)}
+            />
+        </div>
+    );
+
     if (isMobile) {
         return (
-            <CandidateAppShell activeBottomTab="insights">
-                {visibilityInner}
+            <CandidateAppShell showBottomNav={false}>
+                {mobileVisibilityInner}
             </CandidateAppShell>
         );
     }

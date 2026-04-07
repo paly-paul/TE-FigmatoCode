@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/auth/AuthLayout";
+import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessStoriesPanel";
 import { MobileLoginScreen } from "@/components/mobile/MobileLoginScreen";
 import {
   SocialLoginDivider,
@@ -62,6 +63,7 @@ export default function LoginPageClient() {
       footerText="Don't have an account?"
       footerLinkLabel="Sign Up"
       footerLinkHref="/signup"
+      rightPanel={<DesktopSuccessStoriesPanel />}
     >
       <div className="mb-6">
         <h1 className="mb-1 text-2xl font-bold text-gray-900">

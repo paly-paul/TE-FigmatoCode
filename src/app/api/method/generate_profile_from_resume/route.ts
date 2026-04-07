@@ -132,6 +132,18 @@ function pickString(record: JsonRecord, ...keys: string[]) {
   return undefined;
 }
 
+function normalizePreProfileName(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value).toString();
+  }
+  return undefined;
+}
+
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
@@ -188,6 +200,7 @@ async function fallbackSaveProfileFromResume(params: {
   profileName?: string;
   currentLocation?: string;
   phoneNumber?: string;
+  updatedResume?: string;
 }) {
   const parsed = await parseResumeFile(params.file);
 
@@ -195,19 +208,29 @@ async function fallbackSaveProfileFromResume(params: {
     params.profileName ? `?profile_name=${encodeURIComponent(params.profileName)}` : ""
   }`;
 
-  const payload: JsonRecord = {
-    full_name: params.fullName,
+  const profilePayload: JsonRecord = {
     email: params.email,
-    professional_title:
-      (typeof parsed.professionalTitle === "string" && parsed.professionalTitle.trim()
-        ? parsed.professionalTitle.trim()
-        : undefined) ?? undefined,
+    full_name: params.fullName,
     current_location:
       params.currentLocation?.trim() ||
       (typeof parsed.currentLocation === "string" ? parsed.currentLocation.trim() : "") ||
       undefined,
+  };
+  const profileVersionPayload: JsonRecord = {
+    professional_title:
+      (typeof parsed.professionalTitle === "string" && parsed.professionalTitle.trim()
+        ? parsed.professionalTitle.trim()
+        : undefined) ?? undefined,
     key_skills: toKeySkills(parsed.keySkills),
     education_details: toEducationDetails(parsed.education),
+    updated_resume: params.updatedResume?.trim() || undefined,
+    mode: params.profileName ? "edit" : "new",
+  };
+
+  const payload: JsonRecord = {
+    profile: profilePayload,
+    profile_version: profileVersionPayload,
+    updated_resume: params.updatedResume?.trim() || undefined,
     action: "save",
   };
 
@@ -320,6 +343,7 @@ export async function POST(request: Request) {
     getCookieValue(cookieHeader, "full_name");
   const phoneNumber = getFormValue(incoming, "phone_number");
   const currentLocation = getFormValue(incoming, "current_location");
+  const updatedResume = getFormValue(incoming, "updated_resume");
 
   if (!email || !fullName) {
     return NextResponse.json({
@@ -367,7 +391,64 @@ export async function POST(request: Request) {
     createdProfileName: created?.createdProfileName,
     hasPhoneNumber: Boolean(phoneNumber),
     hasCurrentLocation: Boolean(currentLocation),
+    hasUpdatedResume: Boolean(updatedResume),
   });
+
+  // Existing profile: skip create_pre_profile (which fails for duplicate emails)
+  // and update the current profile directly from parsed resume content.
+  if (effectiveCandidateId || resolved.profileName) {
+    const directProfileName = effectiveCandidateId || resolved.profileName;
+    try {
+      const direct = await fallbackSaveProfileFromResume({
+        backendBase,
+        headers,
+        file,
+        email,
+        fullName,
+        profileName: directProfileName,
+        currentLocation,
+        phoneNumber,
+        updatedResume,
+      });
+
+      if (direct.upstream.ok && !isFailedEnvelope(direct.data)) {
+        const returnedProfileName =
+          pickString(direct.data, "profile_name") ??
+          (direct.data.message && typeof direct.data.message === "object"
+            ? pickString(direct.data.message as JsonRecord, "profile", "profile_name")
+            : undefined) ??
+          directProfileName;
+
+        const res = NextResponse.json({
+          fallback: true,
+          fallbackReason: "existing-profile-direct-update",
+          profileName: returnedProfileName ?? null,
+          parsed: direct.parsed,
+          saved: direct.data,
+        });
+        res.headers.set("x-upstream-create-edit-profile", direct.url);
+        return res;
+      }
+      return NextResponse.json(
+        {
+          error: "Direct profile update failed for existing profile.",
+          profileName: directProfileName,
+          detail: direct.data,
+        },
+        { status: direct.upstream.ok ? 502 : direct.upstream.status }
+      );
+    } catch (error) {
+      console.error("generate_profile_from_resume direct-update failed", error);
+      return NextResponse.json(
+        {
+          error: "Direct profile update failed for existing profile.",
+          profileName: directProfileName,
+          detail: String(error),
+        },
+        { status: 502 }
+      );
+    }
+  }
 
   const preProfileBody = new FormData();
   preProfileBody.append("email", email);
@@ -404,6 +485,7 @@ export async function POST(request: Request) {
         profileName: profileNameForFallback,
         currentLocation,
         phoneNumber,
+        updatedResume,
       });
 
       if (fallback.upstream.ok && !isFailedEnvelope(fallback.data)) {
@@ -465,12 +547,17 @@ export async function POST(request: Request) {
     return res;
   }
 
-  const preProfileName =
+  const preProfileNameRaw =
     pickString(createData, "pre_profile_name") ??
     pickString(createData, "name") ??
     (createData.message && typeof createData.message === "object"
       ? pickString(createData.message as JsonRecord, "pre_profile_name", "name")
-      : undefined);
+      : undefined) ??
+    (createData.message && typeof createData.message === "object"
+      ? normalizePreProfileName((createData.message as JsonRecord).pre_profile)
+      : undefined) ??
+    normalizePreProfileName(createData.pre_profile);
+  const preProfileName = normalizePreProfileName(preProfileNameRaw);
 
   if (!preProfileName) {
     return NextResponse.json(

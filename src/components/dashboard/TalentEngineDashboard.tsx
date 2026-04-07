@@ -37,6 +37,21 @@ import {
 } from "../ui/FilterDrawer";
 import Image from "next/image";
 import { useIsMobile } from "@/lib/useResponsive";
+import { getCandidateId, getProfileName } from "@/lib/authSession";
+import { getCandidateActionables } from "@/services/jobs/getCandidateActionables";
+import {
+  getJobApplications,
+  getRecommendedJobs,
+  markInterestedInJob,
+  postProposalCandidateAcceptance,
+  postProposalCandidateNegotiation,
+} from "@/services/jobs/actionCenter";
+import { postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
+import type { CandidateActionableApi } from "@/services/jobs/types";
+import {
+  mapApplicationToDashboardJob,
+  mapRecommendedToDashboardJob,
+} from "@/services/jobs/mapApiJobsToUi";
 
 interface ActionCard {
   id: number;
@@ -44,6 +59,9 @@ interface ActionCard {
   title: string;
   subtitle: string;
   timestamp: string;
+  jobDocumentId?: string;
+  proposalName?: string;
+  interviewId?: string;
 }
 
 interface JobListing {
@@ -63,6 +81,7 @@ interface JobListing {
   skills: string[];
   employmentType: string;
   seniorityLevel: string;
+  jobDocumentId?: string;
 }
 
 const LOCATION_LABELS = DEFAULT_LOCATIONS.reduce<Record<string, string>>(
@@ -72,6 +91,10 @@ const LOCATION_LABELS = DEFAULT_LOCATIONS.reduce<Record<string, string>>(
   },
   {}
 );
+
+function getLocationLabel(locationId: string) {
+  return LOCATION_LABELS[locationId] || locationId;
+}
 
 const ACTION_CARDS: ActionCard[] = [
   {
@@ -232,6 +255,13 @@ function formatActionSubtitleForMobile(subtitle: string) {
   return subtitle.replace(/\s*-\s*/g, " | ");
 }
 
+function toActionTitle(actionable: CandidateActionableApi) {
+  const text = `${actionable.stage} ${actionable.status}`.toLowerCase();
+  if (text.includes("interview")) return "Interview Scheduled";
+  if (text.includes("negotiation") || text.includes("proposal")) return "Salary Negotiation";
+  return "Recruiter interest received";
+}
+
 export default function TalentEngineDashboard() {
   const isMobile = useIsMobile();
   const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
@@ -254,6 +284,14 @@ export default function TalentEngineDashboard() {
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
+  const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
+  const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
+  const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
+  const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
+  const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
+  const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
+  const [candidateId, setCandidateId] = useState<string | null>(null);
+  const [profileId, setProfileId] = useState<string | null>(null);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -270,8 +308,82 @@ export default function TalentEngineDashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    const currentCandidateId = getCandidateId();
+    const profileName = getProfileName();
+    setCandidateId(currentCandidateId);
+    setProfileId(profileName);
+
+    void (async () => {
+      if (currentCandidateId) {
+        try {
+          const applicationsRes = await getJobApplications(currentCandidateId);
+          setApiApplicationJobs(applicationsRes.map((row) => mapApplicationToDashboardJob(row)));
+        } catch {
+          setApiApplicationJobs([]);
+        } finally {
+          setHasAttemptedJobsLoad(true);
+        }
+      } else {
+        setApiApplicationJobs([]);
+        setHasAttemptedJobsLoad(true);
+      }
+
+      if (!profileName) {
+        setApiActionCards([]);
+        setApiGeneralCards([]);
+        setApiRecommendedJobs([]);
+        setHasAttemptedActionablesLoad(true);
+        setHasAttemptedJobsLoad(true);
+        return;
+      }
+
+      try {
+        const [actionablesRes, recommendedJobsRes] = await Promise.all([
+          getCandidateActionables(profileName),
+          getRecommendedJobs(profileName),
+        ]);
+
+        const nextActions: ActionCard[] = actionablesRes.actions.map((item) => ({
+          id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+          type: "Job",
+          title: toActionTitle(item),
+          subtitle: `${item.job_title} - ${item.job_id}`,
+          timestamp: item.stage || item.status || "Now",
+          jobDocumentId: item.job_id,
+          proposalName: item.name,
+          interviewId: item.info?.interview_id,
+        }));
+
+        const nextGeneral: ActionCard[] = recommendedJobsRes.slice(0, 3).map((job, index) => ({
+          id: 100000 + index,
+          type: "General",
+          title: "New Matching Roles Added",
+          subtitle: `${job.job_title} - ${job.location || job.job_id}`,
+          timestamp: job.status || "Recommended",
+          jobDocumentId: job.job_id,
+        }));
+        const nextRecommendedJobs: JobListing[] = recommendedJobsRes.map((job) =>
+          mapRecommendedToDashboardJob(job)
+        );
+
+        setApiActionCards(nextActions);
+        setApiGeneralCards(nextGeneral);
+        setApiRecommendedJobs(nextRecommendedJobs);
+        setHasAttemptedActionablesLoad(true);
+        setHasAttemptedJobsLoad(true);
+      } catch {
+        setApiActionCards([]);
+        setApiGeneralCards([]);
+        setApiRecommendedJobs([]);
+        setHasAttemptedActionablesLoad(true);
+        setHasAttemptedJobsLoad(true);
+      }
+    })();
+  }, []);
+
   const primaryLocation = selectedLocations[0]
-    ? LOCATION_LABELS[selectedLocations[0]]
+    ? getLocationLabel(selectedLocations[0])
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
 
@@ -283,7 +395,12 @@ export default function TalentEngineDashboard() {
     activeFilters.salaryMax !== DEFAULT_FILTERS.salaryMax,
   ].filter(Boolean).length;
 
-  const filteredActions = ACTION_CARDS.filter(
+  const resolvedActionCards = useMemo(() => {
+    if (!hasAttemptedActionablesLoad) return [];
+    return [...apiActionCards, ...apiGeneralCards];
+  }, [apiActionCards, apiGeneralCards, hasAttemptedActionablesLoad]);
+
+  const filteredActions = resolvedActionCards.filter(
     (card) => card.type === activeActionTab
   );
 
@@ -294,65 +411,89 @@ export default function TalentEngineDashboard() {
 
   const actionTabCounts = useMemo(() => {
     return {
-      Job: ACTION_CARDS.filter((c) => c.type === "Job").length,
-      Profile: ACTION_CARDS.filter((c) => c.type === "Profile").length,
-      General: ACTION_CARDS.filter((c) => c.type === "General").length,
+      Job: resolvedActionCards.filter((c) => c.type === "Job").length,
+      Profile: resolvedActionCards.filter((c) => c.type === "Profile").length,
+      General: resolvedActionCards.filter((c) => c.type === "General").length,
     };
-  }, []);
+  }, [resolvedActionCards]);
 
-  const visibleJobs = useMemo(() => {
+  const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
+  const applicationSourceJobs = apiApplicationJobs;
+
+  // When using API-provided locations, our current location filter options may not
+  // include the same city IDs (ex: `benton-harbor-united-states` vs `bangor-us`).
+  // If none of the API jobs match the selected location IDs, treat as "All locations".
+  const effectiveSelectedLocations = useMemo(() => {
+    if (apiRecommendedJobs.length === 0) return selectedLocations;
+    if (selectedLocations.length === 0) return selectedLocations;
+    const anyMatches = apiRecommendedJobs.some((j) => selectedLocations.includes(j.locationId));
+    return anyMatches ? selectedLocations : [];
+  }, [apiRecommendedJobs, selectedLocations]);
+
+  const { visibleRecommendedJobs, visibleApplicationJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    return JOB_LISTINGS.filter((job) => {
-      const matchesSearch =
-        normalizedQuery.length === 0 ||
-        [
-          job.title,
-          job.company,
-          job.location,
-          job.locationFull,
-          ...job.skills,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery);
+    const filterList = (sourceJobs: JobListing[]) =>
+      sourceJobs.filter((job) => {
+        const matchesSearch =
+          normalizedQuery.length === 0 ||
+          [
+            job.title,
+            job.company,
+            job.location,
+            job.locationFull,
+            ...job.skills,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
 
-      const matchesLocation =
-        selectedLocations.length === 0 ||
-        selectedLocations.includes(job.locationId);
+        const matchesLocation =
+          effectiveSelectedLocations.length === 0 ||
+          effectiveSelectedLocations.includes(job.locationId);
 
-      const matchesSkills =
-        activeFilters.skills.length === 0 ||
-        activeFilters.skills.some((skill) => job.skills.includes(skill));
+        const matchesSkills =
+          activeFilters.skills.length === 0 ||
+          activeFilters.skills.some((skill) => job.skills.includes(skill));
 
-      const matchesEmployment =
-        activeFilters.employmentTypes.length === 0 ||
-        activeFilters.employmentTypes.includes(job.employmentType);
+        const matchesEmployment =
+          activeFilters.employmentTypes.length === 0 ||
+          activeFilters.employmentTypes.includes(job.employmentType);
 
-      const matchesSeniority =
-        activeFilters.seniorityLevels.length === 0 ||
-        activeFilters.seniorityLevels.includes(job.seniorityLevel);
+        const matchesSeniority =
+          activeFilters.seniorityLevels.length === 0 ||
+          activeFilters.seniorityLevels.includes(job.seniorityLevel);
 
-      const matchesSalary =
-        job.hourlyRate >= activeFilters.salaryMin &&
-        job.hourlyRate <= activeFilters.salaryMax;
+        const matchesSalary =
+          job.hourlyRate >= activeFilters.salaryMin &&
+          job.hourlyRate <= activeFilters.salaryMax;
 
-      const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+        const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
 
-      return (
-        matchesSearch &&
-        matchesLocation &&
-        matchesSkills &&
-        matchesEmployment &&
-        matchesSeniority &&
-        matchesSalary &&
-        matchesSaved
-      );
-    });
-  }, [activeFilters, savedJobIds, searchQuery, selectedLocations, showSavedOnly]);
+        return (
+          matchesSearch &&
+          matchesLocation &&
+          matchesSkills &&
+          matchesEmployment &&
+          matchesSeniority &&
+          matchesSalary &&
+          matchesSaved
+        );
+      });
 
-  const recommendedJobs = visibleJobs;
-  const applicationJobs = visibleJobs;
+    return {
+      visibleRecommendedJobs: filterList(recommendedSourceJobs),
+      visibleApplicationJobs: filterList(applicationSourceJobs),
+    };
+  }, [
+    activeFilters,
+    savedJobIds,
+    searchQuery,
+    effectiveSelectedLocations,
+    showSavedOnly,
+    recommendedSourceJobs,
+    applicationSourceJobs,
+  ]);
 
   const handleJobApplyClick = (job: JobListing) => {
     const nextAction: ActionCard = {
@@ -361,6 +502,7 @@ export default function TalentEngineDashboard() {
       title: job.title,
       subtitle: `${job.location} - ${job.locationFull}`,
       timestamp: job.postedTime,
+      jobDocumentId: job.jobDocumentId,
     };
 
     const isSameJobAlreadyOpen =
@@ -476,6 +618,44 @@ export default function TalentEngineDashboard() {
     );
   };
 
+  const handleDrawerPrimaryAction = (
+    action: ActionCard,
+    extras?: { interviewId?: string; interviewSlotId?: string }
+  ) => {
+    const jobDocumentId = action.jobDocumentId;
+    const lowerTitle = action.title.toLowerCase();
+    const isProposal = lowerTitle.includes("salary") || lowerTitle.includes("negotiation");
+    const isInterview =
+      lowerTitle.includes("interview") || action.title === "Interview Scheduled";
+
+    void (async () => {
+      try {
+        if (
+          isInterview &&
+          extras?.interviewId?.trim() &&
+          extras?.interviewSlotId?.trim()
+        ) {
+          await postInterviewSelectSlot(extras.interviewId, extras.interviewSlotId);
+        } else if (isProposal && action.proposalName) {
+          await postProposalCandidateAcceptance(action.proposalName, "");
+        } else {
+          if (!jobDocumentId) return;
+          if (candidateId) {
+            await markInterestedInJob(candidateId, jobDocumentId);
+          }
+        }
+        setIsDrawerOpen(false);
+      } catch {
+        // Keep drawer open so user can retry.
+      }
+    })();
+  };
+
+  const handleDrawerClarification = (action: ActionCard) => {
+    if (!action.proposalName) return;
+    void postProposalCandidateNegotiation(action.proposalName, "");
+  };
+
   const handlePauseSave = (duration: string) => {
     console.log("Paused for:", duration, "months");
     setIsLookingForJob(false);
@@ -578,7 +758,10 @@ export default function TalentEngineDashboard() {
       <ActionDrawer
         open={isDrawerOpen}
         action={selectedAction}
+        profileId={profileId}
         onClose={() => setIsDrawerOpen(false)}
+        onPrimaryAction={handleDrawerPrimaryAction}
+        onRequestClarification={handleDrawerClarification}
       />
       <PauseJobSearchModal
         open={showPauseModal}
@@ -627,7 +810,12 @@ export default function TalentEngineDashboard() {
         <div className="mb-4">{actionTabsRow}</div>
 
         <div className="flex flex-col gap-3">
-          {displayedActions.map((card) => {
+          {displayedActions.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-gray-900">No actionables right now</p>
+              <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
+            </div>
+          ) : displayedActions.map((card) => {
             const badge = getActionBadge(card.type);
             return (
               <button
@@ -740,9 +928,9 @@ export default function TalentEngineDashboard() {
               </button>
             </div>
 
-            {recommendedJobs.length > 0 ? (
+            {visibleRecommendedJobs.length > 0 ? (
               <div className="flex flex-col gap-4">
-                {recommendedJobs.map((job) => (
+                {visibleRecommendedJobs.map((job) => (
                   <div
                     key={job.id}
                     className="group flex min-h-[240px] flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
@@ -892,9 +1080,9 @@ export default function TalentEngineDashboard() {
               </button>
             </div>
 
-            {applicationJobs.length > 0 ? (
+            {visibleApplicationJobs.length > 0 ? (
               <div className="flex flex-col gap-4">
-                {applicationJobs
+                {visibleApplicationJobs
                   .filter((job) => mobileApplicationStage === "Stage" || job.stage === mobileApplicationStage)
                   .map((job) => (
                     <div
@@ -975,7 +1163,7 @@ export default function TalentEngineDashboard() {
             <div>
               <h3 className="text-xl font-semibold text-gray-900">Matching roles found!</h3>
               <p className="mt-1 text-sm leading-6 text-[#60708F]">
-                Your profile matches {visibleJobs.length} active {visibleJobs.length === 1 ? "role" : "roles"}
+                Your profile matches {visibleRecommendedJobs.length} active {visibleRecommendedJobs.length === 1 ? "role" : "roles"}
               </p>
             </div>
           </div>
@@ -1012,13 +1200,18 @@ export default function TalentEngineDashboard() {
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-lg sm:text-xl font-semibold">Action Center</h2>
-            <div className="sm:[&_span]:text-sm sm:[&_span]:text-xs">{jobSearchToggle}</div>
+            <div className="sm:[&_span]:text-sm">{jobSearchToggle}</div>
           </div>
 
           <div className="mb-6 [&_button]:rounded-md">{actionTabsRow}</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {displayedActions.map((card) => {
+            {displayedActions.length === 0 ? (
+              <div className="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
+                <p className="text-sm font-medium text-gray-900">No actionables right now</p>
+                <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
+              </div>
+            ) : displayedActions.map((card) => {
               const badge = getActionBadge(card.type);
 
               return (
@@ -1059,7 +1252,7 @@ export default function TalentEngineDashboard() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <h2 className="text-lg sm:text-xl font-semibold">Jobs</h2>
               {/* <p className="text-sm text-gray-500">
-                Showing {visibleJobs.length} of {JOB_LISTINGS.length} jobs
+                Showing {visibleRecommendedJobs.length} of {JOB_LISTINGS.length} jobs
               </p> */}
             </div>
             <div className="flex flex-col gap-4 mb-6">
@@ -1276,9 +1469,9 @@ export default function TalentEngineDashboard() {
               </div> */}
 
               {activeTab === "Recommended" ? (
-                recommendedJobs.length > 0 ? (
+                visibleRecommendedJobs.length > 0 ? (
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-                    {recommendedJobs.map((job) => (
+                    {visibleRecommendedJobs.map((job) => (
                       <div
                         key={job.id}
                         className="group bg-white border border-gray-200 border-b-4 border-b-blue-600 rounded-lg p-4 sm:p-6 hover:shadow-md hover:border-blue-600 hover:border-b-blue-600 min-h-[240px] flex flex-col justify-between transition-all"
@@ -1396,7 +1589,7 @@ export default function TalentEngineDashboard() {
                 ) : (
                   renderEmptyJobs("Try broadening your search, location, or salary range.")
                 )
-              ) : applicationJobs.length > 0 ? (
+              ) : visibleApplicationJobs.length > 0 ? (
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <div className="hidden md:block">
                     <div className="grid grid-cols-5 gap-4 px-6 py-3 text-sm font-medium text-gray-600 border-b">
@@ -1407,7 +1600,7 @@ export default function TalentEngineDashboard() {
                       <span></span>
                     </div>
 
-                    {applicationJobs.map((job) => (
+                    {visibleApplicationJobs.map((job) => (
                       <div
                         key={job.id}
                         className="grid grid-cols-5 gap-4 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
@@ -1435,7 +1628,7 @@ export default function TalentEngineDashboard() {
                   </div>
 
                   <div className="md:hidden divide-y">
-                    {applicationJobs.map((job) => (
+                    {visibleApplicationJobs.map((job) => (
                       <div key={job.id} className="p-4 hover:bg-gray-50">
                         <div className="flex justify-between items-start mb-3">
                           <div className="flex-1">
@@ -1484,7 +1677,7 @@ export default function TalentEngineDashboard() {
                 <div>
                   <h3 className="font-semibold text-sm">Matching roles found!</h3>
                   <p className="text-xs text-gray-600">
-                    {visibleJobs.length} active role{visibleJobs.length === 1 ? "" : "s"} match the current criteria
+                    {visibleRecommendedJobs.length} active role{visibleRecommendedJobs.length === 1 ? "" : "s"} match the current criteria
                   </p>
                 </div>
               </div>

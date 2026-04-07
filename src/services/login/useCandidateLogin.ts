@@ -36,12 +36,6 @@ export function useCandidateLogin() {
       let profileName = extractProfileName(data, values.email.trim());
       let isProfileGenerated = extractIsProfileGenerated(data);
 
-      if (!profileName) {
-        const resolvedProfileName = await resolveProfileNameForLogin(values.email.trim());
-        if (resolvedProfileName) {
-          profileName = resolvedProfileName;
-        }
-      }
       if (profileName) {
         isProfileGenerated = true;
       }
@@ -50,7 +44,7 @@ export function useCandidateLogin() {
       ) ?? null;
       clearResumeWizardSession();
       if (effectiveProfileId) setCandidateId(effectiveProfileId);
-      // The backend candidate_login response often returns the Profile document id in `profile`.
+      // The backend candidate_login response is the contract source for the Profile document id.
       // Treat that as the canonical profileName for subsequent routing + API calls.
       if (effectiveProfileId) setProfileName(effectiveProfileId);
       else if (profileName) setProfileName(profileName);
@@ -200,31 +194,3 @@ function extractIsProfileGenerated(data: Record<string, unknown>): boolean {
   return candidates.some((candidate) => candidate === true);
 }
 
-async function resolveProfileNameForLogin(email: string): Promise<string | null> {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized || typeof window === "undefined") return null;
-
-  try {
-    const url = new URL("/api/method/resolve_profile_name/", window.location.origin);
-    url.searchParams.set("email", normalized);
-    const response = await fetch(url.toString(), { credentials: "same-origin" });
-    const data = (await response.json()) as { profile_name?: string; error?: string };
-    console.log("[login] submit:resolve-profile", {
-      email: normalized,
-      status: response.status,
-      ok: response.ok,
-      body: data,
-    });
-
-    if (response.ok && typeof data.profile_name === "string" && data.profile_name.trim()) {
-      return data.profile_name.trim();
-    }
-  } catch (error) {
-    console.error("[login] submit:resolve-profile:error", {
-      email: normalized,
-      error,
-    });
-  }
-
-  return null;
-}

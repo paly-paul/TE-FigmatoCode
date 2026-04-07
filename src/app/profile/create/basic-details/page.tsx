@@ -1027,6 +1027,26 @@ export default function BasicDetailsPage() {
     };
 
     upsertResumeProfile(payload);
+    // Keep Skills & Projects seed data in sync with latest resume session payload
+    // so the next step always hydrates from the most recent values.
+    if (typeof window !== "undefined") {
+      try {
+        const mergedProfile = readResumeProfile() ?? payload;
+        const firstProject = mergedProfile.projects?.[0];
+        window.sessionStorage.setItem(
+          "resumeSkills",
+          JSON.stringify({
+            skills: mergedProfile.keySkills ?? [],
+            tools: mergedProfile.tools ?? [],
+            projects: mergedProfile.projects ?? [],
+            projectDescription: firstProject?.projectDescription ?? "",
+            responsibilities: firstProject?.responsibilities ?? "",
+          })
+        );
+      } catch {
+        // ignore storage errors
+      }
+    }
     try {
       const fullName = [payload.firstName, payload.lastName].filter(Boolean).join(" ").trim();
       const email = payload.email?.trim() || "";

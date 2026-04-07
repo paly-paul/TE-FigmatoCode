@@ -5,7 +5,7 @@ import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
-import { clearAuthSession } from "@/lib/authSession";
+import { clearAuthSession, getProfileName } from "@/lib/authSession";
 import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
 
@@ -21,6 +21,12 @@ export default function AppNavbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   // Keep the initial render deterministic (server + first client render must match).
   const [navDisplayName, setNavDisplayName] = useState("User");
+
+  const getProfileHref = () => {
+    const profileName = getProfileName();
+    if (!profileName) return "/profile";
+    return `/profile/${encodeURIComponent(profileName)}`;
+  };
 
   useEffect(() => {
     setNavDisplayName(getResolvedNavDisplayName());
@@ -140,7 +146,7 @@ export default function AppNavbar() {
                 <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden py-1">
                   <button
                     type="button"
-                    onClick={() => router.push("/profile")}
+                    onClick={() => router.push(getProfileHref())}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <User className="w-4 h-4 text-gray-500" />
@@ -199,7 +205,7 @@ export default function AppNavbar() {
               <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
                 <button
                   type="button"
-                  onClick={() => router.push("/profile")}
+                  onClick={() => router.push(getProfileHref())}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100 text-left text-sm"
                 >
                   <User className="w-4 h-4 text-gray-500" />
