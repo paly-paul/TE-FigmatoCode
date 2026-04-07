@@ -2,9 +2,9 @@
 const nextConfig = {
   experimental: {
     instrumentationHook: true,
+    serverComponentsExternalPackages: ["pdf-parse", "pdfjs-dist"],
   },
   trailingSlash: true,
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   images: {
     unoptimized: true,
   },
