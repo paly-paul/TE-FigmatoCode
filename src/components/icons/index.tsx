@@ -121,6 +121,25 @@ export function LockIcon() {
   );
 }
 
+export function LinkedInIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="4" fill="#0A66C2" />
+      <path
+        d="M8.2 10.1H5.9V18H8.2V10.1ZM7.05 6.25C6.3 6.25 5.75 6.8 5.75 7.5C5.75 8.2 6.3 8.75 7 8.75H7.02C7.75 8.75 8.3 8.2 8.3 7.5C8.28 6.8 7.75 6.25 7.05 6.25ZM18.25 13.45C18.25 10.95 16.92 9.8 15.15 9.8C13.72 9.8 13.08 10.58 12.72 11.13V10.1H10.45C10.48 10.78 10.45 18 10.45 18H12.72V13.6C12.72 13.37 12.74 13.13 12.8 12.97C12.98 12.5 13.38 12.02 14.07 12.02C14.97 12.02 15.33 12.7 15.33 13.7V18H17.6V13.45H18.25Z"
+        fill="white"
+      />
+    </svg>
+  );
+}
+
 export function CheckCircleIcon({ size = 48 }: { size?: number }) {
   return (
     <svg
