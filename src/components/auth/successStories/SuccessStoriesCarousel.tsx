@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
-import { Pagination, Autoplay } from "swiper/modules";
+import { Pagination } from "swiper/modules";
+import type { Swiper as SwiperInstance } from "swiper";
 import "swiper/css";
 import "swiper/css/pagination";
 
@@ -52,6 +54,22 @@ export function SuccessStoriesCarousel({
   stories = DEFAULT_SUCCESS_STORIES,
   className = "",
 }: SuccessStoriesCarouselProps) {
+  const swiperRef = useRef<SwiperInstance | null>(null);
+
+  useEffect(() => {
+    const swiper = swiperRef.current;
+    if (!swiper || stories.length <= 1) return;
+
+    const interval = window.setInterval(() => {
+      const activeIndex = swiper.realIndex;
+      const lastIndex = stories.length - 1;
+      const nextIndex = activeIndex >= lastIndex ? 0 : activeIndex + 1;
+      swiper.slideTo(nextIndex);
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [stories.length]);
+
   const quoteClass =
     variant === "desktop"
       ? "relative z-[1] text-2xl font-bold leading-snug text-gray-900"
@@ -74,13 +92,19 @@ export function SuccessStoriesCarousel({
       </div>
 
       <Swiper
-        modules={[Pagination, Autoplay]}
+        modules={[Pagination]}
         pagination={{ clickable: true }}
         slidesPerView={1}
         spaceBetween={variant === "desktop" ? 32 : 24}
-        autoplay={{
-          delay: 4000,
-          disableOnInteraction: false,
+        allowTouchMove
+        simulateTouch
+        grabCursor
+        touchStartPreventDefault={false}
+        watchOverflow
+        observer
+        observeParents
+        onSwiper={(swiper) => {
+          swiperRef.current = swiper;
         }}
         className="mobile-success-stories-swiper w-full !pb-10"
       >

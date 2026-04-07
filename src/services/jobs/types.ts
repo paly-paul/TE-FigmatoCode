@@ -21,6 +21,7 @@ export type JobApplicationApi = {
 };
 
 export type CandidateActionableSlotApi = {
+  slot_id?: string;
   slot_date?: string;
   slot_time?: string;
   slot_timezone?: string;
@@ -28,6 +29,7 @@ export type CandidateActionableSlotApi = {
 };
 
 export type CandidateActionableInfoApi = {
+  interview_id?: string;
   interview_mode?: string;
   interview_type?: string;
   interview_round?: number;

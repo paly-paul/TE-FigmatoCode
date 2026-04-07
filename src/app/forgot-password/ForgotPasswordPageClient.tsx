@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/auth/AuthLayout";
+import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessStoriesPanel";
 import { MobileForgotPasswordScreen } from "@/components/mobile/MobileForgotPasswordScreen";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -38,6 +39,7 @@ export default function ForgotPasswordPageClient() {
       footerText="Remember your password?"
       footerLinkLabel="Login"
       footerLinkHref="/login"
+      rightPanel={<DesktopSuccessStoriesPanel />}
     >
       <div className="mb-6">
         <h1 className="mb-1 text-2xl font-bold text-gray-900">Forgot Password?</h1>

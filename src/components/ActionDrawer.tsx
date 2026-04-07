@@ -29,19 +29,35 @@ import {
   actionDrawerTitleMatchers,
   type ActionDrawerTab,
 } from "./actionDrawer/actionDrawerContent";
+import {
+  getAvailableInterviewSlots,
+  getInterviewsByProfile,
+  resolveInterviewIdForJob,
+  type InterviewSlotOptionApi,
+} from "@/services/jobs/interviewsApi";
 
-interface ActionCard {
+export interface ActionDrawerActionCard {
   id: number;
   type: "Job" | "Profile" | "General";
   title: string;
   subtitle: string;
   timestamp: string;
+  jobDocumentId?: string;
+  proposalName?: string;
+  interviewId?: string;
 }
 
 interface ActionDrawerProps {
   open: boolean;
   onClose: () => void;
-  action: ActionCard | null;
+  action: ActionDrawerActionCard | null;
+  /** Profile document id (same value as `profile_id` for actionables / interviews APIs). */
+  profileId?: string | null;
+  onPrimaryAction?: (
+    action: ActionDrawerActionCard,
+    extras?: { interviewId?: string; interviewSlotId?: string }
+  ) => void;
+  onRequestClarification?: (action: ActionDrawerActionCard) => void;
 }
 
 const metaIcons = {
@@ -52,7 +68,14 @@ const metaIcons = {
   users: Users,
 } as const;
 
-export default function ActionDrawer({ open, onClose, action }: ActionDrawerProps) {
+export default function ActionDrawer({
+  open,
+  onClose,
+  action,
+  profileId,
+  onPrimaryAction,
+  onRequestClarification,
+}: ActionDrawerProps) {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [activeTab, setActiveTab] = useState<ActionDrawerTab>("Job Action");
   const [availableDate, setAvailableDate] = useState<string>(actionDrawerFormDefaults.availableDate);
@@ -62,12 +85,23 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
   );
   const [isProposalExpanded, setIsProposalExpanded] = useState(true);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true);
+  const [interviewSlots, setInterviewSlots] = useState<InterviewSlotOptionApi[]>([]);
+  const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
+  const [interviewSlotsError, setInterviewSlotsError] = useState<string | null>(null);
+  const [resolvedInterviewId, setResolvedInterviewId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setActiveTab("Job Action");
+      setAvailableDate(actionDrawerFormDefaults.availableDate);
+      setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
       setIsProposalExpanded(true);
+      setHasAcceptedTerms(true);
+      setInterviewSlots([]);
+      setInterviewSlotsLoading(false);
+      setInterviewSlotsError(null);
+      setResolvedInterviewId(null);
     }
   }, [open]);
 
@@ -82,15 +116,74 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
 
   const normalizedTitle = action?.title.toLowerCase() ?? "";
   const isRecruiterInterestReceived =
-    normalizedTitle === actionDrawerTitleMatchers.recruiterInterest;
+    normalizedTitle === actionDrawerTitleMatchers.recruiterInterest ||
+    normalizedTitle.includes("interest");
   const isFirstRecruiterInterestCard =
     isRecruiterInterestReceived && action?.id === actionDrawerFirstRecruiterCardId;
-  const isInterviewScheduled = normalizedTitle === actionDrawerTitleMatchers.interviewScheduled;
-  const isSalaryNegotiation = normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation;
+  const isInterviewScheduled =
+    normalizedTitle === actionDrawerTitleMatchers.interviewScheduled ||
+    normalizedTitle.includes("interview");
+  const isSalaryNegotiation =
+    normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation ||
+    normalizedTitle.includes("negotiation") ||
+    normalizedTitle.includes("proposal");
   const roleTitle = action?.subtitle.split(" - ")[0] ?? "Senior Engineer";
   const locationLabel = action?.subtitle.split(" - ")[1] ?? "Atlanta";
 
-  const primarySlot = actionDrawerInterview.slots[0];
+  useEffect(() => {
+    if (!open || !isInterviewScheduled || !action) return;
+
+    let cancelled = false;
+    void (async () => {
+      setInterviewSlotsLoading(true);
+      setInterviewSlotsError(null);
+      try {
+        let interviewId = action.interviewId?.trim() || null;
+        if (!interviewId && profileId?.trim() && action.jobDocumentId?.trim()) {
+          const list = await getInterviewsByProfile(profileId.trim());
+          if (cancelled) return;
+          interviewId = resolveInterviewIdForJob(list, action.jobDocumentId.trim());
+        }
+        if (cancelled) return;
+        setResolvedInterviewId(interviewId);
+        if (!interviewId) {
+          setInterviewSlots([]);
+          setInterviewSlotsError("No interview was found for this job. Try again later.");
+          return;
+        }
+        const slots = await getAvailableInterviewSlots(interviewId);
+        if (cancelled) return;
+        setInterviewSlots(slots);
+        if (slots.length > 0) {
+          setSelectedInterviewSlot(slots[0].slot_id);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setInterviewSlots([]);
+        setInterviewSlotsError(e instanceof Error ? e.message : "Could not load interview slots.");
+      } finally {
+        if (!cancelled) setInterviewSlotsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    isInterviewScheduled,
+    action?.id,
+    action?.interviewId,
+    action?.jobDocumentId,
+    profileId,
+  ]);
+
+  const interviewSubmitDisabled =
+    isInterviewScheduled &&
+    (interviewSlotsLoading ||
+      !resolvedInterviewId ||
+      interviewSlots.length === 0 ||
+      !selectedInterviewSlot);
 
   const renderRecruiterInterestAction = () => (
     <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
@@ -164,53 +257,74 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
         ))}
       </div>
 
-      <div className="mt-3 overflow-hidden rounded border border-[#E6ECF6] bg-white">
-        <div className="hidden border-b border-[#E6ECF6] lg:block">
-          <div className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 px-4 py-2 text-xs font-medium text-[#202939] sm:text-sm">
-            <span className="text-center">{actionDrawerInterview.tableHeaders.select}</span>
-            <span>{actionDrawerInterview.tableHeaders.slot}</span>
-            <span>{actionDrawerInterview.tableHeaders.date}</span>
-            <span>{actionDrawerInterview.tableHeaders.time}</span>
-          </div>
-          <div className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 border-t border-[#E6ECF6] px-4 py-3">
-            <label className="flex cursor-pointer items-center justify-center">
-              <input
-                type="radio"
-                name="interview-slot"
-                checked={selectedInterviewSlot === primarySlot.id}
-                onChange={() => setSelectedInterviewSlot(primarySlot.id)}
-                className="h-4 w-4 text-[#1D4ED8]"
-              />
-            </label>
-            <span className="text-xs text-[#202939] sm:text-sm">{primarySlot.label}</span>
-            <span className="text-xs text-[#202939] sm:text-sm">{primarySlot.date}</span>
-            <span className="text-xs leading-snug text-[#202939] sm:text-sm">{primarySlot.time}</span>
-          </div>
-        </div>
-
-        <div className="px-4 py-3 lg:hidden">
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="radio"
-              name="interview-slot"
-              checked={selectedInterviewSlot === primarySlot.id}
-              onChange={() => setSelectedInterviewSlot(primarySlot.id)}
-              className="mt-0.5 h-4 w-4 shrink-0 text-[#1D4ED8]"
-            />
-            <div className="min-w-0 flex-1 space-y-1.5 text-xs text-[#202939] sm:text-sm">
-              <p className="font-semibold text-[#202939]">{primarySlot.label}</p>
-              <p>
-                <span className="text-[#5E7397]">{actionDrawerInterview.mobileDatePrefix} </span>
-                <span className="font-medium">{primarySlot.date}</span>
-              </p>
-              <p>
-                <span className="text-[#5E7397]">{actionDrawerInterview.mobileTimePrefix} </span>
-                <span className="font-medium">{primarySlot.time}</span>
-              </p>
+      {interviewSlotsLoading ? (
+        <p className="mt-4 text-sm text-[#5E7397]">Loading available slots…</p>
+      ) : interviewSlotsError ? (
+        <p className="mt-4 text-sm text-red-600">{interviewSlotsError}</p>
+      ) : interviewSlots.length === 0 ? (
+        <p className="mt-4 text-sm text-[#5E7397]">No open slots right now.</p>
+      ) : (
+        <div className="mt-3 overflow-hidden rounded border border-[#E6ECF6] bg-white">
+          <div className="hidden border-b border-[#E6ECF6] lg:block">
+            <div className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 px-4 py-2 text-xs font-medium text-[#202939] sm:text-sm">
+              <span className="text-center">{actionDrawerInterview.tableHeaders.select}</span>
+              <span>{actionDrawerInterview.tableHeaders.slot}</span>
+              <span>{actionDrawerInterview.tableHeaders.date}</span>
+              <span>{actionDrawerInterview.tableHeaders.time}</span>
             </div>
-          </label>
+            {interviewSlots.map((slot) => (
+              <div
+                key={slot.slot_id}
+                className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 border-t border-[#E6ECF6] px-4 py-3"
+              >
+                <label className="flex cursor-pointer items-center justify-center">
+                  <input
+                    type="radio"
+                    name="interview-slot"
+                    checked={selectedInterviewSlot === slot.slot_id}
+                    onChange={() => setSelectedInterviewSlot(slot.slot_id)}
+                    className="h-4 w-4 text-[#1D4ED8]"
+                  />
+                </label>
+                <span className="text-xs text-[#202939] sm:text-sm">{slot.label}</span>
+                <span className="text-xs text-[#202939] sm:text-sm">
+                  {slot.slot_date || "—"}
+                </span>
+                <span className="text-xs leading-snug text-[#202939] sm:text-sm">
+                  {slot.slot_time || "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="divide-y divide-[#E6ECF6] lg:hidden">
+            {interviewSlots.map((slot) => (
+              <div key={slot.slot_id} className="px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="radio"
+                    name="interview-slot"
+                    checked={selectedInterviewSlot === slot.slot_id}
+                    onChange={() => setSelectedInterviewSlot(slot.slot_id)}
+                    className="mt-0.5 h-4 w-4 shrink-0 text-[#1D4ED8]"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5 text-xs text-[#202939] sm:text-sm">
+                    <p className="font-semibold text-[#202939]">{slot.label}</p>
+                    <p>
+                      <span className="text-[#5E7397]">{actionDrawerInterview.mobileDatePrefix} </span>
+                      <span className="font-medium">{slot.slot_date || "—"}</span>
+                    </p>
+                    <p>
+                      <span className="text-[#5E7397]">{actionDrawerInterview.mobileTimePrefix} </span>
+                      <span className="font-medium">{slot.slot_time || "—"}</span>
+                    </p>
+                  </div>
+                </label>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 
@@ -306,16 +420,129 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
     return renderRecruiterInterestAction();
   };
 
+  const renderTimelineContent = () => (
+    isFirstRecruiterInterestCard ? (
+      <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-[#F8FAFD] px-6 py-10 sm:min-h-[220px] sm:py-12">
+        <Image
+          width={40}
+          height={40}
+          src={actionDrawerTimeline.emptyStateIconSrc}
+          alt=""
+        />
+        <p className="mt-4 max-w-[280px] text-center text-lg font-medium leading-relaxed text-black sm:text-base">
+          {actionDrawerTimeline.emptyStateMessage}
+        </p>
+      </div>
+    ) : (
+      <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex shrink-0 items-center justify-center" aria-hidden>
+            <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
+              {isInterviewScheduled
+                ? actionDrawerTimeline.milestoneTitles.interview
+                : isSalaryNegotiation
+                  ? actionDrawerTimeline.milestoneTitles.salary
+                  : actionDrawerTimeline.milestoneTitles.default}
+            </h4>
+            <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
+              {actionDrawerTimeline.milestoneDate}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  const renderJobDescriptionContent = (isMobile = false) => (
+    <div
+      className={`rounded-md border border-[#E6ECF6] bg-[#F8FAFD] ${
+        isMobile ? "space-y-5 p-4" : "space-y-4 p-4 sm:p-5"
+      }`}
+    >
+      <section>
+        <h3 className={`font-semibold text-[#202939] ${isMobile ? "mb-4 text-[15px]" : "mb-2 sm:mb-3 text-sm sm:text-base"}`}>
+          {actionDrawerJobDescription.overview.title}
+        </h3>
+        <p className={isMobile ? "text-sm leading-7 text-[#5E7397]" : "text-xs leading-relaxed text-[#5E7397] sm:text-sm"}>
+          {actionDrawerJobDescription.overview.body}
+        </p>
+      </section>
+
+      <section>
+        <h4 className={`font-semibold text-[#202939] ${isMobile ? "mb-3 text-[15px]" : "mb-2 text-base"}`}>
+          {actionDrawerJobDescription.responsibilities.title}
+        </h4>
+        <ul className={isMobile ? "list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]" : "list-inside list-disc space-y-1 text-sm text-[#5E7397]"}>
+          {actionDrawerJobDescription.responsibilities.items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h4 className={`font-semibold text-[#202939] ${isMobile ? "mb-3 text-[15px]" : "mb-1.5 sm:mb-2 text-sm sm:text-base"}`}>
+          {actionDrawerJobDescription.qualifications.title}
+        </h4>
+        <ul className={isMobile ? "list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]" : "list-inside list-disc space-y-0.5 text-xs text-[#5E7397] sm:space-y-1 sm:text-sm"}>
+          {actionDrawerJobDescription.qualifications.items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+
+  const renderTabNavigation = (mobile = false) => (
+    <div
+      className={`flex gap-3 overflow-x-auto border-b border-[#E6ECF6] text-xs scrollbar-hide sm:gap-4 sm:text-sm ${
+        mobile ? "-mx-4 px-4" : ""
+      }`}
+    >
+      {actionDrawerChrome.tabs.map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          onClick={() => setActiveTab(tab)}
+          className={`pb-1.5 font-medium whitespace-nowrap transition-colors sm:pb-2 ${
+            activeTab === tab
+              ? "border-b-[3px] border-[#1447E6] text-[#1447E6]"
+              : "text-[#5E7397] hover:text-[#202939]"
+          }`}
+        >
+          {tab}
+        </button>
+      ))}
+    </div>
+  );
+
+  const runPrimaryAction = () => {
+    if (!action) return;
+    if (isInterviewScheduled) {
+      const interviewId = resolvedInterviewId ?? action.interviewId?.trim() ?? undefined;
+      onPrimaryAction?.(action, {
+        interviewId,
+        interviewSlotId: selectedInterviewSlot,
+      });
+      return;
+    }
+    onPrimaryAction?.(action);
+  };
+
   const footerContent = isSalaryNegotiation ? (
     <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
       <button
         type="button"
+        onClick={() => action && onRequestClarification?.(action)}
         className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
       >
         {actionDrawerFooter.requestClarification}
       </button>
       <button
         type="button"
+        onClick={runPrimaryAction}
         className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6 sm:py-2.5"
       >
         {actionDrawerFooter.submit}
@@ -325,11 +552,13 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
     <div className="flex justify-end">
       <button
         type="button"
-        className={`rounded-md bg-[#1447E6] text-sm font-medium text-white transition hover:bg-[#103CC1] ${
+        disabled={Boolean(isInterviewScheduled && interviewSubmitDisabled)}
+        onClick={runPrimaryAction}
+        className={`rounded-md bg-[#1447E6] text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50 ${
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
         }`}
       >
-        {isMobileViewport ? "Apply" : actionDrawerFooter.submit}
+        {actionDrawerFooter.submit}
       </button>
     </div>
   );
@@ -358,88 +587,11 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
         </p>
       </div>
 
-      <div className="space-y-5 rounded-sm border border-[#D8E3F8] bg-white p-4">
-        <section>
-          <h3 className="mb-4 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.overview.title}
-          </h3>
-          <p className="text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.overview.body}
-          </p>
-        </section>
+      {renderTabNavigation(true)}
 
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.responsibilities.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.responsibilities.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.requirements.title}
-          </h4>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.qualifications.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.qualifications.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.skillsAndExperience.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.skillsAndExperience.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.technicalSkills.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.technicalSkills.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.languageRequirements.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.languageRequirements.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <h4 className="mb-3 text-[15px] font-semibold text-[#202939]">
-            {actionDrawerJobDescription.keySkills.title}
-          </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-[#5E7397]">
-            {actionDrawerJobDescription.keySkills.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-      </div>
+      {activeTab === "Job Action" ? renderJobActionContent() : null}
+      {activeTab === "Timeline" ? renderTimelineContent() : null}
+      {activeTab === "Job Description" ? renderJobDescriptionContent(true) : null}
     </>
   );
 
@@ -449,6 +601,7 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
       onClose={onClose}
       title={actionDrawerChrome.drawerTitle}
       placement={isMobileViewport ? "bottom" : "right"}
+      panelClassName={isMobileViewport ? "h-[80svh] max-h-[80svh]" : ""}
       widthClassName="w-full sm:w-[94%] lg:w-[90%] xl:w-[1120px]"
       bodyClassName={isMobileViewport ? "px-4 py-3" : "px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"}
       contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
@@ -518,95 +671,13 @@ export default function ActionDrawer({ open, onClose, action }: ActionDrawerProp
         </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto border-b border-[#E6ECF6] text-xs scrollbar-hide sm:gap-4 sm:text-sm">
-        {actionDrawerChrome.tabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`pb-1.5 font-medium whitespace-nowrap transition-colors sm:pb-2 ${
-              activeTab === tab
-                ? "border-b-[3px] border-[#1447E6] text-[#1447E6]"
-                : "text-[#5E7397] hover:text-[#202939]"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      {renderTabNavigation()}
 
       {activeTab === "Job Action" ? renderJobActionContent() : null}
 
-      {activeTab === "Timeline" ? (
-        isFirstRecruiterInterestCard ? (
-          <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-[#F8FAFD] px-6 py-10 sm:min-h-[220px] sm:py-12">
-            <Image
-              width={40}
-              height={40}
-              src={actionDrawerTimeline.emptyStateIconSrc}
-              alt=""
-            />
-            <p className="mt-4 max-w-[280px] text-center text-lg font-medium leading-relaxed text-black sm:text-base">
-              {actionDrawerTimeline.emptyStateMessage}
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="flex shrink-0 items-center justify-center" aria-hidden>
-                <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
-                  {isInterviewScheduled
-                    ? actionDrawerTimeline.milestoneTitles.interview
-                    : isSalaryNegotiation
-                      ? actionDrawerTimeline.milestoneTitles.salary
-                      : actionDrawerTimeline.milestoneTitles.default}
-                </h4>
-                <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
-                  {actionDrawerTimeline.milestoneDate}
-                </p>
-              </div>
-            </div>
-          </div>
-        )
-      ) : null}
+      {activeTab === "Timeline" ? renderTimelineContent() : null}
 
-      {activeTab === "Job Description" ? (
-        <div className="space-y-4 rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
-          <div>
-            <h3 className="mb-2 text-sm font-semibold text-[#202939] sm:mb-3 sm:text-base">
-              {actionDrawerJobDescription.overview.title}
-            </h3>
-            <p className="text-xs leading-relaxed text-[#5E7397] sm:text-sm">
-              {actionDrawerJobDescription.overview.body}
-            </p>
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-base font-semibold text-[#202939]">
-              {actionDrawerJobDescription.responsibilities.title}
-            </h4>
-            <ul className="list-inside list-disc space-y-1 text-sm text-[#5E7397]">
-              {actionDrawerJobDescription.responsibilities.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="mb-1.5 text-sm font-semibold text-[#202939] sm:mb-2 sm:text-base">
-              {actionDrawerJobDescription.qualifications.title}
-            </h4>
-            <ul className="list-inside list-disc space-y-0.5 text-xs text-[#5E7397] sm:space-y-1 sm:text-sm">
-              {actionDrawerJobDescription.qualifications.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
+      {activeTab === "Job Description" ? renderJobDescriptionContent() : null}
         </>
       )}
     </BaseDrawer>

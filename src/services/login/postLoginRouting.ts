@@ -32,51 +32,53 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
   if (!normalized) return false;
 
   try {
-    // If we already know the Profile document id, check completeness directly.
-    if (sessionProfileName) {
-      const isComplete = await isProfileWizardCompleteOnServer(sessionProfileName);
-      console.log("[login-routing] profile-check:session", {
-        profileName: sessionProfileName,
-        isComplete,
-      });
-      if (isComplete) {
-        console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
-        return true;
+    let profileName = sessionProfileName?.trim() ?? "";
+    if (!profileName) {
+      const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+      resolverUrl.searchParams.set("email", normalized);
+      const resolverResponse = await fetch(resolverUrl.toString(), { method: "GET" });
+      if (resolverResponse.ok) {
+        const resolverData = (await resolverResponse.json()) as { profile_name?: string };
+        if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
+          profileName = resolverData.profile_name.trim();
+        }
       }
-      console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
+    }
+    if (!profileName) {
+      console.log("[login-routing] decision", {
+        reason: "missing-profile-name",
+        skipWizard: false,
+      });
       return false;
     }
+    if (isLikelyDocId(profileName)) {
+      setCandidateId(profileName);
+    }
+    setProfileName(profileName);
 
-    const url = new URL("/api/method/resolve_profile_name/", window.location.origin);
-    url.searchParams.set("email", normalized);
-    const r = await fetch(url.toString(), { credentials: "same-origin" });
-    const j = (await r.json()) as { profile_name?: string; error?: string };
-    console.log("[login-routing] resolve_profile_name", {
-      status: r.status,
-      ok: r.ok,
-      body: j,
-    });
-    if (r.ok && typeof j.profile_name === "string" && j.profile_name.trim()) {
-      const profileName = j.profile_name.trim();
-      if (isLikelyDocId(profileName)) {
-        setCandidateId(profileName);
-      }
-      setProfileName(profileName);
-      const isComplete = await isProfileWizardCompleteOnServer(profileName);
-      console.log("[login-routing] profile-check", {
+    // Backend contract: candidate_login marks existing generated profile users.
+    // Trust this first to avoid false negatives from secondary profile-shape checks.
+    if (sessionProfileGenerated === true) {
+      console.log("[login-routing] decision", {
+        reason: "profile-generated-per-login-response",
         profileName,
-        isComplete,
+        skipWizard: true,
       });
-      if (isComplete) {
-        console.log("[login-routing] decision", { reason: "server-profile-complete", skipWizard: true });
-        return true;
-      }
-
-      // If a Profile exists but it is not complete, route the user into the wizard.
-      // This is common right after sign-up or when we created a minimal Profile server-side.
-      console.log("[login-routing] decision", { reason: "server-profile-incomplete", skipWizard: false });
-      return false;
+      return true;
     }
+
+    const isComplete = await isProfileWizardCompleteOnServer(profileName);
+    console.log("[login-routing] profile-check:session", {
+      profileName,
+      isComplete,
+      sessionProfileGenerated,
+    });
+    if (isComplete) {
+      console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
+      return true;
+    }
+    console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
+    return false;
   } catch {
     /* treat as no server profile */
   }

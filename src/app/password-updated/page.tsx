@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { AuthLayout } from "@/components/auth/AuthLayout";
+import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessStoriesPanel";
 import { Button } from "@/components/ui/Button";
 import { ProfileCheckIllustration } from "@/components/icons";
 
 export default function PasswordUpdatedPage() {
   return (
-    <AuthLayout>
+    <AuthLayout rightPanel={<DesktopSuccessStoriesPanel />}>
       <div className="flex flex-col items-center text-center py-4">
         {/* Illustration */}
         <div className="mb-6">

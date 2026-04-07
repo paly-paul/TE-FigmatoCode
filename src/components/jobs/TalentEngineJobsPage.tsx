@@ -165,6 +165,10 @@ const LOCATION_LABELS = DEFAULT_LOCATIONS.reduce<Record<string, string>>(
   {}
 );
 
+function getLocationLabel(locationId: string) {
+  return LOCATION_LABELS[locationId] || locationId;
+}
+
 function FilterCheckboxGroup({
   options,
   selected,
@@ -569,7 +573,7 @@ export default function TalentEngineJobsPage() {
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
   const primaryLocation = selectedLocations[0]
-    ? LOCATION_LABELS[selectedLocations[0]]
+    ? getLocationLabel(selectedLocations[0])
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
 
@@ -851,7 +855,7 @@ export default function TalentEngineJobsPage() {
                   key={locationId}
                   className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700"
                 >
-                  {LOCATION_LABELS[locationId]}
+                  {getLocationLabel(locationId)}
                 </span>
               ))}
             </div>

@@ -103,8 +103,14 @@ const COMMON_SECTION_HEADINGS = new Set(
     "employment history",
     "professional experience",
     "education",
+    "academic qualification",
+    "academics",
     "certifications",
     "certification",
+    "certificates",
+    "courses",
+    "internships",
+    "internship",
     "languages",
     "contact",
   ].map((heading) => cleanHeadingToken(heading))
@@ -170,7 +176,9 @@ function buildProfileFromText(text: string, fileName: string): ResumeProfileData
   }
 
   const title = findProfessionalTitle(lines, profile);
-  if (title) profile.professionalTitle = title;
+  if (title && !looksLikePersonName(title, profile.firstName, profile.lastName)) {
+    profile.professionalTitle = title;
+  }
 
   const location = findLocation(lines);
   if (location) {
@@ -214,6 +222,14 @@ function buildProfileFromText(text: string, fileName: string): ResumeProfileData
 
   const projects = findProjects(normalized);
   if (projects.length) profile.projects = projects;
+
+  const workExperience = findWorkExperience(normalized);
+  if (workExperience.length) profile.workExperience = workExperience;
+
+  if (!profile.cgpa) {
+    const cgpaMatch = normalized.match(/\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d{1,2})?)\b/i);
+    if (cgpaMatch?.[1]) profile.cgpa = cgpaMatch[1];
+  }
 
   return profile;
 }
@@ -370,11 +386,16 @@ function findName(lines: string[]) {
 }
 
 function findProfessionalTitle(lines: string[], profile: ResumeProfileData) {
+  const fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ").toLowerCase();
   for (const line of lines.slice(0, 10)) {
     if (!line || line.length > 80) continue;
+    const lower = line.toLowerCase();
+    if (fullName && lower.includes(fullName)) continue;
     if (profile.firstName && line.toLowerCase().includes(profile.firstName.toLowerCase())) continue;
+    if (profile.lastName && line.toLowerCase().includes(profile.lastName.toLowerCase())) continue;
     if (/@|http|www\.|\d{5,}/i.test(line)) continue;
     if (/^(summary|profile|about|education|experience|skills)$/i.test(line)) continue;
+    if (/^[A-Z][A-Z\s.'-]{2,}$/.test(line) && !/\b(engineer|developer|designer|manager|analyst|consultant|architect|specialist|lead|intern|administrator|tester|programmer|executive)\b/i.test(line)) continue;
     if (
       /[|]/.test(line) ||
       /\b(engineer|developer|designer|manager|analyst|consultant|architect|specialist|lead|intern|administrator|tester|programmer|executive)\b/i.test(line)
@@ -388,6 +409,27 @@ function findProfessionalTitle(lines: string[], profile: ResumeProfileData) {
     if (/@|http|www\.|\+?\d[\d()\-\s]{8,}/i.test(line)) continue;
     if (/^[A-Za-z][A-Za-z\s/&,-]+$/.test(line) && line.split(/\s+/).length <= 6) {
       return line;
+    }
+  }
+
+  // Fallback: infer likely role from experience section.
+  const experienceLines = getSectionScopedLines(lines, [
+    "experience",
+    "work experience",
+    "professional experience",
+    "employment history",
+    "internship",
+    "internships",
+  ]);
+  for (const line of experienceLines.slice(0, 20)) {
+    if (!line || line.length < 3 || line.length > 80) continue;
+    if (/@|http|www\.|\+?\d[\d()\-\s]{8,}/i.test(line)) continue;
+    if (
+      /\b(engineer|developer|designer|manager|analyst|consultant|architect|specialist|lead|intern|administrator|tester|programmer|executive)\b/i.test(
+        line
+      )
+    ) {
+      return line.replace(/^\d+\)\s*/, "").trim();
     }
   }
   return undefined;
@@ -490,34 +532,141 @@ function extractSection(text: string, headings: string[]) {
 
 function findEducation(lines: string[]) {
   const entries: NonNullable<ResumeProfileData["education"]> = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
+  const sourceLines = getSectionScopedLines(lines, [
+    "education",
+    "academic",
+    "academic details",
+    "academic background",
+    "qualification",
+    "qualifications",
+  ]);
+
+  const linesToScan = sourceLines.length ? sourceLines : lines;
+  for (let i = 0; i < linesToScan.length; i += 1) {
+    const line = linesToScan[i];
     const lower = ` ${line.toLowerCase()} `;
     if (!DEGREE_KEYWORDS.some((keyword) => lower.includes(keyword))) continue;
+    if (looksLikeContactBlock(line) || /https?:\/\//i.test(line)) continue;
+
+    const parsedInline = parseInlineEducation(line);
+    const nextLine = linesToScan[i + 1];
+    const nextNextLine = linesToScan[i + 2];
+    const fallbackInstitute =
+      nextLine &&
+      !looksLikeSectionHeader(nextLine) &&
+      !looksLikeContactBlock(nextLine) &&
+      !isResumeSectionHeading(nextLine) &&
+      looksLikeInstituteText(nextLine)
+        ? nextLine
+        : nextNextLine &&
+            !looksLikeSectionHeader(nextNextLine) &&
+            !looksLikeContactBlock(nextNextLine) &&
+            !isResumeSectionHeading(nextNextLine) &&
+            looksLikeInstituteText(nextNextLine)
+          ? nextNextLine
+          : undefined;
+    const fallbackSpecialization =
+      nextLine &&
+      !looksLikeSectionHeader(nextLine) &&
+      !looksLikeContactBlock(nextLine) &&
+      !isResumeSectionHeading(nextLine) &&
+      !looksLikeInstituteText(nextLine) &&
+      looksLikeSpecializationText(nextLine)
+        ? nextLine
+        : undefined;
+    const yearRangeMatch =
+      line.match(/(19|20)\d{2}\s*[–-]\s*((?:19|20)\d{2})/) ??
+      nextLine?.match(/(19|20)\d{2}\s*[–-]\s*((?:19|20)\d{2})/) ??
+      nextNextLine?.match(/(19|20)\d{2}\s*[–-]\s*((?:19|20)\d{2})/);
+    const cgpaMatch =
+      line.match(/\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d{1,2})?)\b/i) ??
+      nextLine?.match(/\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d{1,2})?)\b/i) ??
+      nextNextLine?.match(/\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d{1,2})?)\b/i);
+
     entries.push({
-      title: line,
-      institute: lines[i + 1] && !looksLikeSectionHeader(lines[i + 1]) ? lines[i + 1] : undefined,
-      graduationYear: line.match(/\b(19|20)\d{2}\b/)?.[0] ?? lines[i + 1]?.match(/\b(19|20)\d{2}\b/)?.[0],
+      title: parsedInline.title ?? line,
+      institute: parsedInline.institute ?? fallbackInstitute,
+      specialization: parsedInline.specialization ?? fallbackSpecialization,
+      graduationYear:
+        yearRangeMatch?.[2] ??
+        parsedInline.graduationYear ??
+        line.match(/\b(19|20)\d{2}\b/)?.[0] ??
+        nextLine?.match(/\b(19|20)\d{2}\b/)?.[0] ??
+        nextNextLine?.match(/\b(19|20)\d{2}\b/)?.[0],
+      score: cgpaMatch?.[1],
     });
-    if (entries.length >= 3) break;
+    if (entries.length >= 5) break;
   }
   return entries;
 }
 
 function findCertifications(lines: string[]) {
   const entries: NonNullable<ResumeProfileData["certifications"]> = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
+  const sourceLines = getSectionScopedLines(lines, [
+    "certifications",
+    "certification",
+    "licenses",
+    "credentials",
+  ]);
+
+  const linesToScan = sourceLines.length ? sourceLines : lines;
+  for (let i = 0; i < linesToScan.length; i += 1) {
+    const line = linesToScan[i];
     const lower = line.toLowerCase();
-    if (!CERTIFICATION_KEYWORDS.some((keyword) => lower.includes(keyword))) continue;
+    if (/^\d{4}:?\s*$/.test(line)) continue;
     if (looksLikeSectionHeader(line)) continue;
+    if (looksLikeContactBlock(line) || /https?:\/\//i.test(line)) continue;
+    if (line.length < 10 || line.length > 200) continue;
+    if (
+      !CERTIFICATION_KEYWORDS.some((keyword) => lower.includes(keyword)) &&
+      !/\b(udemy|coursera|cisco|aws|google|microsoft|oracle|nptel|infosys|certificate)\b/i.test(line)
+    ) {
+      continue;
+    }
+
+    const parsedInline = parseInlineCertification(line);
+    const nextLine = linesToScan[i + 1];
+    const fallbackIssuer =
+      nextLine &&
+      !looksLikeSectionHeader(nextLine) &&
+      !looksLikeContactBlock(nextLine) &&
+      !isResumeSectionHeading(nextLine)
+        ? nextLine
+        : undefined;
+
     entries.push({
-      name: line,
-      issuing: lines[i + 1] && !looksLikeSectionHeader(lines[i + 1]) ? lines[i + 1] : undefined,
+      name: parsedInline.name ?? line,
+      issuing: parsedInline.issuing ?? fallbackIssuer,
     });
-    if (entries.length >= 3) break;
+    if (entries.length >= 20) break;
   }
   return entries;
+}
+
+function findWorkExperience(text: string) {
+  const section = extractSection(text, [
+    "experience",
+    "work experience",
+    "professional experience",
+    "employment history",
+  ]);
+
+  if (!section) return [];
+
+  const experiences: NonNullable<ResumeProfileData["workExperience"]> = [];
+  const positionRegex = /\d+\)\s*([^\n]+)\n([^\n|]+)(?:\s*\|\s*([^\n]+))?/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = positionRegex.exec(section)) !== null) {
+    experiences.push({
+      jobTitle: match[1]?.trim() || undefined,
+      company: match[2]?.trim() || undefined,
+      duration: match[3]?.trim() || undefined,
+    });
+    if (experiences.length >= 12) break;
+  }
+
+  return experiences;
 }
 
 function findLanguages(lines: string[]) {
@@ -585,6 +734,17 @@ function findKeySkills(text: string, lines: string[]) {
     }
   }
 
+  if (!skillSection) {
+    const keywordLines = lines
+      .filter((line) => /\b(skills?|technical|technologies|competencies|proficiencies)\b/i.test(line))
+      .slice(0, 12);
+    for (const line of keywordLines) {
+      for (const candidate of extractSkillCandidates(line)) {
+        found.add(candidate);
+      }
+    }
+  }
+
   return Array.from(found).slice(0, 20);
 }
 
@@ -608,6 +768,17 @@ function findTools(text: string, lines: string[]) {
   if (toolSection) {
     for (const candidate of extractSkillCandidates(toolSection)) {
       found.add(candidate);
+    }
+  }
+
+  if (!toolSection) {
+    const keywordLines = lines
+      .filter((line) => /\b(tools?|platforms?|frameworks?|software|technologies)\b/i.test(line))
+      .slice(0, 12);
+    for (const line of keywordLines) {
+      for (const candidate of extractSkillCandidates(line)) {
+        found.add(candidate);
+      }
     }
   }
 
@@ -685,7 +856,9 @@ function sanitizeResumeProfile(profile: ResumeProfileData, normalizedText = ""):
   cleaned.lastName = sanitizeLastName(profile.lastName);
 
   const title = sanitizeTitle(profile.professionalTitle, normalizedText);
-  if (title) cleaned.professionalTitle = title;
+  if (title && !looksLikePersonName(title, cleaned.firstName ?? profile.firstName, cleaned.lastName ?? profile.lastName)) {
+    cleaned.professionalTitle = title;
+  }
 
   if (isValidEmail(profile.email)) cleaned.email = profile.email?.trim();
   if (isValidEmail(profile.altEmail)) cleaned.altEmail = profile.altEmail?.trim();
@@ -716,9 +889,17 @@ function sanitizeResumeProfile(profile: ResumeProfileData, normalizedText = ""):
 
   if (profile.education?.length) {
     cleaned.education = profile.education.filter((entry) => {
-      const titleOk = !!entry.title && entry.title.trim().length >= 4 && !looksLikeSectionHeader(entry.title);
-      const instituteOk = !entry.institute || entry.institute.trim().length >= 2;
-      return titleOk && instituteOk;
+      const title = entry.title?.trim();
+      const institute = entry.institute?.trim();
+      const specialization = entry.specialization?.trim();
+      const year = entry.graduationYear?.trim();
+
+      const shortDegreeOk = !!title && /\b(B\.?\s?E\.?|M\.?\s?E\.?|BCA|MCA|MBA|PHD)\b/i.test(title);
+      const titleOk = !!title && (title.length >= 3 || shortDegreeOk) && !looksLikeSectionHeader(title);
+      const instituteOk = !institute || institute.length >= 2;
+      const hasAnyMeaningfulField = Boolean(title || institute || specialization || year);
+
+      return hasAnyMeaningfulField && instituteOk && (titleOk || Boolean(institute));
     });
   }
 
@@ -768,6 +949,21 @@ function sanitizeResumeProfile(profile: ResumeProfileData, normalizedText = ""):
       .filter((project) => !!project.projectDescription || !!project.responsibilities);
   }
 
+  if (profile.workExperience?.length) {
+    cleaned.workExperience = profile.workExperience
+      .map((entry) => ({
+        jobTitle: entry.jobTitle?.trim() || undefined,
+        company: entry.company?.trim() || undefined,
+        duration: entry.duration?.trim() || undefined,
+        responsibilities: entry.responsibilities?.map((item) => item.trim()).filter(Boolean),
+      }))
+      .filter((entry) => entry.jobTitle || entry.company || entry.duration);
+  }
+
+  if (profile.cgpa && /^\d+(?:\.\d{1,2})?$/.test(profile.cgpa.trim())) {
+    cleaned.cgpa = profile.cgpa.trim();
+  }
+
   return cleaned;
 }
 
@@ -799,6 +995,30 @@ function sanitizeTitle(value?: string, normalizedText = "") {
   }
   if (normalizedText && !hasTitleEvidence(trimmed, normalizedText)) return undefined;
   return trimmed;
+}
+
+function looksLikePersonName(value: string, firstName?: string, lastName?: string) {
+  const candidate = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!candidate) return false;
+
+  const first = firstName?.trim().toLowerCase();
+  const last = lastName?.trim().toLowerCase();
+  const full = [first, last].filter(Boolean).join(" ").trim();
+
+  if (full && candidate === full) return true;
+  if (first && !last && candidate === first) return true;
+  if (last && !first && candidate === last) return true;
+
+  const candidateTokens = candidate.split(/\s+/).filter(Boolean);
+  const nameTokens = [first, ...(last ? last.split(/\s+/) : [])]
+    .map((token) => token?.trim())
+    .filter((token): token is string => Boolean(token));
+
+  if (!candidateTokens.length || !nameTokens.length) return false;
+  const overlap = candidateTokens.filter((token) => nameTokens.includes(token)).length;
+
+  // If most of the candidate line is name tokens, it's likely the person's name.
+  return overlap >= Math.min(candidateTokens.length, 2);
 }
 
 function sanitizePhone(value?: string) {
@@ -939,9 +1159,21 @@ function isResumeSectionHeading(line: string) {
 }
 
 function extractSkillCandidates(section: string) {
+  const blockedHeadingTokens = new Set([
+    "skills",
+    "technical skills",
+    "key skills",
+    "tools",
+    "technologies",
+    "frameworks",
+    "core competencies",
+    "technical proficiencies",
+  ]);
+
   const tokens = section
-    .split(/\n|,|•|\||\/{2,}|;|·/g)
+    .split(/\n|,|•|\||\/{2,}|;|·|:/g)
     .map((token) => token.replace(/^[-*]\s*/, "").trim())
+    .map((token) => token.replace(/^[A-Za-z][A-Za-z\s/&.-]{1,30}:\s*/, "").trim())
     .filter(Boolean);
 
   return Array.from(
@@ -951,6 +1183,7 @@ function extractSkillCandidates(section: string) {
         .filter((token) => !/\d{4}/.test(token))
         .filter((token) => !/@|https?:\/\/|www\./i.test(token))
         .filter((token) => token.split(/\s+/).length <= 4)
+        .filter((token) => !blockedHeadingTokens.has(cleanHeadingToken(token)))
         .map((token) => normalizeSkillLabel(token))
         .filter(Boolean)
     )
@@ -1002,6 +1235,124 @@ function splitProjectChunks(section: string) {
       ];
 }
 
+function getSectionScopedLines(lines: string[], headings: string[]) {
+  const text = lines.join("\n");
+  const section = extractSection(text, headings);
+  if (!section) {
+    // Fallback: detect heading line directly and capture until next heading.
+    const normalizedHeadings = headings.map((heading) => cleanHeadingToken(heading));
+    const start = lines.findIndex((line) => {
+      const normalized = cleanHeadingToken(line);
+      return normalizedHeadings.some(
+        (heading) =>
+          normalized === heading ||
+          normalized.startsWith(`${heading} `) ||
+          normalized.includes(heading)
+      );
+    });
+
+    if (start < 0) return [];
+
+    const scoped: string[] = [];
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const next = lines[i]?.trim();
+      if (!next) continue;
+      if (isResumeSectionHeading(next)) break;
+      scoped.push(next);
+      if (scoped.length >= 80) break;
+    }
+    return scoped;
+  }
+  return section
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function parseInlineEducation(line: string) {
+  const parts = line
+    .split(/\s[|\-]\s|\s•\s|,/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const splitDegree = splitDegreeAndSpecialization(line);
+  if (parts.length < 2) {
+    return {
+      title: splitDegree.title,
+      specialization: splitDegree.specialization,
+      institute: undefined,
+      graduationYear: undefined,
+    };
+  }
+
+  const title = splitDegree.title ?? parts.find((part) => DEGREE_KEYWORDS.some((k) => ` ${part.toLowerCase()} `.includes(k)));
+  const specialization =
+    splitDegree.specialization ??
+    parts.find(
+      (part) =>
+        part !== title &&
+        !looksLikeInstituteText(part) &&
+        looksLikeSpecializationText(part)
+    );
+  const institute = parts.find(
+    (part) =>
+      !part.includes("@") &&
+      !/https?:\/\//i.test(part) &&
+      !/\b(19|20)\d{2}\b/.test(part) &&
+      part !== title &&
+      looksLikeInstituteText(part)
+  );
+  const fallbackInstitute = parts.find(
+    (part) =>
+      part !== title &&
+      part !== specialization &&
+      !part.includes("@") &&
+      !/https?:\/\//i.test(part) &&
+      !/\b(19|20)\d{2}\b/.test(part) &&
+      part.split(/\s+/).length >= 2
+  );
+  const yearRange = line.match(/(19|20)\d{2}\s*[–-]\s*((?:19|20)\d{2})/);
+  const graduationYear = yearRange?.[2] ?? line.match(/\b(19|20)\d{2}\b/)?.[0];
+  return { title, specialization, institute: institute ?? fallbackInstitute, graduationYear };
+}
+
+function parseInlineCertification(line: string) {
+  const issuerMatch = line.match(/[–-]\s*([^(]+)\s*\(/) || line.match(/\(([^)]+)\)/);
+  const name = line
+    .split(/\s*[–-]\s*|ELITE/i)[0]
+    ?.trim()
+    .replace(/\s{2,}/g, " ");
+  const issuing = issuerMatch?.[1]?.trim();
+  return { name: name || undefined, issuing: issuing || undefined };
+}
+
+function splitDegreeAndSpecialization(line: string) {
+  const degreeMatch = line.match(
+    /\b(B\.?\s?E\.?|B\.?\s?TECH|BACHELOR(?:'S)?|M\.?\s?E\.?|M\.?\s?TECH|MASTER(?:'S)?|MBA|MCA|BCA|DIPLOMA|PHD)\b\.?\s*(?:in)?\s*(.*)/i
+  );
+  if (!degreeMatch) return { title: undefined, specialization: undefined };
+
+  const degreeToken = degreeMatch[1]?.replace(/\s+/g, " ").trim();
+  const remainder = degreeMatch[2]?.trim();
+  const title = degreeToken || undefined;
+  const specialization =
+    remainder &&
+    !/\b(19|20)\d{2}\b/.test(remainder) &&
+    !looksLikeInstituteText(remainder) &&
+    remainder.length >= 3
+      ? remainder
+      : undefined;
+
+  return { title, specialization };
+}
+
+function looksLikeInstituteText(value: string) {
+  return /\b(college|university|institute|school|polytechnic|academy|campus)\b/i.test(value);
+}
+
+function looksLikeSpecializationText(value: string) {
+  return /\b(engineering|electronics|electrical|computer|science|technology|mechanical|civil|information|communication|network|systems)\b/i.test(value);
+}
+
 function capitalize(value: string) {
   return value
     .split(" ")
@@ -1045,6 +1396,27 @@ function shiftLetters(text: string, shift: number) {
 
 function countMatches(text: string, regex: RegExp) {
   return text.match(regex)?.length ?? 0;
+}
+
+function scoreExtractedResumeText(text: string) {
+  if (!text) return 0;
+
+  const normalized = normalizeResumeText(text);
+  const lengthScore = Math.min(40, Math.floor(normalized.length / 50));
+  const headingScore = countMatches(
+    normalized.toLowerCase(),
+    /\b(summary|profile|experience|work experience|education|skills|certifications|projects|languages)\b/g
+  ) * 4;
+  const contactScore =
+    (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(normalized) ? 8 : 0) +
+    (/(?:\+?\d[\d()\-\s]{8,}\d)/.test(normalized) ? 8 : 0);
+  const lineStructureScore = Math.min(
+    20,
+    normalized.split("\n").filter((line) => line.trim().length >= 3).length / 4
+  );
+  const usefulBonus = hasUsefulResumeText(normalized) ? 15 : 0;
+
+  return lengthScore + headingScore + contactScore + lineStructureScore + usefulBonus;
 }
 
 function extractTextFromDocx(buffer: Buffer) {
@@ -1142,11 +1514,26 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 
   console.log("📝 Custom PDF extraction result:", extracted.length, "characters");
 
-  // If custom extraction failed, fall back to pdf-parse
-  if (!hasUsefulResumeText(extracted)) {
-    console.log("⚠️ Custom PDF extraction yielded little text, trying pdf-parse library...");
+  // Also try pdf-parse and choose the better quality extraction.
+  let extractedByLibrary = "";
+  try {
+    const runtimeRequire = eval("require") as NodeRequire;
+    type PdfParseModule = {
+      PDFParse?: new (options: { data: Buffer }) => {
+        getText: () => Promise<{ text?: string }>;
+        destroy: () => Promise<void>;
+      };
+      default?: new (options: { data: Buffer }) => {
+        getText: () => Promise<{ text?: string }>;
+        destroy: () => Promise<void>;
+      };
+    };
+
+    let pdfParseMod: PdfParseModule | undefined;
     try {
-      const runtimeRequire = eval("require") as NodeRequire;
+      pdfParseMod = runtimeRequire("pdf-parse") as PdfParseModule;
+    } catch {
+      // Fallback path for environments where direct module resolution differs.
       const pdfParsePath = path.join(
         process.cwd(),
         "node_modules",
@@ -1156,23 +1543,32 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
         "cjs",
         "index.cjs"
       );
-      const { PDFParse } = runtimeRequire(pdfParsePath) as {
-        PDFParse: new (options: { data: Buffer }) => {
-          getText: () => Promise<{ text?: string }>;
-          destroy: () => Promise<void>;
-        };
-      };
-      const parser = new PDFParse({ data: buffer });
-      const data = await parser.getText();
-      extracted = data.text ?? "";
-      await parser.destroy();
-      console.log("✅ pdf-parse extracted:", extracted.length, "characters");
-    } catch (error) {
-      console.error("❌ pdf-parse also failed:", error);
+      pdfParseMod = runtimeRequire(pdfParsePath) as PdfParseModule;
     }
+
+    const PDFParseCtor = pdfParseMod.PDFParse ?? pdfParseMod.default;
+    if (!PDFParseCtor) throw new Error("pdf-parse export not found");
+
+    const parser = new PDFParseCtor({ data: buffer });
+    const data = await parser.getText();
+    extractedByLibrary = data.text ?? "";
+    await parser.destroy();
+    console.log("✅ pdf-parse extracted:", extractedByLibrary.length, "characters");
+  } catch (error) {
+    console.error("❌ pdf-parse failed:", error);
   }
 
-  return extracted;
+  const customScore = scoreExtractedResumeText(extracted);
+  const libraryScore = scoreExtractedResumeText(extractedByLibrary);
+  const selected = libraryScore > customScore ? extractedByLibrary : extracted;
+
+  console.log("📊 PDF extraction quality scores:", {
+    customScore,
+    libraryScore,
+    selected: libraryScore > customScore ? "pdf-parse" : "custom",
+  });
+
+  return selected;
 }
 
 function decodePdfStream(stream: Buffer) {

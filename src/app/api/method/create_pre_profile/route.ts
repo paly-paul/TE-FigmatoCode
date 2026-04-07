@@ -7,14 +7,6 @@ function getFormValue(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-const CREATE_PRE_PROFILE_ALLOWED_FIELDS = new Set([
-  "email",
-  "full_name",
-  "phone_number",
-  "current_location",
-  "updated_resume",
-]);
-
 function isFailedEnvelope(data: JsonRecord) {
   if (typeof data.status === "string" && data.status.toLowerCase() === "failed") return true;
   if (typeof data.message === "string") {
@@ -132,79 +124,73 @@ export async function POST(request: Request) {
     );
   }
 
-  const requestClone = request.clone();
-  const incoming = await requestClone.formData();
-  const file = incoming.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "File is required." }, { status: 400 });
-  }
+  const contentType = request.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json") || contentType.includes("application/*+json");
+
+  // Build a normalized payload that matches backend contract.
+  const payload: Record<string, string> = {};
 
   // Match Postman/guest access as closely as possible: do not forward local
   // app cookies or backend auth headers for this endpoint.
-  const contentType = request.headers.get("content-type")?.trim() || "";
-  const headers: HeadersInit = contentType ? { "Content-Type": contentType } : {};
+  const headers: HeadersInit = {};
 
-  const email = getFormValue(incoming, "email");
   const upstreamUrl = `${backendBase}/api/method/create_pre_profile`;
-  const rawBody = await request.arrayBuffer();
-  const fallbackWithoutFile = new FormData();
-  fallbackWithoutFile.append("email", getFormValue(incoming, "email"));
-  fallbackWithoutFile.append("full_name", getFormValue(incoming, "full_name"));
-  incoming.forEach((value, key) => {
-    if (!CREATE_PRE_PROFILE_ALLOWED_FIELDS.has(key)) return;
-    if (typeof value !== "string") return;
-    if (key !== "email" && key !== "full_name") fallbackWithoutFile.append(key, value);
-  });
-  const fallbackMinimal = new FormData();
-  fallbackMinimal.append("email", getFormValue(incoming, "email"));
-  fallbackMinimal.append("full_name", getFormValue(incoming, "full_name"));
 
-  const attempts: Array<{
-    label: string;
-    sent_fields: string[];
-    status: number;
-    ok: boolean;
-    data: JsonRecord;
-    server_messages: string[];
-  }> = [];
+  let email = "";
+  if (isJson) {
+    const body = (await request.json()) as Record<string, unknown>;
+    const pick = (k: string) => {
+      const v = body[k];
+      return typeof v === "string" ? v.trim() : "";
+    };
 
-  let { upstream, data } = await postCreatePreProfile(upstreamUrl, headers, rawBody);
-  attempts.push({
-    label: "raw_browser_multipart",
-    sent_fields: Array.from(incoming.keys()),
-    status: upstream.status,
-    ok: upstream.ok,
-    data,
-    server_messages: extractServerMessages(data),
-  });
+    email = pick("email");
+    const fullName = pick("full_name");
+    const phoneNumber = pick("phone_number");
+    const currentLocation = pick("current_location");
+    const updatedResume = pick("updated_resume");
 
-  if ((!upstream.ok || isFailedEnvelope(data)) && Array.from(fallbackWithoutFile.keys()).length > 0) {
-    const retry = await postCreatePreProfile(upstreamUrl, headers, fallbackWithoutFile);
-    upstream = retry.upstream;
-    data = retry.data;
-    attempts.push({
-      label: "without_file",
-      sent_fields: Array.from(fallbackWithoutFile.keys()),
-      status: upstream.status,
-      ok: upstream.ok,
-      data,
-      server_messages: extractServerMessages(data),
-    });
+    // Required by backend contract
+    if (!email || !fullName) {
+      return NextResponse.json(
+        { error: "email and full_name are required." },
+        { status: 400 }
+      );
+    }
+
+    payload.email = email;
+    payload.full_name = fullName;
+    if (phoneNumber) payload.phone_number = phoneNumber;
+    if (currentLocation) payload.current_location = currentLocation;
+    if (updatedResume) payload.updated_resume = updatedResume;
+  } else {
+    const requestClone = request.clone();
+    const incoming = await requestClone.formData();
+
+    email = getFormValue(incoming, "email");
+    const fullName = getFormValue(incoming, "full_name");
+    const phoneNumber = getFormValue(incoming, "phone_number");
+    const currentLocation = getFormValue(incoming, "current_location");
+    const updatedResume = getFormValue(incoming, "updated_resume");
+    if (!email || !fullName) {
+      return NextResponse.json(
+        { error: "email and full_name are required." },
+        { status: 400 }
+      );
+    }
+
+    payload.email = email;
+    payload.full_name = fullName;
+    if (phoneNumber) payload.phone_number = phoneNumber;
+    if (currentLocation) payload.current_location = currentLocation;
+    if (updatedResume) payload.updated_resume = updatedResume;
   }
 
-  if ((!upstream.ok || isFailedEnvelope(data)) && Array.from(fallbackMinimal.keys()).length > 0) {
-    const retry = await postCreatePreProfile(upstreamUrl, headers, fallbackMinimal);
-    upstream = retry.upstream;
-    data = retry.data;
-    attempts.push({
-      label: "minimal_identity_only",
-      sent_fields: Array.from(fallbackMinimal.keys()),
-      status: upstream.status,
-      ok: upstream.ok,
-      data,
-      server_messages: extractServerMessages(data),
-    });
-  }
+  const { upstream, data } = await postCreatePreProfile(
+    upstreamUrl,
+    { ...headers, "Content-Type": "application/json" },
+    JSON.stringify(payload)
+  );
 
   if (upstream.ok && isFailedEnvelope(data)) {
     const res = NextResponse.json(
@@ -213,10 +199,9 @@ export async function POST(request: Request) {
         detail: data,
         debug: {
           email: email || null,
-          sent_fields: Array.from(incoming.keys()),
+          sent_fields: Object.keys(payload),
           upstream_url: upstreamUrl,
           server_messages: extractServerMessages(data),
-          attempts,
         },
       },
       { status: 502 }

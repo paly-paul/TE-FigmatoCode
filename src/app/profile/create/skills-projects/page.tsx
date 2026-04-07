@@ -164,9 +164,11 @@ function SkillsProjectsPageContent() {
 
   // Backend-only options: suggestedSkills holds key skills returned from the API.
   // The dropdown offers those values, excluding ones already selected in `skills`.
-  const availableSkillOptions = dedupeSkills([...suggestedSkills]).filter(
-    (skill) => !skills.includes(skill)
-  );
+  const suggestedSkillOptions = dedupeSkills([...suggestedSkills]);
+  const hiddenAlreadySelectedCount = suggestedSkillOptions.filter((skill) => {
+    const normalized = skill.trim().toLowerCase();
+    return skills.some((selected) => selected.trim().toLowerCase() === normalized);
+  }).length;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -402,19 +404,38 @@ function SkillsProjectsPageContent() {
 
         if (cancelled) return;
 
+        const generatedSkills = await fetchGeneratedSkillsForProfile(profileName);
+        if (cancelled) return;
+
         const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
 
-        if (backendProfile.keySkills?.length) {
-          setSuggestedSkills((prev) => dedupeSkills([...backendProfile.keySkills!, ...prev]));
-          setBackendSkillsStatus(`Loaded ${backendProfile.keySkills.length} skill(s) from backend profile.`);
+        const existingSkills = backendProfile.keySkills ?? [];
+        const combinedSkills = dedupeSkills([...generatedSkills, ...existingSkills]);
+
+        if (combinedSkills.length) {
+          setSuggestedSkills((prev) => dedupeSkills([...combinedSkills, ...prev]));
+
+          if (generatedSkills.length && existingSkills.length) {
+            setBackendSkillsStatus(
+              `Loaded ${existingSkills.length} saved skill(s) and ${generatedSkills.length} new AI-generated skill(s).`
+            );
+          } else if (generatedSkills.length) {
+            setBackendSkillsStatus(`Loaded ${generatedSkills.length} new AI-generated skill(s).`);
+          } else {
+            setBackendSkillsStatus(
+              `No new AI-generated skills; loaded ${existingSkills.length} saved skill(s) from backend profile.`
+            );
+          }
         } else {
-          setBackendSkillsStatus("Backend profile returned no saved key skills yet.");
+          setBackendSkillsStatus("Backend returned no key skills yet.");
         }
       } catch (error) {
         if (cancelled) return;
         setBackendSkillsStatus(
-          error instanceof Error ? `Unable to load backend skills: ${error.message}` : "Unable to load backend skills."
+          error instanceof Error
+            ? `Unable to load backend skills: ${error.message}`
+            : "Unable to load backend skills."
         );
       }
     })();
@@ -866,13 +887,23 @@ function SkillsProjectsPageContent() {
                       className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="">Select a skill</option>
-                      {availableSkillOptions.map((opt: string) => (
-                        <option key={opt} value={opt}>
-                          {opt}
+                      {suggestedSkillOptions.map((opt: string) => {
+                        const isAlreadyAdded = skills.some(
+                          (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
+                        );
+                        return (
+                        <option key={opt} value={opt} disabled={isAlreadyAdded}>
+                          {isAlreadyAdded ? `${opt} (Already added)` : opt}
                         </option>
-                      ))}
+                        );
+                      })}
                     </select>
                     <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
+                    {hiddenAlreadySelectedCount > 0 ? (
+                      <p className="text-xs text-gray-500">
+                        {hiddenAlreadySelectedCount} suggested skill(s) already added and hidden from the list.
+                      </p>
+                    ) : null}
                     {backendSkillsStatus ? <p className="text-xs text-gray-500">{backendSkillsStatus}</p> : null}
                   </div>
 
@@ -1269,13 +1300,23 @@ function SkillsProjectsPageContent() {
                     className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="">Select a skill</option>
-                    {availableSkillOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
+                    {suggestedSkillOptions.map((opt) => {
+                      const isAlreadyAdded = skills.some(
+                        (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
+                      );
+                      return (
+                      <option key={opt} value={opt} disabled={isAlreadyAdded}>
+                        {isAlreadyAdded ? `${opt} (Already added)` : opt}
                       </option>
-                    ))}
+                      );
+                    })}
                   </select>
-                  <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
+                    <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
+                    {hiddenAlreadySelectedCount > 0 ? (
+                      <p className="text-xs text-gray-500">
+                        {hiddenAlreadySelectedCount} suggested skill(s) already added and hidden from the list.
+                      </p>
+                    ) : null}
                   {backendSkillsStatus ? <p className="text-xs text-gray-500">{backendSkillsStatus}</p> : null}
                 </div>
 
@@ -1702,6 +1743,113 @@ function dedupeSkills(values: string[]) {
         .filter(Boolean)
     )
   ).slice(0, 30);
+}
+
+function collectSkillStringsFromUnknown(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split(/,|\/|;|\||•|\n/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectSkillStringsFromUnknown(item));
+  }
+
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+
+  const directValues = [
+    record.key_skill,
+    record.key_skills,
+    record.skill,
+    record.skills,
+  ];
+  const direct = directValues.flatMap((item) => collectSkillStringsFromUnknown(item));
+
+  const nestedValues = [
+    record.data,
+    record.result,
+    record.results,
+    record.items,
+    record.rows,
+    record.skills,
+  ];
+  const nested = nestedValues.flatMap((item) => collectSkillStringsFromUnknown(item));
+
+  return [...direct, ...nested];
+}
+
+function isLikelySkillToken(value: string): boolean {
+  const token = value.trim();
+  const normalized = token.toLowerCase().replace(/\s+/g, " ");
+  if (!token) return false;
+  if (token.length < 2 || token.length > 50) return false;
+  if (
+    normalized === "skills" ||
+    normalized === "technical skills" ||
+    normalized === "key skills" ||
+    normalized === "tools" ||
+    normalized === "technologies" ||
+    normalized === "frameworks" ||
+    normalized === "core competencies" ||
+    normalized === "technical proficiencies"
+  ) {
+    return false;
+  }
+  if (/^pr-\d+-\d+/i.test(token)) return false;
+  if (/^fetched\s+/i.test(token)) return false;
+  if (/^no key skills/i.test(token)) return false;
+  if (/^status$/i.test(token)) return false;
+  if (/^success$/i.test(token)) return false;
+  if (/^failed$/i.test(token)) return false;
+  if (/^profile$/i.test(token)) return false;
+  return true;
+}
+
+async function fetchGeneratedSkillsForProfile(profileName: string): Promise<string[]> {
+  const url = `/api/method/generate_keyskills_for_profile?profile_name=${encodeURIComponent(profileName)}`;
+  const response = await fetch(url, { method: "GET" });
+  let data: unknown = {};
+  try {
+    data = await response.json();
+  } catch {
+    // ignore parsing errors
+  }
+
+  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const messageNode =
+    record.message && typeof record.message === "object"
+      ? (record.message as Record<string, unknown>)
+      : null;
+  const status =
+    typeof messageNode?.status === "string"
+      ? messageNode.status.toLowerCase()
+      : typeof record.status === "string"
+        ? record.status.toLowerCase()
+        : "";
+  const backendMessage =
+    (typeof messageNode?.message === "string" && messageNode.message) ||
+    (typeof record.message === "string" ? record.message : "");
+
+  // Frappe may return business-level "Failed" with "no new key skills".
+  // Treat this as an empty result instead of throwing, so dropdown still works.
+  if (status === "failed" && /no new key skills/i.test(backendMessage)) {
+    return [];
+  }
+
+  if (!response.ok) {
+    throw new Error(backendMessage || `Key skills API failed (${response.status})`);
+  }
+
+  const fromRootData = collectSkillStringsFromUnknown(record.data);
+  const fromMessageData = collectSkillStringsFromUnknown(messageNode?.data);
+  const fromRootSkills = collectSkillStringsFromUnknown(record.key_skills ?? record.skills);
+
+  return dedupeSkills([...fromRootData, ...fromMessageData, ...fromRootSkills])
+    .filter(isLikelySkillToken)
+    .slice(0, 100);
 }
 
 function mergeToolEntries(existing: ToolEntry[], toolNames: string[]) {
