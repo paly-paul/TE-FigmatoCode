@@ -11,7 +11,12 @@ import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { markProfileComplete } from "@/lib/profileOnboarding";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { readResumeProfile } from "@/lib/profileSession";
-import { getCandidateProfileData, saveProfile } from "@/services/profile";
+import {
+  createPreProfile,
+  generateProfileFromPreProfile,
+  getCandidateProfileData,
+  saveProfile,
+} from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 
@@ -138,6 +143,23 @@ function isProjectEmpty(e: ProjectEntry) {
     !e.responsibilities.trim() &&
     !e.inProgress
   );
+}
+
+function extractUpdatedResumeRefFromSession(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.sessionStorage.getItem("uploadedResumeMeta");
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const keys = ["updated_resume", "file_url", "fileUrl", "url", "file_name", "fileName"];
+    for (const key of keys) {
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  } catch {
+    // ignore invalid JSON
+  }
+  return "";
 }
 
 function SkillsProjectsPageContent() {
@@ -706,24 +728,6 @@ function SkillsProjectsPageContent() {
       profileName = "";
     }
 
-    if (candidateId) {
-      try {
-        const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-        resolverUrl.searchParams.set("candidate_id", candidateId);
-        const resolverRes = await fetch(resolverUrl.toString());
-        if (resolverRes.ok) {
-          const resolverData = (await resolverRes.json()) as { profile_name?: string };
-          const resolvedProfileName = resolverData.profile_name?.trim();
-          if (resolvedProfileName) {
-            profileName = resolvedProfileName;
-            setProfileName(resolvedProfileName);
-          }
-        }
-      } catch {
-        // ignore and allow create flow without explicit profile_name
-      }
-    }
-
     const firstName = storedProfile?.firstName?.trim() || "";
     const lastName = storedProfile?.lastName?.trim() || "";
     const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
@@ -762,15 +766,119 @@ function SkillsProjectsPageContent() {
 
     setIsSubmittingProfile(true);
     try {
+      // On finish, run pre-profile -> profile generation flow with the same payload shape
+      // already used in the resume-upload step.
+      const createPreProfilePayload = new FormData();
+      createPreProfilePayload.append("email", email);
+      createPreProfilePayload.append("full_name", fullName);
+      if (firstName) createPreProfilePayload.append("first_name", firstName);
+      if (lastName) createPreProfilePayload.append("last_name", lastName);
+      const updatedResumeRef = extractUpdatedResumeRefFromSession();
+      if (updatedResumeRef) createPreProfilePayload.append("updated_resume", updatedResumeRef);
+      try {
+        const { preProfileName } = await createPreProfile(createPreProfilePayload);
+        const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
+        if (generatedProfileName) {
+          profileName = generatedProfileName;
+        }
+      } catch (error) {
+        const raw = (
+          error as Error & {
+            raw?: Record<string, unknown>;
+          }
+        ).raw;
+        const detail = raw?.detail && typeof raw.detail === "object"
+          ? (raw.detail as Record<string, unknown>)
+          : null;
+        const messageRoot = detail?.message && typeof detail.message === "object"
+          ? (detail.message as Record<string, unknown>)
+          : null;
+        const existingProfileId = messageRoot && typeof messageRoot.profile_id === "string"
+          ? messageRoot.profile_id.trim()
+          : "";
+        const failedMessage = messageRoot && typeof messageRoot.message === "string"
+          ? messageRoot.message.toLowerCase()
+          : "";
+        const duplicateEmail = failedMessage.includes("already exists");
+        if (duplicateEmail && existingProfileId) {
+          profileName = existingProfileId;
+        } else {
+          throw error;
+        }
+      }
+
       const response = await saveProfile({
         profile_name: profileName || undefined,
         full_name: fullName,
         email,
         professional_title: storedProfile?.professionalTitle?.trim() || undefined,
         total_experience: totalExperience,
+        current_location: storedProfile?.currentLocation?.trim() || undefined,
         key_skills: keySkills.length ? keySkills : undefined,
         work_experience: workExperience.length ? workExperience : undefined,
         education_details: educationDetails.length ? educationDetails : undefined,
+        profile: {
+          full_name: fullName || undefined,
+          email,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+          dob: storedProfile?.dob?.trim() || undefined,
+          gender: storedProfile?.gender?.trim() || undefined,
+          country_code: storedProfile?.countryCode?.trim() || undefined,
+          phone: storedProfile?.phone?.trim() || undefined,
+          alt_email: storedProfile?.altEmail?.trim() || undefined,
+          nationality: storedProfile?.nationality?.trim() || undefined,
+          current_location: storedProfile?.currentLocation?.trim() || undefined,
+        },
+        profile_version: {
+          professional_title: storedProfile?.professionalTitle?.trim() || undefined,
+          experience_years: storedProfile?.experienceYears?.trim() || undefined,
+          experience_months: storedProfile?.experienceMonths?.trim() || undefined,
+          salary_per_month: storedProfile?.salaryPerMonth?.trim() || undefined,
+          salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
+          summary: storedProfile?.summary?.trim() || undefined,
+          preferred_location: storedProfile?.preferredLocation?.trim() || undefined,
+          key_skills: keySkills.length ? keySkills : undefined,
+          work_experience: workExperience.length ? workExperience : undefined,
+          education_details: educationDetails.length ? educationDetails : undefined,
+          certifications: storedProfile?.certifications?.length
+            ? storedProfile.certifications
+                .map((entry) => ({
+                  name: entry.name?.trim() || undefined,
+                  issuing: entry.issuing?.trim() || undefined,
+                  certificate_number: entry.certificateNumber?.trim() || undefined,
+                  issue_date: entry.issueDate?.trim() || undefined,
+                  expiration_date: entry.expirationDate?.trim() || undefined,
+                  url: entry.url?.trim() || undefined,
+                }))
+                .filter((entry) =>
+                  entry.name ||
+                  entry.issuing ||
+                  entry.certificate_number ||
+                  entry.issue_date ||
+                  entry.expiration_date ||
+                  entry.url
+                )
+            : undefined,
+          external_links: storedProfile?.externalLinks?.length
+            ? storedProfile.externalLinks
+                .map((entry) => ({
+                  label: entry.label?.trim() || undefined,
+                  url: entry.url?.trim() || undefined,
+                }))
+                .filter((entry) => entry.label || entry.url)
+            : undefined,
+          languages: storedProfile?.languages?.length
+            ? storedProfile.languages
+                .map((entry) => ({
+                  language: entry.language?.trim() || undefined,
+                  read: entry.read?.trim() || undefined,
+                  write: entry.write?.trim() || undefined,
+                  speak: entry.speak?.trim() || undefined,
+                }))
+                .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+            : undefined,
+        },
         action: "submit",
       });
 
@@ -784,7 +892,11 @@ function SkillsProjectsPageContent() {
         "";
 
       if (savedProfileName) {
-        setProfileName(savedProfileName);
+        profileName = savedProfileName;
+      }
+
+      if (profileName) {
+        setProfileName(profileName);
       }
 
       markProfileComplete();

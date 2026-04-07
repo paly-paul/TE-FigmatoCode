@@ -146,6 +146,8 @@ export async function POST(request: Request) {
 
     email = pick("email");
     const fullName = pick("full_name");
+    const firstName = pick("first_name");
+    const lastName = pick("last_name");
     const phoneNumber = pick("phone_number");
     const currentLocation = pick("current_location");
     const updatedResume = pick("updated_resume");
@@ -160,6 +162,8 @@ export async function POST(request: Request) {
 
     payload.email = email;
     payload.full_name = fullName;
+    if (firstName) payload.first_name = firstName;
+    if (lastName) payload.last_name = lastName;
     if (phoneNumber) payload.phone_number = phoneNumber;
     if (currentLocation) payload.current_location = currentLocation;
     if (updatedResume) payload.updated_resume = updatedResume;
@@ -169,6 +173,8 @@ export async function POST(request: Request) {
 
     email = getFormValue(incoming, "email");
     const fullName = getFormValue(incoming, "full_name");
+    const firstName = getFormValue(incoming, "first_name");
+    const lastName = getFormValue(incoming, "last_name");
     const phoneNumber = getFormValue(incoming, "phone_number");
     const currentLocation = getFormValue(incoming, "current_location");
     const updatedResume = getFormValue(incoming, "updated_resume");
@@ -181,6 +187,8 @@ export async function POST(request: Request) {
 
     payload.email = email;
     payload.full_name = fullName;
+    if (firstName) payload.first_name = firstName;
+    if (lastName) payload.last_name = lastName;
     if (phoneNumber) payload.phone_number = phoneNumber;
     if (currentLocation) payload.current_location = currentLocation;
     if (updatedResume) payload.updated_resume = updatedResume;

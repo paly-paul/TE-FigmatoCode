@@ -19,7 +19,10 @@ export interface SaveProfilePayload {
     from_date?: string;
     to_date?: string;
   }>;
+  profile?: Record<string, unknown>;
+  profile_version?: Record<string, unknown>;
   action?: "save" | "submit";
+  [key: string]: unknown;
 }
 
 export async function saveProfile(payload: SaveProfilePayload): Promise<Record<string, unknown>> {

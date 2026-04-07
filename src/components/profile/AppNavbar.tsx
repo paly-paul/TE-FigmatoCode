@@ -59,6 +59,7 @@ export default function AppNavbar() {
     { label: "Jobs", href: "/jobs" },
     { label: "Timesheet", href: "/timesheet" },
   ];
+  const hideNavLinks = pathname.startsWith("/profile/create");
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
@@ -83,22 +84,24 @@ export default function AppNavbar() {
           </button>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-4">
-            {navItems.map((item) => (
-              <button
-                key={item.href}
-                type="button"
-                onClick={() => router.push(item.href)}
-                className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                  isActive(item.href)
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          {!hideNavLinks ? (
+            <nav className="hidden lg:flex items-center gap-4">
+              {navItems.map((item) => (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => router.push(item.href)}
+                  className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                    isActive(item.href)
+                      ? "bg-gray-100 text-gray-900"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          ) : null}
 
           {/* Right Side */}
           <div className="flex items-center gap-2 sm:gap-4">
@@ -183,23 +186,25 @@ export default function AppNavbar() {
         {mobileMenuOpen && (
           <div className="lg:hidden py-4 border-t">
             <nav className="flex flex-col gap-2">
-              {navItems.map((item) => (
-                <button
-                  key={item.href}
-                  type="button"
-                  onClick={() => {
-                    router.push(item.href);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-2 rounded-md font-medium text-left transition-colors ${
-                    isActive(item.href)
-                      ? "bg-gray-100 text-gray-900"
-                      : "text-gray-500 hover:bg-gray-100"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {!hideNavLinks
+                ? navItems.map((item) => (
+                  <button
+                    key={item.href}
+                    type="button"
+                    onClick={() => {
+                      router.push(item.href);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`px-4 py-2 rounded-md font-medium text-left transition-colors ${
+                      isActive(item.href)
+                        ? "bg-gray-100 text-gray-900"
+                        : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))
+                : null}
 
               {/* Mobile Profile Links */}
               <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">

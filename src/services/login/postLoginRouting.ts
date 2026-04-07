@@ -24,10 +24,6 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
     sessionProfileName,
   });
 
-  // Only skip the wizard when the *server* says the profile is complete.
-  // Local/session flags can be stale (e.g. profile created but not completed),
-  // so they should never route a user straight to the dashboard.
-
   const normalized = email.trim().toLowerCase();
   if (!normalized) return false;
 
@@ -45,6 +41,13 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       }
     }
     if (!profileName) {
+      if (localProfileComplete) {
+        console.log("[login-routing] decision", {
+          reason: "local-profile-complete:fallback-missing-profile-name",
+          skipWizard: true,
+        });
+        return true;
+      }
       console.log("[login-routing] decision", {
         reason: "missing-profile-name",
         skipWizard: false,
@@ -77,10 +80,25 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
       return true;
     }
+    if (localProfileComplete) {
+      console.log("[login-routing] decision", {
+        reason: "local-profile-complete:fallback-server-incomplete",
+        skipWizard: true,
+      });
+      return true;
+    }
     console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
     return false;
   } catch {
     /* treat as no server profile */
+  }
+
+  if (localProfileComplete) {
+    console.log("[login-routing] decision", {
+      reason: "local-profile-complete:fallback-server-error",
+      skipWizard: true,
+    });
+    return true;
   }
 
   console.log("[login-routing] decision", { reason: "no-skip-signal", skipWizard: false });

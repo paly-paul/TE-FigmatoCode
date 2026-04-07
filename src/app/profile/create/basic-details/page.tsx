@@ -12,7 +12,7 @@ import { SmallUploadIcon, TrashIcon } from "@/components/icons";
 import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { getCandidateProfileData, saveProfile } from "@/services/profile";
+import { getCandidateProfileData } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
@@ -1046,49 +1046,6 @@ export default function BasicDetailsPage() {
       } catch {
         // ignore storage errors
       }
-    }
-    try {
-      const fullName = [payload.firstName, payload.lastName].filter(Boolean).join(" ").trim();
-      const email = payload.email?.trim() || "";
-      let profileName = getProfileName() || "";
-
-      if (profileName && !isLikelyDocId(profileName)) {
-        profileName = "";
-      }
-
-      if (fullName && email) {
-        const response = await saveProfile({
-          profile_name: profileName || undefined,
-          full_name: fullName,
-          email,
-          professional_title: payload.professionalTitle,
-          total_experience: payload.experienceYears ? parseInt(payload.experienceYears, 10) : undefined,
-          current_location: payload.currentLocation,
-          education_details: trimmedEducation.length
-            ? trimmedEducation.map((entry) => ({
-                degree: entry.title || undefined,
-                institution: entry.institute || undefined,
-                year: entry.graduationYear || undefined,
-              }))
-            : undefined,
-          action: "save",
-        });
-
-        const messageRoot =
-          response.message && typeof response.message === "object"
-            ? (response.message as Record<string, unknown>)
-            : null;
-        const savedProfileName =
-          (typeof response.profile_name === "string" && response.profile_name.trim()) ||
-          (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
-          "";
-
-        if (savedProfileName) {
-          setProfileName(savedProfileName);
-        }
-      }
-    } catch (error) {
-      console.warn("Unable to create draft profile from Basic Details.", error);
     }
     router.push("/profile/create/skills-projects");
   }
