@@ -140,6 +140,11 @@ export async function parseResumeFile(file: File): Promise<ResumeProfileData> {
   }
 
   const profile = sanitizeResumeProfile(buildProfileFromText(text, file.name), normalizedTextForFiltering(text));
+  if (!hasParsedProfileContent(profile)) {
+    const fallbackName = deriveNameFromFileName(file.name);
+    if (fallbackName.firstName) profile.firstName = fallbackName.firstName;
+    if (fallbackName.lastName) profile.lastName = fallbackName.lastName;
+  }
   
   console.log("✅ Parsed profile fields:", Object.keys(profile));
   console.log("📊 Full profile data:", profile);
@@ -374,8 +379,15 @@ function deriveNameFromFileName(fileName: string) {
     .filter((part) => /^[A-Za-z.'-]+$/.test(part))
     .filter((part) => !ignoredTokens.has(part.toLowerCase()));
 
-  if (parts.length < 2) {
+  if (parts.length < 1) {
     return { firstName: undefined, lastName: undefined };
+  }
+
+  if (parts.length === 1) {
+    return {
+      firstName: capitalize(parts[0]),
+      lastName: undefined,
+    };
   }
 
   return {
@@ -1417,6 +1429,10 @@ function countMatches(text: string, regex: RegExp) {
   return text.match(regex)?.length ?? 0;
 }
 
+function hasParsedProfileContent(profile: ResumeProfileData) {
+  return Object.keys(profile).length > 0;
+}
+
 function scoreExtractedResumeText(text: string) {
   if (!text) return 0;
 
@@ -1540,16 +1556,23 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
       getText: () => Promise<{ text?: string }>;
       destroy: () => Promise<void>;
     };
-    type PdfParseNodeModule = {
+    type PdfParseModule = {
       PDFParse?: PdfParseCtor;
       default?: PdfParseCtor | { PDFParse?: PdfParseCtor };
     };
+    const resolveCtor = (mod: PdfParseModule) =>
+      mod.PDFParse ?? (typeof mod.default === "function" ? mod.default : mod.default?.PDFParse);
 
-    // Prefer Node-targeted export in server runtime environments.
-    const pdfParseMod = (await import("pdf-parse/node")) as PdfParseNodeModule;
-    const PDFParseCtor =
-      pdfParseMod.PDFParse ??
-      (typeof pdfParseMod.default === "function" ? pdfParseMod.default : pdfParseMod.default?.PDFParse);
+    let PDFParseCtor: PdfParseCtor | undefined;
+    try {
+      // Prefer Node-targeted export in server runtimes.
+      const nodeMod = (await import("pdf-parse/node")) as PdfParseModule;
+      PDFParseCtor = resolveCtor(nodeMod);
+    } catch {
+      // Fallback for platforms where subpath exports behave differently.
+      const mainMod = (await import("pdf-parse")) as PdfParseModule;
+      PDFParseCtor = resolveCtor(mainMod);
+    }
     if (!PDFParseCtor) throw new Error("pdf-parse export not found");
 
     const parser = new PDFParseCtor({ data: buffer });
