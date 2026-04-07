@@ -1,5 +1,4 @@
 import { inflateRawSync, inflateSync } from "zlib";
-import path from "path";
 import { ResumeProfileData } from "@/types/profile";
 
 const DEGREE_KEYWORDS = [
@@ -135,7 +134,9 @@ export async function parseResumeFile(file: File): Promise<ResumeProfileData> {
   console.log("📝 First 300 chars:", text.slice(0, 300));
 
   if (!hasUsefulResumeText(text)) {
-    throw new Error("Resume text could not be read clearly. Please upload a text-based PDF or DOCX file.");
+    // Keep parsing with best-effort heuristics (e.g., filename fallback)
+    // instead of failing hard for low-quality but still partially readable files.
+    console.warn("⚠️ Low-confidence resume text extraction. Proceeding with best-effort parsing.");
   }
 
   const profile = sanitizeResumeProfile(buildProfileFromText(text, file.name), normalizedTextForFiltering(text));
@@ -1535,36 +1536,20 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
   // Also try pdf-parse and choose the better quality extraction.
   let extractedByLibrary = "";
   try {
-    const runtimeRequire = eval("require") as NodeRequire;
-    type PdfParseModule = {
-      PDFParse?: new (options: { data: Buffer }) => {
-        getText: () => Promise<{ text?: string }>;
-        destroy: () => Promise<void>;
-      };
-      default?: new (options: { data: Buffer }) => {
-        getText: () => Promise<{ text?: string }>;
-        destroy: () => Promise<void>;
-      };
+    type PdfParseCtor = new (options: { data: Buffer | Uint8Array }) => {
+      getText: () => Promise<{ text?: string }>;
+      destroy: () => Promise<void>;
+    };
+    type PdfParseNodeModule = {
+      PDFParse?: PdfParseCtor;
+      default?: PdfParseCtor | { PDFParse?: PdfParseCtor };
     };
 
-    let pdfParseMod: PdfParseModule | undefined;
-    try {
-      pdfParseMod = runtimeRequire("pdf-parse") as PdfParseModule;
-    } catch {
-      // Fallback path for environments where direct module resolution differs.
-      const pdfParsePath = path.join(
-        process.cwd(),
-        "node_modules",
-        "pdf-parse",
-        "dist",
-        "pdf-parse",
-        "cjs",
-        "index.cjs"
-      );
-      pdfParseMod = runtimeRequire(pdfParsePath) as PdfParseModule;
-    }
-
-    const PDFParseCtor = pdfParseMod.PDFParse ?? pdfParseMod.default;
+    // Prefer Node-targeted export in server runtime environments.
+    const pdfParseMod = (await import("pdf-parse/node")) as PdfParseNodeModule;
+    const PDFParseCtor =
+      pdfParseMod.PDFParse ??
+      (typeof pdfParseMod.default === "function" ? pdfParseMod.default : pdfParseMod.default?.PDFParse);
     if (!PDFParseCtor) throw new Error("pdf-parse export not found");
 
     const parser = new PDFParseCtor({ data: buffer });
@@ -1578,10 +1563,13 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 
   const customScore = scoreExtractedResumeText(extracted);
   const libraryScore = scoreExtractedResumeText(extractedByLibrary);
-  if (customScore < 20 && libraryScore < 20) {
-    throw new Error("Unable to extract readable text from this PDF. Please upload a text-based PDF or DOCX file.");
-  }
   const selected = libraryScore > customScore ? extractedByLibrary : extracted;
+
+  // Do not throw here; return best effort so callers can still extract partial
+  // profile data and filename-derived identity when PDF text is weak.
+  if (!selected.trim()) {
+    console.warn("⚠️ PDF extraction produced no text.");
+  }
 
   console.log("📊 PDF extraction quality scores:", {
     customScore,
