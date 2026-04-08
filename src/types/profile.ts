@@ -25,6 +25,9 @@ export interface ResumeProjectEntry {
   customerCompany?: string;
   projectDescription?: string;
   responsibilities?: string;
+  projectStartDate?: string;
+  projectEndDate?: string;
+  inProgress?: boolean;
 }
 
 export interface ResumeWorkExperienceEntry {

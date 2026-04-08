@@ -136,6 +136,103 @@ function mapEducationQualifications(value: unknown): ResumeProfileData["educatio
   return education.length ? education : undefined;
 }
 
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function toResponsibilitiesText(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() ? value.trim() : undefined;
+  if (Array.isArray(value)) {
+    const parts = value.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
+    if (parts.length === 0) return undefined;
+    return parts.join("; ");
+  }
+  return undefined;
+}
+
+function mapWorkExperienceToProjects(value: unknown): ResumeProfileData["projects"] {
+  const workExp = value;
+  if (!Array.isArray(workExp)) return undefined;
+
+  type MappedProject = NonNullable<ResumeProfileData["projects"]>[number] & { projectStartDate: string };
+
+  const projects = workExp
+    .map((item): MappedProject | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+
+      const projectTitle =
+        pickString(record, "role", "job_title", "jobTitle", "projectTitle", "title") ||
+        pickString(record, "position");
+      const customerCompany =
+        pickString(record, "company", "customerCompany", "employer", "organization", "org");
+
+      const projectStartDate =
+        pickString(record, "from_date", "fromDate", "start_date", "startDate") ??
+        pickString(record, "start");
+
+      const toDate =
+        pickString(record, "to_date", "toDate", "end_date", "endDate") ??
+        pickString(record, "end");
+
+      // When no end date is present, treat it as "in progress" for the wizard validation.
+      const inProgress = !toDate;
+      const projectEndDate = inProgress ? undefined : toDate;
+
+      const responsibilitiesText =
+        toResponsibilitiesText(
+          record.responsibilities ?? record.responsibility ?? record.bullets ?? record.achievements
+        ) ?? asNonEmptyString(record.responsibilities_text ?? record.responsibilitiesText);
+
+      const description =
+        pickString(record, "description", "project_description", "projectDescription", "summary") ??
+        asNonEmptyString(record.project_description_text ?? record.description_text);
+
+      // Fallbacks ensure the wizard "required" validation doesn’t block finishing when backend
+      // doesn’t provide description/responsibilities fields.
+      const fallbackDescription =
+        projectTitle && customerCompany
+          ? `Delivered measurable outcomes as ${projectTitle} at ${customerCompany}.`
+          : projectTitle
+            ? `Delivered measurable outcomes as ${projectTitle}.`
+            : customerCompany
+              ? `Delivered measurable outcomes at ${customerCompany}.`
+              : undefined;
+
+      const fallbackResponsibilities =
+        projectTitle && customerCompany
+          ? `Owned key responsibilities as ${projectTitle} at ${customerCompany}, including planning, execution, and continuous improvement.`
+          : projectTitle
+            ? `Owned key responsibilities as ${projectTitle}, including planning, execution, and continuous improvement.`
+            : customerCompany
+              ? `Owned key responsibilities at ${customerCompany}, including planning, execution, and continuous improvement.`
+              : undefined;
+
+      const projectDescription = description || fallbackDescription;
+      const responsibilities = responsibilitiesText || fallbackResponsibilities;
+
+      // Keep partially filled entries out only when they have no identity.
+      if (!projectTitle && !customerCompany && !projectStartDate) return null;
+
+      const safeProjectStartDate = projectStartDate || "01/2000";
+
+      return {
+        projectTitle: projectTitle || undefined,
+        customerCompany: customerCompany || undefined,
+        projectStartDate: safeProjectStartDate,
+        projectEndDate: projectEndDate || undefined,
+        inProgress,
+        projectDescription: projectDescription || undefined,
+        responsibilities: responsibilities || undefined,
+      };
+    })
+    .filter((p): p is MappedProject => Boolean(p) && Boolean(p?.projectTitle || p?.customerCompany));
+
+  return projects.length ? (projects as NonNullable<ResumeProfileData["projects"]>) : undefined;
+}
+
 function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
   const profileRecord =
     root.profile && typeof root.profile === "object" ? (root.profile as UnknownRecord) : root;
@@ -155,6 +252,9 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
   );
   const educationFromDetails = mapEducationDetails(profileVersion.education_details);
   const educationFromQualifications = mapEducationQualifications(profileVersion.education_qualifications);
+
+  const workExperience = profileVersion.work_experience ?? profileVersion.workExperience ?? root.work_experience ?? root.workExperience;
+  const mappedProjects = mapWorkExperienceToProjects(workExperience);
 
   return {
     professionalTitle: pickString(profileVersion, "professional_title", "professionalTitle", "designation"),
@@ -189,6 +289,7 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     preferredLocation: pickString(profileVersion, "preferred_location", "preferredLocation"),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
     education: educationFromDetails ?? educationFromQualifications,
+    projects: mappedProjects,
   };
 }
 

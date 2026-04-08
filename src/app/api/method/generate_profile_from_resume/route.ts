@@ -429,6 +429,41 @@ export async function POST(request: Request) {
         res.headers.set("x-upstream-create-edit-profile", direct.url);
         return res;
       }
+
+      // Sometimes the backend does not have a Profile Version to "edit" yet.
+      // In that case, create a new version for the existing profile by calling
+      // create_edit_profile without the profile_name query param (mode: "new").
+      const createNewVersion = await fallbackSaveProfileFromResume({
+        backendBase,
+        headers,
+        file,
+        email,
+        fullName,
+        // Intentionally omit profileName.
+        currentLocation,
+        phoneNumber,
+        updatedResume,
+      });
+
+      if (createNewVersion.upstream.ok && !isFailedEnvelope(createNewVersion.data)) {
+        const returnedProfileName =
+          pickString(createNewVersion.data, "profile_name") ??
+          (createNewVersion.data.message && typeof createNewVersion.data.message === "object"
+            ? pickString(createNewVersion.data.message as JsonRecord, "profile", "profile_name")
+            : undefined) ??
+          directProfileName;
+
+        const res = NextResponse.json({
+          fallback: true,
+          fallbackReason: "existing-profile-create-new-version",
+          profileName: returnedProfileName ?? null,
+          parsed: createNewVersion.parsed,
+          saved: createNewVersion.data,
+        });
+        res.headers.set("x-upstream-create-edit-profile", createNewVersion.url);
+        return res;
+      }
+
       return NextResponse.json(
         {
           error: "Direct profile update failed for existing profile.",

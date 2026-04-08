@@ -9,9 +9,11 @@ import { ResumeUploadArea } from "@/components/profile/ResumeUploadArea";
 import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
+import { clearProfileName, getUserDisplayName, setCandidateId, setProfileName } from "@/lib/authSession";
 import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
+import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { uploadProfileFile } from "@/services/profile";
+import { createPreProfile, generateProfileFromPreProfile, getCandidateProfileData, uploadProfileFile } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 
 interface UploadedFile {
@@ -41,12 +43,66 @@ function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null)
   return "";
 }
 
+function extractLinkedProfileId(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const record = raw as Record<string, unknown>;
+
+  const message = record.message;
+  if (message && typeof message === "object") {
+    const m = message as Record<string, unknown>;
+    const profileId = typeof m.profile_id === "string" ? m.profile_id.trim() : "";
+    if (profileId) return profileId;
+  }
+
+  const serverMessagesRaw = typeof record._server_messages === "string" ? record._server_messages : "";
+  if (serverMessagesRaw.trim()) {
+    try {
+      const arr = JSON.parse(serverMessagesRaw) as unknown;
+      if (Array.isArray(arr)) {
+        for (const entry of arr) {
+          if (typeof entry !== "string") continue;
+          try {
+            const decoded = JSON.parse(entry) as { message?: unknown };
+            const text = typeof decoded.message === "string" ? decoded.message : entry;
+            const match = text.match(/\bprofile\s+((?:PR|PROF)-[A-Za-z0-9-]+)\b/i);
+            if (match?.[1]) return match[1];
+          } catch {
+            const match = entry.match(/\bprofile\s+((?:PR|PROF)-[A-Za-z0-9-]+)\b/i);
+            if (match?.[1]) return match[1];
+          }
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  return "";
+}
+
+async function tryResolveProfileNameByEmail(email: string): Promise<string> {
+  if (typeof window === "undefined") return "";
+  const normalized = email.trim();
+  if (!normalized) return "";
+  try {
+    const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    resolverUrl.searchParams.set("email", normalized);
+    const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
+    if (!resolverRes.ok) return "";
+    const resolverData = (await resolverRes.json()) as { profile_name?: string };
+    return resolverData.profile_name?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
 
 export default function CreateProfilePage() {
   const router = useRouter();
   const [lookingForJob, setLookingForJob] = useState(true);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isProcessingResume, setIsProcessingResume] = useState(false);
+  const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
   // Keep initial render identical to server HTML to avoid hydration mismatch.
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
@@ -84,14 +140,22 @@ export default function CreateProfilePage() {
 
   async function handleUpload(file: File) {
     setIsProcessingResume(true);
+    // Prevent stale AI profile data if this upload's AI generation fails.
+    clearProfileName();
+    clearResumeProfile();
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem("resumeSkills");
+      } catch {
+        // ignore
+      }
+    }
     try {
       const meta: UploadedFile = {
         name: file.name,
         uploadDate: formatDate(new Date()),
       };
       const baseData = deriveFallbackResumeData(file.name);
-      let parsedFromResume: ResumeProfileData = {};
-      let parseSucceeded = false;
       let updatedResumeRef = "";
 
       try {
@@ -102,90 +166,43 @@ export default function CreateProfilePage() {
         console.log("Upload profile file error:", err);
       }
 
-      try {
-        const parseUrl = "/api/parse-resume/";
-        console.info("[resume-parse] starting client parse request", {
-          url: parseUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type || "(empty)",
-        });
+      // Prefill identity from the user session (instead of parsing the resume client-side).
+      const sessionEmail = getSessionLoginEmail()?.trim() || "";
+      const displayName = getUserDisplayName()?.trim() || "";
+      const derivedFullNameFromDisplayOrEmail =
+        displayName ||
+        (sessionEmail
+          ? sessionEmail
+              .split("@")[0]
+              .replace(/[._-]+/g, " ")
+              .split(/\s+/)
+              .filter(Boolean)
+              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+              .join(" ")
+          : "");
+      const derivedFullNameFromFileName = [baseData.firstName, baseData.lastName].filter(Boolean).join(" ").trim();
+      const derivedFullName = derivedFullNameFromDisplayOrEmail || derivedFullNameFromFileName;
 
-        const formData = new FormData();
-        formData.append("file", file);
+      const nameParts = derivedFullName.split(/\s+/).filter(Boolean);
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ");
 
-        const response = await fetch(parseUrl, {
-          method: "POST",
-          body: formData,
-        });
+      const identityData: ResumeProfileData = {
+        ...baseData,
+        ...(sessionEmail ? { email: sessionEmail } : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(lastName ? { lastName } : {}),
+      };
 
-        console.info("[resume-parse] response received", {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          contentType: response.headers.get("content-type"),
-        });
+      // Store immediately so downstream steps have basic identity, even if AI generation fails.
+      upsertResumeProfile(identityData);
 
-        if (response.ok) {
-          parsedFromResume = (await response.json()) as ResumeProfileData;
-          parseSucceeded = true;
-          const keys = Object.keys(parsedFromResume);
-          console.info("[resume-parse] parse succeeded", {
-            fieldCount: keys.length,
-            fields: keys,
-            sample: parsedFromResume,
-          });
-        } else {
-          const errorText = await response.text();
-          console.error("[resume-parse] parse failed (non-OK response)", {
-            status: response.status,
-            statusText: response.statusText,
-            bodyPreview: errorText.slice(0, 500),
-          });
-        }
-      } catch (err) {
-        console.error("[resume-parse] parse request threw (network or parse error)", err);
-      }
-
-      if (!parseSucceeded) {
-        console.warn("[resume-parse] aborted — parseSucceeded is false; user will see alert");
-        alert("Resume parsing failed. Please try uploading again.");
-        return;
-      }
-
-      const mergedData: ResumeProfileData = { ...baseData, ...parsedFromResume };
-      console.log("Storing in session:", mergedData);
-      upsertResumeProfile(mergedData);
+      const storedMeta: UploadedFile = updatedResumeRef ? { ...meta, updated_resume: updatedResumeRef } : meta;
+      setUploadedFile(storedMeta);
 
       if (typeof window !== "undefined") {
         try {
-          const firstProject = mergedData.projects?.[0];
-          window.sessionStorage.setItem(
-            "resumeSkills",
-            JSON.stringify({
-              skills: mergedData.keySkills ?? [],
-              tools: mergedData.tools ?? [],
-              projects: mergedData.projects ?? [],
-              projectDescription: firstProject?.projectDescription ?? "",
-              responsibilities: firstProject?.responsibilities ?? "",
-            })
-          );
-        } catch {
-          // ignore storage errors
-        }
-      }
-
-      setUploadedFile(meta);
-
-      if (typeof window !== "undefined") {
-        try {
-          const storedMeta: UploadedFile = updatedResumeRef
-            ? { ...meta, updated_resume: updatedResumeRef }
-            : meta;
-          window.sessionStorage.setItem(
-            "uploadedResumeMeta",
-            JSON.stringify(storedMeta)
-          );
+          window.sessionStorage.setItem("uploadedResumeMeta", JSON.stringify(storedMeta));
         } catch {
           // ignore storage errors
         }
@@ -197,6 +214,7 @@ export default function CreateProfilePage() {
 
   function handleDelete() {
     setUploadedFile(null);
+    clearProfileName();
     clearResumeProfile();
     if (typeof window !== "undefined") {
       try {
@@ -209,13 +227,165 @@ export default function CreateProfilePage() {
     }
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (!uploadedFile) {
       alert("Please upload your resume before continuing.");
       return;
     }
 
-    router.push("/profile/create/basic-details");
+    if (isGeneratingProfile) return;
+    setIsGeneratingProfile(true);
+    try {
+      const sessionEmail = getSessionLoginEmail()?.trim() || "";
+      const displayName = getUserDisplayName()?.trim() || "";
+
+      if (!sessionEmail) {
+        alert("Session email is missing. Please login again.");
+        return;
+      }
+
+      const baseData = deriveFallbackResumeData(uploadedFile.name);
+      const derivedFullNameFromDisplayOrEmail =
+        displayName ||
+        sessionEmail
+          .split("@")[0]
+          .replace(/[._-]+/g, " ")
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+          .join(" ");
+      const derivedFullNameFromFileName = [baseData.firstName, baseData.lastName].filter(Boolean).join(" ").trim();
+      const derivedFullName = derivedFullNameFromDisplayOrEmail || derivedFullNameFromFileName;
+
+      if (!derivedFullName) {
+        alert("Unable to determine your full name. Please complete Basic Details first.");
+        return;
+      }
+
+      const nameParts = derivedFullName.split(/\s+/).filter(Boolean);
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ");
+
+      const updatedResumeRef = uploadedFile.updated_resume || "";
+
+      const identityData: ResumeProfileData = {
+        ...baseData,
+        ...(sessionEmail ? { email: sessionEmail } : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(lastName ? { lastName } : {}),
+      };
+      upsertResumeProfile(identityData);
+
+      let effectiveProfileId = "";
+      try {
+        const createPreProfilePayload = new FormData();
+        createPreProfilePayload.append("email", sessionEmail);
+        createPreProfilePayload.append("full_name", derivedFullName);
+        if (firstName) createPreProfilePayload.append("first_name", firstName);
+        if (lastName) createPreProfilePayload.append("last_name", lastName);
+        if (updatedResumeRef) createPreProfilePayload.append("updated_resume", updatedResumeRef);
+
+        const { preProfileName } = await createPreProfile(createPreProfilePayload);
+        const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
+
+        if (generatedProfileName) {
+          effectiveProfileId = generatedProfileName;
+          setProfileName(generatedProfileName);
+          setCandidateId(generatedProfileName);
+        }
+      } catch (error) {
+        const raw = (
+          error as Error & {
+            raw?: Record<string, unknown>;
+          }
+        ).raw;
+        const detail = raw?.detail && typeof raw.detail === "object" ? (raw.detail as Record<string, unknown>) : null;
+        const messageRoot =
+          detail?.message && typeof detail.message === "object" ? (detail.message as Record<string, unknown>) : null;
+
+        const existingProfileId =
+          messageRoot && typeof messageRoot.profile_id === "string" ? messageRoot.profile_id.trim() : "";
+        const failedMessage =
+          messageRoot && typeof messageRoot.message === "string" ? messageRoot.message.toLowerCase() : "";
+        const duplicateEmail = failedMessage.includes("already exists");
+
+        if (duplicateEmail && existingProfileId) {
+          effectiveProfileId = existingProfileId;
+          setProfileName(existingProfileId);
+          setCandidateId(existingProfileId);
+        }
+
+        // Some backends roll back generation when a Candidate User is already linked to a Profile.
+        // In that case, extract the linked Profile id (PR-..) from server messages and continue by loading it.
+        if (!effectiveProfileId) {
+          const linked = extractLinkedProfileId(raw) || extractLinkedProfileId(detail) || extractLinkedProfileId(messageRoot);
+          if (linked) {
+            effectiveProfileId = linked;
+            setProfileName(linked);
+            setCandidateId(linked);
+          }
+        }
+
+        // Final fallback: resolve by email (if backend supports it).
+        if (!effectiveProfileId) {
+          const resolved = await tryResolveProfileNameByEmail(sessionEmail);
+          if (resolved) {
+            effectiveProfileId = resolved;
+            setProfileName(resolved);
+            setCandidateId(resolved);
+          }
+        }
+      }
+
+      if (!effectiveProfileId) {
+        alert("Unable to generate/update profile from resume. Please try again.");
+        return;
+      }
+
+      // Prefill from backend profile, but never crash the wizard if backend generation rolled back.
+      // Some backends may reference a profile id in messages that doesn't actually exist.
+      let backendProfile: ResumeProfileData | null = null;
+      try {
+        backendProfile = await getCandidateProfileData(effectiveProfileId);
+      } catch {
+        const resolved = await tryResolveProfileNameByEmail(sessionEmail);
+        if (resolved && resolved !== effectiveProfileId) {
+          effectiveProfileId = resolved;
+          setProfileName(resolved);
+          setCandidateId(resolved);
+          try {
+            backendProfile = await getCandidateProfileData(resolved);
+          } catch {
+            backendProfile = null;
+          }
+        }
+      }
+
+      if (backendProfile) {
+        upsertResumeProfile(backendProfile);
+      }
+
+      if (typeof window !== "undefined") {
+        if (backendProfile) {
+          const firstProject = backendProfile.projects?.[0];
+          window.sessionStorage.setItem(
+            "resumeSkills",
+            JSON.stringify({
+              skills: backendProfile.keySkills ?? [],
+              // Backend stores skills; we don't reliably separate "tools" vs "skills" here.
+              tools: [],
+              projects: backendProfile.projects ?? [],
+              projectDescription: firstProject?.projectDescription ?? "",
+              responsibilities: firstProject?.responsibilities ?? "",
+            })
+          );
+        }
+      }
+
+      router.push("/profile/create/basic-details");
+    } finally {
+      setIsGeneratingProfile(false);
+    }
   }
 
   function deriveFallbackResumeData(fileName: string): ResumeProfileData {
@@ -239,6 +409,59 @@ export default function CreateProfilePage() {
   return (
     <div className="flex flex-col min-h-screen bg-[#F3F4F6]">
       <AppNavbar />
+
+      {isGeneratingProfile ? (
+        <div className="fixed inset-0 z-50 bg-white/70 backdrop-blur-[1px] flex items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <style jsx>{`
+                @keyframes shape1-morph {
+                  0%, 100% { transform: translate(0px, -14px) rotate(45deg); border-radius: 2px; }
+                  25% { transform: translate(14px, 0px) rotate(90deg); border-radius: 50%; }
+                  50% { transform: translate(0px, 14px) rotate(135deg); border-radius: 2px; }
+                  75% { transform: translate(-14px, 0px) rotate(180deg); border-radius: 50%; }
+                }
+                @keyframes shape2-morph {
+                  0%, 100% { transform: translate(-14px, 0px) rotate(45deg); border-radius: 2px; }
+                  25% { transform: translate(0px, -14px) rotate(90deg); border-radius: 50%; }
+                  50% { transform: translate(14px, 0px) rotate(135deg); border-radius: 2px; }
+                  75% { transform: translate(0px, 14px) rotate(180deg); border-radius: 50%; }
+                }
+                @keyframes shape3-morph {
+                  0%, 100% { transform: translate(0px, 14px) rotate(45deg); border-radius: 2px; }
+                  25% { transform: translate(-14px, 0px) rotate(90deg); border-radius: 50%; }
+                  50% { transform: translate(0px, -14px) rotate(135deg); border-radius: 2px; }
+                  75% { transform: translate(14px, 0px) rotate(180deg); border-radius: 50%; }
+                }
+                @keyframes shape4-morph {
+                  0%, 100% { transform: translate(14px, 0px) rotate(45deg); border-radius: 2px; }
+                  25% { transform: translate(0px, 14px) rotate(90deg); border-radius: 50%; }
+                  50% { transform: translate(-14px, 0px) rotate(135deg); border-radius: 2px; }
+                  75% { transform: translate(0px, -14px) rotate(180deg); border-radius: 50%; }
+                }
+                .loader-shape {
+                  position: absolute;
+                  width: 12px;
+                  height: 12px;
+                  background-color: #2563eb;
+                  will-change: transform, border-radius;
+                }
+                .shape-1 { animation: shape1-morph 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+                .shape-2 { animation: shape2-morph 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+                .shape-3 { animation: shape3-morph 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+                .shape-4 { animation: shape4-morph 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+              `}</style>
+              <div className="loader-shape shape-1" />
+              <div className="loader-shape shape-2" />
+              <div className="loader-shape shape-3" />
+              <div className="loader-shape shape-4" />
+            </div>
+            <p className="text-sm font-medium text-gray-700 text-center">
+              Generating your profile…
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {isMobileViewport ? (
@@ -319,9 +542,9 @@ export default function CreateProfilePage() {
           fullWidth={false}
           onClick={handleNext}
           className="px-6 sm:px-8"
-          disabled={!uploadedFile || isProcessingResume}
+          disabled={!uploadedFile || isProcessingResume || isGeneratingProfile}
         >
-          {isProcessingResume ? "Processing..." : "Next"}
+          {isProcessingResume ? "Processing..." : isGeneratingProfile ? "Generating..." : "Next"}
         </Button>
       </div>
     </div>
