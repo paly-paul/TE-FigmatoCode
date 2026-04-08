@@ -1502,6 +1502,145 @@ function findEndOfCentralDirectory(buffer: Buffer) {
   throw new Error("Invalid DOCX file.");
 }
 
+/** pdfjs factory URLs must end with `/` (forward slash), even on Windows. */
+function pdfJsDistAssetUrl(...segments: string[]): string {
+  const abs = path.join(process.cwd(), "node_modules", "pdfjs-dist", ...segments);
+  const posix = abs.replace(/\\/g, "/");
+  return posix.endsWith("/") ? posix : `${posix}/`;
+}
+
+/**
+ * pdfjs-dist's default Node canvas uses @napi-rs/canvas, which often fails on Vercel
+ * serverless. Text extraction does not need a real bitmap canvas — stubs are enough.
+ */
+class PdfTextExtractionCanvasFactory {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_options: { ownerDocument?: unknown; enableHWA?: boolean } = {}) {}
+
+  create(width: number, height: number) {
+    const canvas = new StubNodeCanvas(width, height);
+    return {
+      canvas,
+      context: canvas.getContext("2d", { willReadFrequently: true }),
+    };
+  }
+
+  reset(canvasAndContext: { canvas: StubNodeCanvas }, width: number, height: number) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+
+  destroy(canvasAndContext: { canvas: StubNodeCanvas | null; context: unknown }) {
+    if (canvasAndContext.canvas) {
+      canvasAndContext.canvas.width = 0;
+      canvasAndContext.canvas.height = 0;
+    }
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
+
+class StubNodeCanvas {
+  constructor(public width: number, public height: number) {}
+
+  getContext(_type: "2d", _attrs?: { willReadFrequently?: boolean }) {
+    const noop = () => {};
+    const canvasRef = this;
+    return {
+      canvas: canvasRef,
+      fillRect: noop,
+      clearRect: noop,
+      drawImage: noop,
+      save: noop,
+      restore: noop,
+      translate: noop,
+      scale: noop,
+      rotate: noop,
+      transform: noop,
+      setTransform: noop,
+      resetTransform: noop,
+      beginPath: noop,
+      closePath: noop,
+      clip: noop,
+      moveTo: noop,
+      lineTo: noop,
+      bezierCurveTo: noop,
+      quadraticCurveTo: noop,
+      rect: noop,
+      fill: noop,
+      stroke: noop,
+      measureText: () => ({ width: 0 }),
+      fillText: noop,
+      strokeText: noop,
+      set fillStyle(_v: unknown) {},
+      set strokeStyle(_v: unknown) {},
+      set lineWidth(_v: unknown) {},
+      set globalAlpha(_v: unknown) {},
+      set globalCompositeOperation(_v: unknown) {},
+      set lineCap(_v: unknown) {},
+      set lineJoin(_v: unknown) {},
+      set miterLimit(_v: unknown) {},
+      set font(_v: unknown) {},
+      set textBaseline(_v: unknown) {},
+      set textAlign(_v: unknown) {},
+      createImageData: (w = 1, h = 1) => ({
+        data: new Uint8ClampedArray(Math.max(1, w) * Math.max(1, h) * 4),
+        width: w,
+        height: h,
+      }),
+      getImageData: () => ({
+        data: new Uint8ClampedArray(4),
+        width: 1,
+        height: 1,
+      }),
+      putImageData: noop,
+    };
+  }
+}
+
+async function extractTextWithPdfJsDist(buffer: Buffer): Promise<string> {
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  const loadingTask = getDocument({
+    data: new Uint8Array(buffer),
+    CanvasFactory: PdfTextExtractionCanvasFactory,
+    disableFontFace: true,
+    isEvalSupported: false,
+    standardFontDataUrl: pdfJsDistAssetUrl("standard_fonts"),
+    cMapUrl: pdfJsDistAssetUrl("cmaps"),
+    wasmUrl: pdfJsDistAssetUrl("wasm"),
+  });
+
+  let doc: import("pdfjs-dist/types/src/display/api").PDFDocumentProxy | null = null;
+  try {
+    doc = await loadingTask.promise;
+    const parts: string[] = [];
+    for (let i = 1; i <= doc.numPages; i += 1) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      for (const raw of content.items) {
+        if (raw && typeof raw === "object" && "str" in raw && typeof (raw as { str: string }).str === "string") {
+          const s = (raw as { str: string }).str;
+          if (s) parts.push(s);
+        }
+      }
+      await Promise.resolve(page.cleanup?.());
+    }
+    return parts.join(" ").replace(/\s+/g, " ").trim();
+  } finally {
+    try {
+      await doc?.destroy();
+    } catch {
+      /* ignore */
+    }
+    try {
+      await loadingTask.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
   // Try custom extraction first (faster)
   const textChunks: string[] = [];
@@ -1578,18 +1717,45 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 
   const customScore = scoreExtractedResumeText(extracted);
   const libraryScore = scoreExtractedResumeText(extractedByLibrary);
+  let extractedByPdfJs = "";
+  let pdfJsScore = 0;
+
   if (customScore < 20 && libraryScore < 20) {
+    try {
+      console.info("[resume-parse] pdfjs-dist fallback (custom + pdf-parse scores below threshold)", {
+        customScore,
+        libraryScore,
+      });
+      extractedByPdfJs = await extractTextWithPdfJsDist(buffer);
+      pdfJsScore = scoreExtractedResumeText(extractedByPdfJs);
+      console.info("[resume-parse] pdfjs-dist extraction", {
+        chars: extractedByPdfJs.length,
+        score: pdfJsScore,
+      });
+    } catch (error) {
+      console.error("[resume-parse] pdfjs-dist fallback failed:", error);
+    }
+  }
+
+  if (customScore < 20 && libraryScore < 20 && pdfJsScore < 20) {
     throw new Error("Unable to extract readable text from this PDF. Please upload a text-based PDF or DOCX file.");
   }
-  const selected = libraryScore > customScore ? extractedByLibrary : extracted;
+
+  const ranked = [
+    { name: "custom" as const, text: extracted, score: customScore },
+    { name: "pdf-parse" as const, text: extractedByLibrary, score: libraryScore },
+    { name: "pdfjs-dist" as const, text: extractedByPdfJs, score: pdfJsScore },
+  ];
+  const winner = ranked.reduce((best, cur) => (cur.score > best.score ? cur : best));
 
   console.log("📊 PDF extraction quality scores:", {
     customScore,
     libraryScore,
-    selected: libraryScore > customScore ? "pdf-parse" : "custom",
+    pdfJsScore,
+    selected: winner.name,
   });
 
-  return selected;
+  return winner.text;
 }
 
 function decodePdfStream(stream: Buffer) {
