@@ -105,9 +105,9 @@ export default function CreateProfilePage() {
       try {
         const formData = new FormData();
         formData.append("file", file);
-        console.log("Sending file to /api/parse-resume:", file.name);
+        console.log("Sending file to /api/parse-resume/:", file.name);
 
-        const response = await fetch("/api/parse-resume", {
+        const response = await fetch("/api/parse-resume/", {
           method: "POST",
           body: formData,
         });
