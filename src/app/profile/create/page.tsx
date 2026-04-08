@@ -103,31 +103,52 @@ export default function CreateProfilePage() {
       }
 
       try {
+        const parseUrl = "/api/parse-resume/";
+        console.info("[resume-parse] starting client parse request", {
+          url: parseUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || "(empty)",
+        });
+
         const formData = new FormData();
         formData.append("file", file);
-        console.log("Sending file to /api/parse-resume:", file.name);
 
-        const response = await fetch("/api/parse-resume", {
+        const response = await fetch(parseUrl, {
           method: "POST",
           body: formData,
         });
 
-        console.log("Response status:", response.status);
+        console.info("[resume-parse] response received", {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          contentType: response.headers.get("content-type"),
+        });
 
         if (response.ok) {
           parsedFromResume = (await response.json()) as ResumeProfileData;
           parseSucceeded = true;
-          console.log("Parsed resume data:", parsedFromResume);
-          console.log("Fields extracted:", Object.keys(parsedFromResume));
+          const keys = Object.keys(parsedFromResume);
+          console.info("[resume-parse] parse succeeded", {
+            fieldCount: keys.length,
+            fields: keys,
+            sample: parsedFromResume,
+          });
         } else {
           const errorText = await response.text();
-          console.error("Parse resume failed:", response.status, errorText);
+          console.error("[resume-parse] parse failed (non-OK response)", {
+            status: response.status,
+            statusText: response.statusText,
+            bodyPreview: errorText.slice(0, 500),
+          });
         }
       } catch (err) {
-        console.log("Parse resume error:", err);
+        console.error("[resume-parse] parse request threw (network or parse error)", err);
       }
 
       if (!parseSucceeded) {
+        console.warn("[resume-parse] aborted — parseSucceeded is false; user will see alert");
         alert("Resume parsing failed. Please try uploading again.");
         return;
       }
