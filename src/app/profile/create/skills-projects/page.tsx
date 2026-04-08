@@ -11,12 +11,7 @@ import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { markProfileComplete } from "@/lib/profileOnboarding";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { readResumeProfile } from "@/lib/profileSession";
-import {
-  createPreProfile,
-  generateProfileFromPreProfile,
-  getCandidateProfileData,
-  saveProfile,
-} from "@/services/profile";
+import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 
@@ -28,6 +23,9 @@ interface ResumeSkillsData {
     customerCompany?: string;
     projectDescription?: string;
     responsibilities?: string;
+    projectStartDate?: string;
+    projectEndDate?: string;
+    inProgress?: boolean;
   }>;
   projectDescription?: string;
   responsibilities?: string;
@@ -143,23 +141,6 @@ function isProjectEmpty(e: ProjectEntry) {
     !e.responsibilities.trim() &&
     !e.inProgress
   );
-}
-
-function extractUpdatedResumeRefFromSession(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = window.sessionStorage.getItem("uploadedResumeMeta");
-    if (!raw) return "";
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const keys = ["updated_resume", "file_url", "fileUrl", "url", "file_name", "fileName"];
-    for (const key of keys) {
-      const value = parsed[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
-    }
-  } catch {
-    // ignore invalid JSON
-  }
-  return "";
 }
 
 function SkillsProjectsPageContent() {
@@ -338,6 +319,9 @@ function SkillsProjectsPageContent() {
                   typeof project.projectDescription === "string" ? project.projectDescription : "",
                 responsibilities:
                   typeof project.responsibilities === "string" ? project.responsibilities : "",
+                projectStartDate: typeof project.projectStartDate === "string" ? project.projectStartDate : "",
+                projectEndDate: typeof project.projectEndDate === "string" ? project.projectEndDate : "",
+                inProgress: typeof project.inProgress === "boolean" ? project.inProgress : false,
               })
             )
           )
@@ -386,6 +370,9 @@ function SkillsProjectsPageContent() {
               customerCompany: project.customerCompany ?? "",
               projectDescription: project.projectDescription ?? "",
               responsibilities: project.responsibilities ?? "",
+              projectStartDate: project.projectStartDate ?? "",
+              projectEndDate: project.projectEndDate ?? "",
+              inProgress: project.inProgress ?? false,
             })
           )
         )
@@ -722,7 +709,6 @@ function SkillsProjectsPageContent() {
     const storedProfile = readResumeProfile();
     const queryProfileName = searchParams.get("profile_name")?.trim() || "";
     let profileName = queryProfileName || getProfileName() || "";
-    const candidateId = getCandidateId();
 
     if (profileName && !isLikelyDocId(profileName)) {
       profileName = "";
@@ -766,47 +752,6 @@ function SkillsProjectsPageContent() {
 
     setIsSubmittingProfile(true);
     try {
-      // On finish, run pre-profile -> profile generation flow with the same payload shape
-      // already used in the resume-upload step.
-      const createPreProfilePayload = new FormData();
-      createPreProfilePayload.append("email", email);
-      createPreProfilePayload.append("full_name", fullName);
-      if (firstName) createPreProfilePayload.append("first_name", firstName);
-      if (lastName) createPreProfilePayload.append("last_name", lastName);
-      const updatedResumeRef = extractUpdatedResumeRefFromSession();
-      if (updatedResumeRef) createPreProfilePayload.append("updated_resume", updatedResumeRef);
-      try {
-        const { preProfileName } = await createPreProfile(createPreProfilePayload);
-        const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
-        if (generatedProfileName) {
-          profileName = generatedProfileName;
-        }
-      } catch (error) {
-        const raw = (
-          error as Error & {
-            raw?: Record<string, unknown>;
-          }
-        ).raw;
-        const detail = raw?.detail && typeof raw.detail === "object"
-          ? (raw.detail as Record<string, unknown>)
-          : null;
-        const messageRoot = detail?.message && typeof detail.message === "object"
-          ? (detail.message as Record<string, unknown>)
-          : null;
-        const existingProfileId = messageRoot && typeof messageRoot.profile_id === "string"
-          ? messageRoot.profile_id.trim()
-          : "";
-        const failedMessage = messageRoot && typeof messageRoot.message === "string"
-          ? messageRoot.message.toLowerCase()
-          : "";
-        const duplicateEmail = failedMessage.includes("already exists");
-        if (duplicateEmail && existingProfileId) {
-          profileName = existingProfileId;
-        } else {
-          throw error;
-        }
-      }
-
       const response = await saveProfile({
         profile_name: profileName || undefined,
         full_name: fullName,

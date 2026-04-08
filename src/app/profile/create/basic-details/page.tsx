@@ -2437,14 +2437,6 @@ export default function BasicDetailsPage() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-3">
-        <Button
-          variant="outline"
-          fullWidth={false}
-          onClick={() => router.push("/profile/create")}
-          className="px-6 sm:px-8"
-        >
-          Previous
-        </Button>
         <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext}>
           Next
         </Button>
