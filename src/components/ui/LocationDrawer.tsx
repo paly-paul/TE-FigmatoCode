@@ -15,6 +15,7 @@ interface PreferredLocationDrawerProps {
   onApply: (selected: string[]) => void;
   triggerRef?: RefObject<HTMLElement>;
   initialSelected?: string[];
+  options?: LocationOption[];
 }
 
 export const DEFAULT_LOCATIONS: LocationOption[] = [
@@ -29,10 +30,10 @@ export function LocationDrawer({
   onApply,
   triggerRef,
   initialSelected = ["bangor-us"],
+  options = DEFAULT_LOCATIONS,
 }: PreferredLocationDrawerProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string[]>(initialSelected);
-  const [options, setOptions] = useState<LocationOption[]>(DEFAULT_LOCATIONS);
 
   useEffect(() => {
     if (!open) return;
@@ -40,40 +41,6 @@ export function LocationDrawer({
     setSelected(initialSelected);
     setSearch("");
   }, [open, initialSelected]);
-
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const url = new URL("/api/method/get_location_details", window.location.origin);
-        url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "100");
-        if (search.trim()) url.searchParams.set("name", search.trim());
-        const res = await fetch(url.toString(), {
-          method: "GET",
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        if (!res.ok) return;
-        const payload = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
-        const rows = Array.isArray(payload.data) ? payload.data : [];
-        const mapped = rows
-          .map((row) => ({
-            id: typeof row.id === "string" ? row.id.trim() : "",
-            label: typeof row.label === "string" ? row.label.trim() : "",
-          }))
-          .filter((row) => row.id && row.label);
-        if (mapped.length > 0) setOptions(mapped);
-      } catch {
-        // keep default options
-      }
-    }, 200);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [open, search]);
 
   const toggleLocation = (id: string) => {
     setSelected((prev) =>

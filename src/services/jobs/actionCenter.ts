@@ -192,3 +192,28 @@ export async function postProposalCandidateAcceptance(
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
 }
+
+type CandidateSourcingAcceptanceInput = {
+  rrcandidate_name: string;
+  expected_salary?: number;
+  billing_frequency?: string;
+  billing_currency?: string;
+  availability_date?: string;
+  accept_terms: boolean;
+};
+
+export async function postCandidateSourcingAcceptance(
+  input: CandidateSourcingAcceptanceInput
+): Promise<void> {
+  const url = new URL("/api/method/post_candidate_sourcing_acceptance", window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: input }),
+  });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+}

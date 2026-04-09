@@ -29,7 +29,7 @@ import VisibilityScoreCard from "./VisibilityScoreCard";
 import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
-import { DEFAULT_LOCATIONS, LocationDrawer } from "../ui/LocationDrawer";
+import { LocationDrawer, type LocationOption } from "../ui/LocationDrawer";
 import {
   DEFAULT_FILTERS,
   FilterDrawer,
@@ -43,6 +43,7 @@ import {
   getJobApplications,
   getRecommendedJobs,
   markInterestedInJob,
+  postCandidateSourcingAcceptance,
   postProposalCandidateAcceptance,
   postProposalCandidateNegotiation,
 } from "@/services/jobs/actionCenter";
@@ -60,6 +61,8 @@ interface ActionCard {
   subtitle: string;
   timestamp: string;
   jobDocumentId?: string;
+  rrCandidateName?: string;
+  isSourcingAccepted?: boolean;
   proposalName?: string;
   interviewId?: string;
 }
@@ -82,18 +85,6 @@ interface JobListing {
   employmentType: string;
   seniorityLevel: string;
   jobDocumentId?: string;
-}
-
-const LOCATION_LABELS = DEFAULT_LOCATIONS.reduce<Record<string, string>>(
-  (accumulator, location) => {
-    accumulator[location.id] = location.label;
-    return accumulator;
-  },
-  {}
-);
-
-function getLocationLabel(locationId: string) {
-  return LOCATION_LABELS[locationId] || locationId;
 }
 
 const ACTION_CARDS: ActionCard[] = [
@@ -157,6 +148,16 @@ const ACTION_CARDS: ActionCard[] = [
 
 /** Max Action Center cards shown before "See All" (per tab). */
 const ACTION_CENTER_PAGE_SIZE = 4;
+const APPLIED_JOBS_STORAGE_PREFIX = "dashboard_applied_jobs_v1";
+const SOURCING_ACCEPTED_STORAGE_PREFIX = "dashboard_sourcing_accepted_v1";
+const LOCAL_ACTIONABLES_STORAGE_PREFIX = "dashboard_local_actionables_v1";
+
+type LocalActionableSnapshot = {
+  job_id: string;
+  job_title: string;
+  rr_candidate?: string;
+  accepted_at?: string;
+};
 
 const JOB_LISTINGS: JobListing[] = [
   {
@@ -262,6 +263,48 @@ function toActionTitle(actionable: CandidateActionableApi) {
   return "Recruiter interest received";
 }
 
+function actionableStageRank(actionable: CandidateActionableApi): number {
+  const text = `${actionable.stage} ${actionable.status}`.toLowerCase();
+  if (text.includes("negotiation") || text.includes("proposal")) return 3;
+  if (text.includes("interview")) return 2;
+  return 1;
+}
+
+function actionCardStageRank(card: Pick<ActionCard, "title">): number {
+  const text = card.title.toLowerCase();
+  if (text.includes("negotiation") || text.includes("proposal")) return 3;
+  if (text.includes("interview")) return 2;
+  return 1;
+}
+
+function buildAcceptedRecruiterInterestCard(input: {
+  jobId: string;
+  jobTitle: string;
+  rrCandidateName?: string;
+}): ActionCard {
+  return {
+    id: Number.parseInt(input.jobId.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+    type: "Job",
+    title: "Recruiter interest accepted",
+    subtitle: `${input.jobTitle} - ${input.jobId}`,
+    timestamp: "Accepted",
+    jobDocumentId: input.jobId,
+    rrCandidateName: input.rrCandidateName,
+    isSourcingAccepted: true,
+  };
+}
+
+function formatJobLocation(location: string, locationFull: string): string {
+  const city = (location || "").trim();
+  const full = (locationFull || "").trim();
+  if (!city) return full || "—";
+  if (!full) return city;
+  const normalizedCity = city.toLowerCase();
+  const normalizedFull = full.toLowerCase();
+  if (normalizedCity === normalizedFull || normalizedCity.includes(normalizedFull)) return city;
+  return `${city} | ${full}`;
+}
+
 export default function TalentEngineDashboard() {
   const isMobile = useIsMobile();
   const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
@@ -279,7 +322,7 @@ export default function TalentEngineDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>(["bangor-us"]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
@@ -290,6 +333,14 @@ export default function TalentEngineDashboard() {
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
   const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
+  const [localAppliedJobs, setLocalAppliedJobs] = useState<JobListing[]>([]);
+  const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
+  const [sourcingAcceptedRrCandidates, setSourcingAcceptedRrCandidates] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [localAcceptedActionables, setLocalAcceptedActionables] = useState<
+    LocalActionableSnapshot[]
+  >([]);
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
@@ -313,12 +364,86 @@ export default function TalentEngineDashboard() {
     const profileName = getProfileName();
     setCandidateId(currentCandidateId);
     setProfileId(profileName);
+    const storageKey = currentCandidateId
+      ? `${APPLIED_JOBS_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+    const sourcingAcceptedKey = currentCandidateId
+      ? `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+    const localActionablesKey = currentCandidateId
+      ? `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+
+    if (storageKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const hydrated = parsed.filter((row): row is JobListing => {
+              return typeof row === "object" && row !== null;
+            });
+            setLocalAppliedJobs(hydrated);
+            const ids = hydrated
+              .map((j) => j.jobDocumentId)
+              .filter((v): v is string => Boolean(v?.trim()));
+            setAppliedJobDocumentIds(new Set(ids));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (sourcingAcceptedKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(sourcingAcceptedKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const names = parsed
+              .filter((v): v is string => typeof v === "string")
+              .map((v) => v.trim())
+              .filter(Boolean);
+            setSourcingAcceptedRrCandidates(new Set(names));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (localActionablesKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(localActionablesKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const rows = parsed.filter(
+              (row): row is LocalActionableSnapshot =>
+                typeof row === "object" &&
+                row !== null &&
+                typeof (row as LocalActionableSnapshot).job_id === "string" &&
+                typeof (row as LocalActionableSnapshot).job_title === "string"
+            );
+            setLocalAcceptedActionables(rows);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     void (async () => {
       if (currentCandidateId) {
         try {
           const applicationsRes = await getJobApplications(currentCandidateId);
-          setApiApplicationJobs(applicationsRes.map((row) => mapApplicationToDashboardJob(row)));
+          const mapped = applicationsRes.map((row) => mapApplicationToDashboardJob(row));
+          setApiApplicationJobs(mapped);
+          const mappedIds = mapped
+            .map((j) => j.jobDocumentId)
+            .filter((v): v is string => Boolean(v?.trim()));
+          setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...mappedIds]));
         } catch {
           setApiApplicationJobs([]);
         } finally {
@@ -326,6 +451,9 @@ export default function TalentEngineDashboard() {
         }
       } else {
         setApiApplicationJobs([]);
+        setLocalAppliedJobs([]);
+        setAppliedJobDocumentIds(new Set());
+        setLocalAcceptedActionables([]);
         setHasAttemptedJobsLoad(true);
       }
 
@@ -344,16 +472,51 @@ export default function TalentEngineDashboard() {
           getRecommendedJobs(profileName),
         ]);
 
-        const nextActions: ActionCard[] = actionablesRes.actions.map((item) => ({
+        const bestActionableByJob = new Map<string, CandidateActionableApi>();
+        for (const item of actionablesRes.actions) {
+          const key = item.job_id?.trim();
+          if (!key) continue;
+          const existing = bestActionableByJob.get(key);
+          if (!existing || actionableStageRank(item) >= actionableStageRank(existing)) {
+            bestActionableByJob.set(key, item);
+          }
+        }
+
+        const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => ({
           id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
           type: "Job",
           title: toActionTitle(item),
           subtitle: `${item.job_title} - ${item.job_id}`,
           timestamp: item.stage || item.status || "Now",
           jobDocumentId: item.job_id,
+          rrCandidateName: item.rr_candidate,
+          isSourcingAccepted: Boolean(
+            item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
+          ),
           proposalName: item.name,
           interviewId: item.info?.interview_id,
         }));
+
+        const localAcceptedCards: ActionCard[] = localAcceptedActionables.map((row) => ({
+          id: Number.parseInt(row.job_id.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+          type: "Job",
+          title: "Recruiter interest accepted",
+          subtitle: `${row.job_title} - ${row.job_id}`,
+          timestamp: row.accepted_at || "Accepted",
+          jobDocumentId: row.job_id,
+          rrCandidateName: row.rr_candidate,
+          isSourcingAccepted: true,
+        }));
+
+        const mergedByJob = new Map<string, ActionCard>();
+        for (const card of [...localAcceptedCards, ...nextActions]) {
+          const key = card.jobDocumentId?.trim();
+          if (!key) continue;
+          const existing = mergedByJob.get(key);
+          if (!existing || actionCardStageRank(card) >= actionCardStageRank(existing)) {
+            mergedByJob.set(key, card);
+          }
+        }
 
         const nextGeneral: ActionCard[] = recommendedJobsRes.slice(0, 3).map((job, index) => ({
           id: 100000 + index,
@@ -367,9 +530,13 @@ export default function TalentEngineDashboard() {
           mapRecommendedToDashboardJob(job)
         );
 
-        setApiActionCards(nextActions);
+        setApiActionCards(Array.from(mergedByJob.values()));
         setApiGeneralCards(nextGeneral);
-        setApiRecommendedJobs(nextRecommendedJobs);
+        setApiRecommendedJobs(
+          nextRecommendedJobs.filter(
+            (job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))
+          )
+        );
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       } catch {
@@ -382,8 +549,61 @@ export default function TalentEngineDashboard() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!candidateId || typeof window === "undefined") return;
+    const storageKey = `${APPLIED_JOBS_STORAGE_PREFIX}:${candidateId}`;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(localAppliedJobs));
+    } catch {
+      // ignore
+    }
+  }, [candidateId, localAppliedJobs]);
+
+  useEffect(() => {
+    if (!candidateId || typeof window === "undefined") return;
+    const storageKey = `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${candidateId}`;
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify(Array.from(sourcingAcceptedRrCandidates))
+      );
+    } catch {
+      // ignore
+    }
+  }, [candidateId, sourcingAcceptedRrCandidates]);
+
+  useEffect(() => {
+    if (!candidateId || typeof window === "undefined") return;
+    const storageKey = `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${candidateId}`;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(localAcceptedActionables));
+    } catch {
+      // ignore
+    }
+  }, [candidateId, localAcceptedActionables]);
+
+  const availableLocations = useMemo<LocationOption[]>(() => {
+    const byId = new Map<string, string>();
+    for (const job of [...apiRecommendedJobs, ...apiApplicationJobs, ...localAppliedJobs]) {
+      const id = job.locationId?.trim();
+      if (!id || id === "—") continue;
+      const label = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
+      byId.set(id, label || id);
+    }
+    return Array.from(byId.entries()).map(([id, label]) => ({ id, label }));
+  }, [apiRecommendedJobs, apiApplicationJobs, localAppliedJobs]);
+
+  const locationLabelMap = useMemo<Record<string, string>>(
+    () =>
+      availableLocations.reduce<Record<string, string>>((acc, location) => {
+        acc[location.id] = location.label;
+        return acc;
+      }, {}),
+    [availableLocations]
+  );
+
   const primaryLocation = selectedLocations[0]
-    ? getLocationLabel(selectedLocations[0])
+    ? locationLabelMap[selectedLocations[0]] || selectedLocations[0]
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
 
@@ -418,17 +638,14 @@ export default function TalentEngineDashboard() {
   }, [resolvedActionCards]);
 
   const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
-  const applicationSourceJobs = apiApplicationJobs;
-
-  // When using API-provided locations, our current location filter options may not
-  // include the same city IDs (ex: `benton-harbor-united-states` vs `bangor-us`).
-  // If none of the API jobs match the selected location IDs, treat as "All locations".
-  const effectiveSelectedLocations = useMemo(() => {
-    if (apiRecommendedJobs.length === 0) return selectedLocations;
-    if (selectedLocations.length === 0) return selectedLocations;
-    const anyMatches = apiRecommendedJobs.some((j) => selectedLocations.includes(j.locationId));
-    return anyMatches ? selectedLocations : [];
-  }, [apiRecommendedJobs, selectedLocations]);
+  const applicationSourceJobs = useMemo(() => {
+    const merged = [...apiApplicationJobs];
+    for (const localJob of localAppliedJobs) {
+      const alreadyExists = merged.some((j) => j.jobDocumentId === localJob.jobDocumentId);
+      if (!alreadyExists) merged.unshift(localJob);
+    }
+    return merged;
+  }, [apiApplicationJobs, localAppliedJobs]);
 
   const { visibleRecommendedJobs, visibleApplicationJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -449,8 +666,7 @@ export default function TalentEngineDashboard() {
             .includes(normalizedQuery);
 
         const matchesLocation =
-          effectiveSelectedLocations.length === 0 ||
-          effectiveSelectedLocations.includes(job.locationId);
+          selectedLocations.length === 0 || selectedLocations.includes(job.locationId);
 
         const matchesSkills =
           activeFilters.skills.length === 0 ||
@@ -489,7 +705,7 @@ export default function TalentEngineDashboard() {
     activeFilters,
     savedJobIds,
     searchQuery,
-    effectiveSelectedLocations,
+    selectedLocations,
     showSavedOnly,
     recommendedSourceJobs,
     applicationSourceJobs,
@@ -618,17 +834,39 @@ export default function TalentEngineDashboard() {
     );
   };
 
+  const buildAppliedJobFromRecommended = (job: JobListing): JobListing => ({
+    ...job,
+    status: "New",
+    stage: "Received",
+  });
+
+  const refreshJobApplications = async (currentCandidateId: string) => {
+    const applicationsRes = await getJobApplications(currentCandidateId);
+    const mapped = applicationsRes.map((row) => mapApplicationToDashboardJob(row));
+    setApiApplicationJobs(mapped);
+    const mappedIds = mapped
+      .map((j) => j.jobDocumentId)
+      .filter((v): v is string => Boolean(v?.trim()));
+    setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...mappedIds]));
+  };
+
   const handleDrawerPrimaryAction = (
     action: ActionCard,
-    extras?: { interviewId?: string; interviewSlotId?: string }
-  ) => {
+    extras?: {
+      interviewId?: string;
+      interviewSlotId?: string;
+      availabilityDate?: string;
+      expectedSalary?: string;
+      acceptTerms?: boolean;
+    }
+  ): Promise<boolean> => {
     const jobDocumentId = action.jobDocumentId;
     const lowerTitle = action.title.toLowerCase();
     const isProposal = lowerTitle.includes("salary") || lowerTitle.includes("negotiation");
     const isInterview =
       lowerTitle.includes("interview") || action.title === "Interview Scheduled";
 
-    void (async () => {
+    return (async () => {
       try {
         if (
           isInterview &&
@@ -638,15 +876,87 @@ export default function TalentEngineDashboard() {
           await postInterviewSelectSlot(extras.interviewId, extras.interviewSlotId);
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
+        } else if (action.rrCandidateName?.trim()) {
+          const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
+          await postCandidateSourcingAcceptance({
+            rrcandidate_name: action.rrCandidateName.trim(),
+            expected_salary: Number.isFinite(parsedSalary) ? parsedSalary : undefined,
+            billing_frequency: "Monthly",
+            billing_currency: "USD",
+            availability_date: extras?.availabilityDate?.trim() || undefined,
+            accept_terms: extras?.acceptTerms === true,
+          });
+          setSourcingAcceptedRrCandidates((prev) => {
+            const next = new Set(prev);
+            next.add(action.rrCandidateName!.trim());
+            return next;
+          });
+          if (action.jobDocumentId?.trim()) {
+            const jobId = action.jobDocumentId.trim();
+            const jobTitle = action.subtitle.split(" - ")[0]?.trim() || action.title;
+            const acceptedCard = buildAcceptedRecruiterInterestCard({
+              jobId,
+              jobTitle,
+              rrCandidateName: action.rrCandidateName!.trim(),
+            });
+            setLocalAcceptedActionables((prev) => {
+              const alreadyExists = prev.some((row) => row.job_id === jobId);
+              if (alreadyExists) return prev;
+              return [
+                {
+                  job_id: jobId,
+                  job_title: jobTitle,
+                  rr_candidate: action.rrCandidateName!.trim(),
+                  accepted_at: new Date().toLocaleDateString(),
+                },
+                ...prev,
+              ];
+            });
+            setApiActionCards((prev) => {
+              const next = prev.filter((c) => c.jobDocumentId?.trim() !== jobId);
+              next.unshift(acceptedCard);
+              return next;
+            });
+          }
         } else {
-          if (!jobDocumentId) return;
+          if (!jobDocumentId) return false;
           if (candidateId) {
+            const matchedRecommendedJob = apiRecommendedJobs.find(
+              (job) => job.jobDocumentId === jobDocumentId
+            );
             await markInterestedInJob(candidateId, jobDocumentId);
+            setAppliedJobDocumentIds((prev) => {
+              const next = new Set(prev);
+              next.add(jobDocumentId);
+              return next;
+            });
+            if (matchedRecommendedJob) {
+              const optimisticApplied = buildAppliedJobFromRecommended(matchedRecommendedJob);
+              setApiApplicationJobs((prev) => {
+                const alreadyExists = prev.some((job) => job.jobDocumentId === jobDocumentId);
+                if (alreadyExists) return prev;
+                return [optimisticApplied, ...prev];
+              });
+              setLocalAppliedJobs((prev) => {
+                const alreadyExists = prev.some((job) => job.jobDocumentId === jobDocumentId);
+                if (alreadyExists) return prev;
+                return [optimisticApplied, ...prev];
+              });
+            }
+            setApiRecommendedJobs((prev) => prev.filter((j) => j.jobDocumentId !== jobDocumentId));
+            try {
+              await refreshJobApplications(candidateId);
+              setActiveTab("Your Applications");
+            } catch {
+              // If applications refresh fails, keep optimistic UI state.
+            }
           }
         }
         setIsDrawerOpen(false);
+        return true;
       } catch {
         // Keep drawer open so user can retry.
+        return false;
       }
     })();
   };
@@ -666,6 +976,15 @@ export default function TalentEngineDashboard() {
     <div className="border border-dashed border-gray-300 rounded-xl bg-gray-50 px-6 py-10 text-center">
       <p className="text-sm font-medium text-gray-900 mb-1">No jobs match the current filters</p>
       <p className="text-sm text-gray-500">{message}</p>
+    </div>
+  );
+
+  const renderEmptyApplications = () => (
+    <div className="border border-dashed border-gray-300 rounded-xl bg-gray-50 px-6 py-10 text-center">
+      <p className="text-sm font-medium text-gray-900 mb-1">No applications yet</p>
+      <p className="text-sm text-gray-500">
+        Once an application record is created for you, it will appear here.
+      </p>
     </div>
   );
 
@@ -775,6 +1094,7 @@ export default function TalentEngineDashboard() {
         onApply={(locations) => setSelectedLocations(locations)}
         triggerRef={locationButtonRef}
         initialSelected={selectedLocations}
+        options={availableLocations}
       />
       <FilterDrawer
         open={filterDrawerOpen}
@@ -949,7 +1269,7 @@ export default function TalentEngineDashboard() {
                     <div className="mb-4 space-y-2 text-sm text-gray-600">
                       <div className="flex items-center gap-2">
                         <MapPin size={16} className="h-4 w-4 shrink-0 text-blue-600" />
-                        <span className="truncate">{job.location} | {job.locationFull}</span>
+                        <span className="truncate">{formatJobLocation(job.location, job.locationFull)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <DollarSign size={16} className="h-4 w-4 shrink-0 text-slate-500" />
@@ -1001,9 +1321,14 @@ export default function TalentEngineDashboard() {
                         <button
                           type="button"
                           onClick={() => handleJobApplyClick(job)}
-                          className="flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-sm text-gray-800 transition-all hover:border-blue-600 hover:bg-blue-600 hover:text-white"
+                          disabled={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
+                          className={`flex-1 rounded-lg border px-6 py-2 text-sm transition-all ${
+                            job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
+                              ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500"
+                              : "border-gray-300 bg-white text-gray-800 hover:border-blue-600 hover:bg-blue-600 hover:text-white"
+                          }`}
                         >
-                          Apply
+                          {job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId) ? "Applied" : "Apply"}
                         </button>
                       </div>
                     </div>
@@ -1099,7 +1424,7 @@ export default function TalentEngineDashboard() {
                         <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
                         <p className="mt-1 text-sm text-gray-700">{job.company}</p>
                         <p className="mt-1 text-sm text-[#60708F]">
-                          {job.location} | {job.locationFull}
+                          {formatJobLocation(job.location, job.locationFull)}
                         </p>
                       </div>
 
@@ -1144,7 +1469,7 @@ export default function TalentEngineDashboard() {
                   ))}
               </div>
             ) : (
-              renderEmptyJobs("No applications match the current filter combination.")
+              renderEmptyApplications()
             )}
           </>
         )}
@@ -1500,7 +1825,7 @@ export default function TalentEngineDashboard() {
                         <div className="space-y-2 text-sm text-gray-600 mb-4">
                           <div className="flex items-center gap-2">
                             <MapPin size={16} className="flex-shrink-0" />
-                            <span className="truncate">{job.location} - {job.locationFull}</span>
+                            <span className="truncate">{formatJobLocation(job.location, job.locationFull)}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <DollarSign size={16} className="flex-shrink-0" />
@@ -1550,12 +1875,21 @@ export default function TalentEngineDashboard() {
                             </button>
                             <button
                               onClick={() => handleJobApplyClick(job)}
-                              className="relative border border-gray-300 rounded-lg px-6 sm:px-8 py-2 text-sm text-gray-800 bg-white transition-all flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600 flex-1 sm:flex-initial"
+                              disabled={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
+                              className={`relative rounded-lg px-6 sm:px-8 py-2 text-sm transition-all flex items-center justify-center flex-1 sm:flex-initial ${
+                                job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
+                                  ? "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-500"
+                                  : "border border-gray-300 text-gray-800 bg-white group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600"
+                              }`}
                             >
                               <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
-                                Apply
+                                {job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId) ? "Applied" : "Apply"}
                               </span>
-                              <span className="absolute right-4 opacity-0 translate-x-1 text-white transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0">
+                              <span className={`absolute right-4 translate-x-1 text-white transition-all duration-150 ${
+                                job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
+                                  ? "opacity-0"
+                                  : "opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
+                              }`}>
                                 <svg
                                   width="14"
                                   height="14"
@@ -1608,7 +1942,7 @@ export default function TalentEngineDashboard() {
                         <div>
                           <p className="font-medium text-gray-900">{job.title}</p>
                           <p className="text-xs text-gray-500">
-                            {job.location} | {job.locationFull}
+                            {formatJobLocation(job.location, job.locationFull)}
                           </p>
                         </div>
                         <p className="text-sm text-gray-700">{job.company}</p>
@@ -1635,7 +1969,7 @@ export default function TalentEngineDashboard() {
                             <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
                             <p className="text-sm text-gray-600">{job.company}</p>
                             <p className="text-xs text-gray-500 mt-1">
-                              {job.location} | {job.locationFull}
+                              {formatJobLocation(job.location, job.locationFull)}
                             </p>
                           </div>
                           <MatchCircle score={job.matchPercentage} />
@@ -1655,7 +1989,7 @@ export default function TalentEngineDashboard() {
                   </div>
                 </div>
               ) : (
-                renderEmptyJobs("No applications match the current filter combination.")
+                renderEmptyApplications()
               )}
             </div>
           </div>

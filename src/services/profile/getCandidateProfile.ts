@@ -7,6 +7,8 @@ function pickString(obj: UnknownRecord, ...keys: string[]) {
   for (const key of keys) {
     const value = obj[key];
     if (typeof value === "string" && value.trim()) return value.trim();
+    // Backend often returns numbers for years/salary; normalize to string.
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return undefined;
 }
@@ -136,6 +138,170 @@ function mapEducationQualifications(value: unknown): ResumeProfileData["educatio
   return education.length ? education : undefined;
 }
 
+function mapCertifications(value: unknown): ResumeProfileData["certifications"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      return {
+        name: pickString(record, "name", "certification", "title"),
+        issuing: pickString(record, "issuing", "issuer", "issued_by", "organization"),
+        certificateNumber: pickString(record, "certificate_number", "certificateNumber", "number", "id"),
+        issueDate: pickString(record, "issue_date", "issueDate", "issued_on"),
+        expirationDate: pickString(record, "expiration_date", "expirationDate", "expires_on"),
+        url: pickString(record, "url", "link"),
+      };
+    })
+    .filter((entry) => Boolean(entry && (entry.name || entry.issuing || entry.url))) as Array<
+    NonNullable<ResumeProfileData["certifications"]>[number]
+  >);
+  return out.length ? out : undefined;
+}
+
+function mapCertificationTable(value: unknown): ResumeProfileData["certifications"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      return {
+        name: pickString(record, "name", "certification", "title"),
+        issuing: pickString(record, "issuing", "issuer", "issued_by", "organization"),
+        certificateNumber: pickString(record, "certificate_number", "certificateNumber", "number", "id"),
+        issueDate: pickString(record, "issue_date", "issueDate", "issued_on"),
+        expirationDate: pickString(record, "expiration_date", "expirationDate", "expires_on"),
+        url: pickString(record, "url", "link"),
+      };
+    })
+    .filter((entry) => Boolean(entry && (entry.name || entry.issuing || entry.url))) as Array<
+    NonNullable<ResumeProfileData["certifications"]>[number]
+  >);
+  return out.length ? out : undefined;
+}
+
+function mapExternalLinks(value: unknown): ResumeProfileData["externalLinks"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      return {
+        label: pickString(record, "label", "name", "title", "type"),
+        url: pickString(record, "url", "link", "value"),
+      };
+    })
+    .filter((entry) => Boolean(entry && entry.url)) as Array<NonNullable<ResumeProfileData["externalLinks"]>[number]>);
+  return out.length ? out : undefined;
+}
+
+function mapExternalProfileLinks(value: unknown): ResumeProfileData["externalLinks"] {
+  // Backend key: external_profile_links
+  return mapExternalLinks(value);
+}
+
+function mapLanguages(value: unknown): ResumeProfileData["languages"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      return {
+        language: pickString(record, "language", "name"),
+        read: pickString(record, "read", "reading"),
+        write: pickString(record, "write", "writing"),
+        speak: pickString(record, "speak", "speaking"),
+      };
+    })
+    .filter((entry) => Boolean(entry && entry.language)) as Array<NonNullable<ResumeProfileData["languages"]>[number]>);
+  return out.length ? out : undefined;
+}
+
+function mapWorkExperience(value: unknown): ResumeProfileData["workExperience"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      const responsibilitiesRaw = (record.responsibilities ?? record.responsibility) as unknown;
+      const responsibilities =
+        Array.isArray(responsibilitiesRaw)
+          ? responsibilitiesRaw.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
+          : typeof responsibilitiesRaw === "string"
+            ? responsibilitiesRaw
+                .split(/\n|•|- /g)
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : undefined;
+      return {
+        jobTitle: pickString(record, "role", "job_title", "jobTitle", "designation", "title"),
+        company: pickString(record, "company", "company_name", "employer", "organization", "org"),
+        duration:
+          pickString(record, "duration") ??
+          (() => {
+            const from = pickString(record, "from_date", "start_date", "fromDate", "startDate");
+            const to = pickString(record, "to_date", "end_date", "toDate", "endDate");
+            return from || to ? [from, to].filter(Boolean).join(" - ") : undefined;
+          })(),
+        responsibilities,
+      };
+    })
+    .filter((entry) => Boolean(entry && (entry.jobTitle || entry.company || entry.duration))) as Array<
+    NonNullable<ResumeProfileData["workExperience"]>[number]
+  >);
+  return out.length ? out : undefined;
+}
+
+function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
+  if (!Array.isArray(value)) return undefined;
+
+  const extractCompanyFromText = (text: unknown) => {
+    const raw = typeof text === "string" ? text.trim() : "";
+    if (!raw) return undefined;
+    // Heuristics: "at <Company>", "with <Company>", "for <Company>"
+    const m =
+      raw.match(/\b(?:at|with|for)\s+([A-Z][A-Za-z0-9&.,' -]{2,60})(?:\b|,|\.)/) ??
+      raw.match(/\b(?:client|customer)\s*[:\-]\s*([A-Z][A-Za-z0-9&.,' -]{2,60})(?:\b|,|\.)/i);
+    const candidate = m?.[1]?.trim() || "";
+    return candidate && candidate.length <= 80 ? candidate : undefined;
+  };
+
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+
+      const title = pickString(record, "title", "project_title", "projectTitle", "name");
+      const customerCompany =
+        pickString(record, "customer_company", "customerCompany", "company", "client") ??
+        extractCompanyFromText(record.roles_responsibilities) ??
+        extractCompanyFromText(record.description);
+      const start = pickString(record, "start_date", "startDate", "from_date", "fromDate");
+      const end = pickString(record, "end_date", "endDate", "to_date", "toDate");
+      const inProgress = !end;
+
+      const description = pickString(record, "description", "project_description", "projectDescription");
+      const responsibilities =
+        pickString(record, "roles_responsibilities", "rolesResponsibilities", "responsibilities") ?? undefined;
+
+      if (!title && !customerCompany && !start) return null;
+
+      return {
+        projectTitle: title || undefined,
+        customerCompany: customerCompany || undefined,
+        projectStartDate: start || "01/2000",
+        projectEndDate: end || undefined,
+        inProgress,
+        projectDescription: description || undefined,
+        responsibilities: responsibilities || undefined,
+      };
+    })
+    .filter((p) => Boolean(p && (p.projectTitle || p.customerCompany))) as Array<
+    NonNullable<ResumeProfileData["projects"]>[number]
+  >);
+  return out.length ? out : undefined;
+}
+
 function asNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -167,14 +333,16 @@ function mapWorkExperienceToProjects(value: unknown): ResumeProfileData["project
         pickString(record, "role", "job_title", "jobTitle", "projectTitle", "title") ||
         pickString(record, "position");
       const customerCompany =
-        pickString(record, "company", "customerCompany", "employer", "organization", "org");
+        pickString(record, "company", "company_name", "customerCompany", "employer", "organization", "org");
 
       const projectStartDate =
         pickString(record, "from_date", "fromDate", "start_date", "startDate") ??
+        pickString(record, "from", "start") ??
         pickString(record, "start");
 
       const toDate =
         pickString(record, "to_date", "toDate", "end_date", "endDate") ??
+        pickString(record, "to", "end") ??
         pickString(record, "end");
 
       // When no end date is present, treat it as "in progress" for the wizard validation.
@@ -253,13 +421,33 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
   const educationFromDetails = mapEducationDetails(profileVersion.education_details);
   const educationFromQualifications = mapEducationQualifications(profileVersion.education_qualifications);
 
-  const workExperience = profileVersion.work_experience ?? profileVersion.workExperience ?? root.work_experience ?? root.workExperience;
+  const workExperience =
+    profileVersion.work_experience ??
+    profileVersion.workExperience ??
+    profileVersion.work_experiences ??
+    profileVersion.employment_history ??
+    root.work_experience ??
+    root.workExperience;
   const mappedProjects = mapWorkExperienceToProjects(workExperience);
+  const mappedWorkExperience = mapWorkExperience(workExperience);
+
+  const certifications =
+    mapCertifications(profileVersion.certifications ?? profileVersion.certification_details ?? profileVersion.certification_details_table) ??
+    mapCertificationTable(profileVersion.certification_table) ??
+    mapCertifications(profileRecord.certifications);
+
+  const externalLinks =
+    mapExternalLinks(profileVersion.external_links ?? profileVersion.externalLinks ?? profileRecord.external_links ?? profileRecord.externalLinks) ??
+    mapExternalProfileLinks(profileVersion.external_profile_links ?? profileRecord.external_profile_links);
+
+  const languages =
+    mapLanguages(profileVersion.languages ?? profileVersion.language_details ?? profileRecord.languages);
 
   return {
     professionalTitle: pickString(profileVersion, "professional_title", "professionalTitle", "designation"),
     experienceYears:
       pickString(profileVersion, "experience_years", "experienceYears") ??
+      pickString(profileVersion, "total_experience_years", "totalExperienceYears") ??
       pickString(profileVersion, "total_experience"),
     experienceMonths: pickString(profileVersion, "experience_months", "experienceMonths"),
     summary: pickString(profileVersion, "professional_summary", "summary", "about_me"),
@@ -289,7 +477,11 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     preferredLocation: pickString(profileVersion, "preferred_location", "preferredLocation"),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
     education: educationFromDetails ?? educationFromQualifications,
-    projects: mappedProjects,
+    certifications,
+    externalLinks,
+    languages,
+    workExperience: mappedWorkExperience,
+    projects: mappedProjects ?? mapProjectsTable(profileVersion.projects_table),
   };
 }
 
