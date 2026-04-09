@@ -378,6 +378,38 @@ function SkillsProjectsPageContent() {
         )
       );
     }
+
+    // Prefill "Experience" section from backend work experience when available.
+    // This is best-effort because backend doesn't always provide explicit years per skill/tool.
+    if (storedProfile.workExperience?.length) {
+      const parseYears = (duration?: string) => {
+        const d = (duration || "").toLowerCase();
+        const match = d.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/);
+        if (match?.[1]) return match[1];
+        return "";
+      };
+      const mapped = storedProfile.workExperience
+        .map((entry) => {
+          const title = entry.jobTitle?.trim() || "";
+          const company = entry.company?.trim() || "";
+          const label = [title, company].filter(Boolean).join(" @ ").trim();
+          const years = parseYears(entry.duration);
+          if (!label) return null;
+          return createExperienceEntry({
+            experience: label,
+            experienceYears: years,
+            experienceReference: "",
+          });
+        })
+        .filter(Boolean) as ExperienceEntry[];
+
+      if (mapped.length) {
+        setExperiences((prev) => {
+          const hasAny = prev.some((e) => !isExperienceEmpty(e));
+          return hasAny ? prev : mapped;
+        });
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -418,6 +450,171 @@ function SkillsProjectsPageContent() {
 
         const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
+
+        // Also fetch raw `get_data` so we can map skills_table/tools + projects_table fully.
+        // (Our mapped `getCandidateProfileData` intentionally normalizes to ResumeProfileData.)
+        try {
+          const rawRes = await fetch("/api/method/get_data/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ doctype: "Profile", name: profileName }),
+          });
+          if (rawRes.ok) {
+            const raw = (await rawRes.json()) as any;
+            const root = raw?.data ?? raw?.message?.data ?? raw?.message ?? raw;
+            const version = root?.profile_version ?? {};
+
+            const skillsTable = Array.isArray(version.skills_table) ? version.skills_table : [];
+            if (skillsTable.length) {
+              setTools((prev) => {
+                const hasAny = prev.some((t) => !isToolEmpty(t));
+                if (hasAny) return prev;
+                const mapped = skillsTable
+                  .map((row: any) => {
+                    const tool = typeof row?.key_skills === "string" ? row.key_skills.trim() : "";
+                    if (!tool) return null;
+                    const years =
+                      typeof row?.experience === "number"
+                        ? String(row.experience)
+                        : typeof row?.experience === "string"
+                          ? row.experience.trim()
+                          : "";
+                    const ref = typeof row?.url === "string" ? row.url.trim() : "";
+                    return createToolEntry({ tool, toolYears: years, toolReference: ref });
+                  })
+                  .filter(Boolean) as ToolEntry[];
+                return mapped.length ? mapped : prev;
+              });
+            }
+
+            const projectsTable = Array.isArray(version.projects_table) ? version.projects_table : [];
+            if (projectsTable.length) {
+              const extractCompanyFromText = (text: any) => {
+                const raw = typeof text === "string" ? text.trim() : "";
+                if (!raw) return "";
+                const m =
+                  raw.match(/\b(?:at|with|for)\s+([A-Z][A-Za-z0-9&.,' -]{2,60})(?:\b|,|\.)/) ??
+                  raw.match(/\b(?:client|customer)\s*[:\-]\s*([A-Z][A-Za-z0-9&.,' -]{2,60})(?:\b|,|\.)/i);
+                return (m?.[1] || "").trim();
+              };
+              setProjects((prev) => {
+                const hasAny = prev.some((p) => !isProjectEmpty(p));
+                if (hasAny) return prev;
+                const mapped = projectsTable
+                  .map((row: any) => {
+                    const title = typeof row?.title === "string" ? row.title.trim() : "";
+                    const company =
+                      (typeof row?.customer_company === "string" ? row.customer_company.trim() : "") ||
+                      extractCompanyFromText(row?.roles_responsibilities) ||
+                      extractCompanyFromText(row?.description);
+                    const start = typeof row?.start_date === "string" ? row.start_date : "";
+                    const end = typeof row?.end_date === "string" ? row.end_date : "";
+                    const description = typeof row?.description === "string" ? row.description.trim() : "";
+                    const resp =
+                      typeof row?.roles_responsibilities === "string" ? row.roles_responsibilities.trim() : "";
+                    if (!title && !company && !start) return null;
+                    return createProjectEntry({
+                      projectTitle: title,
+                      customerCompany: company,
+                      projectStartDate: start || "01/2000",
+                      projectEndDate: end,
+                      inProgress: !end,
+                      projectDescription: description,
+                      responsibilities: resp,
+                    });
+                  })
+                  .filter(Boolean) as ProjectEntry[];
+                return mapped.length ? mapped : prev;
+              });
+            }
+
+            // Prefill "Experience" section from work history / organizations.
+            // Prefer backend work_experience if present; otherwise derive from projects_table.
+            setExperiences((prev) => {
+              const hasAny = prev.some((e) => !isExperienceEmpty(e));
+              if (hasAny) return prev;
+
+              const parseRoleFromText = (text: any) => {
+                const raw = typeof text === "string" ? text.trim() : "";
+                if (!raw) return "";
+                // Common AI output: "DevOps Engineer responsible for ..."
+                const responsibleSplit = raw.split(/\s+responsible\s+for\b/i);
+                const head = (responsibleSplit[0] || raw).trim();
+                // Keep it short: first ~6 words usually captures the role.
+                const words = head.split(/\s+/).filter(Boolean);
+                const candidate = words.slice(0, 6).join(" ").trim();
+                return candidate.length <= 60 ? candidate : words.slice(0, 4).join(" ");
+              };
+
+              const dateToMs = (v: any) => {
+                const s = typeof v === "string" ? v.trim() : "";
+                if (!s) return null;
+                const ms = Date.parse(s);
+                return Number.isFinite(ms) ? ms : null;
+              };
+              const yearsFromRange = (start: any, end: any) => {
+                const s = dateToMs(start);
+                const e = dateToMs(end) ?? Date.now();
+                if (!s) return "";
+                const diffYears = Math.max(0, (e - s) / (365.25 * 24 * 60 * 60 * 1000));
+                const rounded = Math.max(0, Math.round(diffYears * 10) / 10);
+                // Wizard expects a string; keep it simple (e.g. "1" or "1.5")
+                return rounded ? String(rounded) : "";
+              };
+
+              const workExp = Array.isArray(version.work_experience) ? version.work_experience : [];
+              const fromWorkExp =
+                workExp.length
+                  ? workExp
+                      .map((row: any) => {
+                        const role = typeof row?.role === "string" ? row.role.trim() : "";
+                        const company = typeof row?.company === "string" ? row.company.trim() : "";
+                        const label = [role, company].filter(Boolean).join(" @ ").trim();
+                        if (!label) return null;
+                        const years = yearsFromRange(row?.from_date ?? row?.start_date, row?.to_date ?? row?.end_date);
+                        const ref = typeof row?.url === "string" ? row.url.trim() : "";
+                        return createExperienceEntry({ experience: label, experienceYears: years, experienceReference: ref });
+                      })
+                      .filter(Boolean)
+                  : [];
+
+              if (fromWorkExp.length) return fromWorkExp as ExperienceEntry[];
+
+              const fromProjects =
+                projectsTable.length
+                  ? projectsTable
+                      .map((row: any) => {
+                        const company = typeof row?.customer_company === "string" ? row.customer_company.trim() : "";
+                        const role = parseRoleFromText(row?.roles_responsibilities);
+                        const title = typeof row?.title === "string" ? row.title.trim() : "";
+                        // Prefer role; fall back to project title.
+                        const base = role || title;
+                        const label = [base, company].filter(Boolean).join(" @ ").trim();
+                        if (!label) return null;
+                        const years = yearsFromRange(row?.start_date, row?.end_date);
+                        return createExperienceEntry({ experience: label, experienceYears: years, experienceReference: "" });
+                      })
+                      .filter(Boolean)
+                  : [];
+
+              if (!(fromProjects as ExperienceEntry[])?.length) return prev;
+
+              // De-dupe by normalized label.
+              const seen = new Set<string>();
+              const deduped = (fromProjects as ExperienceEntry[]).filter((entry) => {
+                const key = entry.experience.trim().toLowerCase().replace(/\s+/g, " ");
+                if (!key) return false;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+
+              return deduped.length ? deduped : prev;
+            });
+          }
+        } catch {
+          // non-fatal
+        }
 
         const existingSkills = backendProfile.keySkills ?? [];
         const combinedSkills = dedupeSkills([...generatedSkills, ...existingSkills]);

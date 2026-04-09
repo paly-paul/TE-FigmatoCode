@@ -35,6 +35,11 @@ import {
   resolveInterviewIdForJob,
   type InterviewSlotOptionApi,
 } from "@/services/jobs/interviewsApi";
+import {
+  getRrGeneratedContent,
+  type RrGeneratedContentApi,
+} from "@/services/jobs/rrGeneratedContent";
+import { getRrDetails, type RrDetailsApi } from "@/services/jobs/rrDetails";
 
 export interface ActionDrawerActionCard {
   id: number;
@@ -43,6 +48,8 @@ export interface ActionDrawerActionCard {
   subtitle: string;
   timestamp: string;
   jobDocumentId?: string;
+  rrCandidateName?: string;
+  isSourcingAccepted?: boolean;
   proposalName?: string;
   interviewId?: string;
 }
@@ -55,8 +62,14 @@ interface ActionDrawerProps {
   profileId?: string | null;
   onPrimaryAction?: (
     action: ActionDrawerActionCard,
-    extras?: { interviewId?: string; interviewSlotId?: string }
-  ) => void;
+    extras?: {
+      interviewId?: string;
+      interviewSlotId?: string;
+      availabilityDate?: string;
+      expectedSalary?: string;
+      acceptTerms?: boolean;
+    }
+  ) => void | Promise<boolean>;
   onRequestClarification?: (action: ActionDrawerActionCard) => void;
 }
 
@@ -89,6 +102,12 @@ export default function ActionDrawer({
   const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
   const [interviewSlotsError, setInterviewSlotsError] = useState<string | null>(null);
   const [resolvedInterviewId, setResolvedInterviewId] = useState<string | null>(null);
+  const [jobDescriptionContent, setJobDescriptionContent] = useState<RrGeneratedContentApi | null>(null);
+  const [jobDescriptionLoading, setJobDescriptionLoading] = useState(false);
+  const [jobDescriptionError, setJobDescriptionError] = useState<string | null>(null);
+  const [rrDetails, setRrDetails] = useState<RrDetailsApi | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -102,8 +121,14 @@ export default function ActionDrawer({
       setInterviewSlotsLoading(false);
       setInterviewSlotsError(null);
       setResolvedInterviewId(null);
+      setJobDescriptionContent(null);
+      setJobDescriptionLoading(false);
+      setJobDescriptionError(null);
+      setRrDetails(null);
+      setIsSubmitting(false);
+      setHasSubmitted(Boolean(action?.isSourcingAccepted));
     }
-  }, [open]);
+  }, [open, action?.isSourcingAccepted]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -127,7 +152,10 @@ export default function ActionDrawer({
     normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation ||
     normalizedTitle.includes("negotiation") ||
     normalizedTitle.includes("proposal");
-  const roleTitle = action?.subtitle.split(" - ")[0] ?? "Senior Engineer";
+  const roleTitle =
+    (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation
+      ? action?.subtitle.split(" - ")[0]
+      : action?.title) ?? "Senior Engineer";
   const locationLabel = action?.subtitle.split(" - ")[1] ?? "Atlanta";
 
   useEffect(() => {
@@ -178,12 +206,94 @@ export default function ActionDrawer({
     profileId,
   ]);
 
+  useEffect(() => {
+    const rrName = action?.jobDocumentId?.trim();
+    if (!open || !rrName) return;
+    let cancelled = false;
+    void (async () => {
+      setJobDescriptionLoading(true);
+      setJobDescriptionError(null);
+      try {
+        const content = await getRrGeneratedContent(rrName);
+        if (cancelled) return;
+        setJobDescriptionContent(content);
+      } catch (e) {
+        if (cancelled) return;
+        setJobDescriptionContent(null);
+        setJobDescriptionError(
+          e instanceof Error ? e.message : "Could not load job description."
+        );
+      } finally {
+        if (!cancelled) setJobDescriptionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, action?.jobDocumentId]);
+
+  useEffect(() => {
+    const rrName = action?.jobDocumentId?.trim();
+    if (!open || !rrName) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const details = await getRrDetails(rrName);
+        if (cancelled) return;
+        setRrDetails(details);
+      } catch {
+        if (cancelled) return;
+        setRrDetails(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, action?.jobDocumentId]);
+
   const interviewSubmitDisabled =
     isInterviewScheduled &&
     (interviewSlotsLoading ||
       !resolvedInterviewId ||
       interviewSlots.length === 0 ||
       !selectedInterviewSlot);
+  const resolvedMatchPercent = rrDetails?.match_score != null
+    ? `${Math.round(rrDetails.match_score)}%`
+    : actionDrawerJobSummary.matchPercentLabel;
+  const resolvedPostedAgo = rrDetails?.posted_time || actionDrawerJobSummary.postedAgo;
+  const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
+  const resolvedMetaFields = [
+    {
+      label: "Project Est. Start Date",
+      value: rrDetails?.start_date || actionDrawerJobSummary.metaFields[0].value,
+      icon: "calendar" as const,
+    },
+    {
+      label: "Project Est. End Date",
+      value: rrDetails?.end_date || actionDrawerJobSummary.metaFields[1].value,
+      icon: "calendar" as const,
+    },
+    {
+      label: "Minimum Contract Duration",
+      value: rrDetails?.contract_duration || actionDrawerJobSummary.metaFields[2].value,
+      icon: "hourglass" as const,
+    },
+    {
+      label: "Rotation Cycle",
+      value: rrDetails?.rotation_cycle || actionDrawerJobSummary.metaFields[3].value,
+      icon: "refresh" as const,
+    },
+    {
+      label: "Working Hours / Day",
+      value: rrDetails?.hours_per_day || actionDrawerJobSummary.metaFields[4].value,
+      icon: "clock" as const,
+    },
+    {
+      label: "Working Days / Week",
+      value: rrDetails?.days_per_week || actionDrawerJobSummary.metaFields[5].value,
+      icon: "users" as const,
+    },
+  ];
 
   const renderRecruiterInterestAction = () => (
     <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
@@ -462,6 +572,42 @@ export default function ActionDrawer({
         isMobile ? "space-y-5 p-4" : "space-y-4 p-4 sm:p-5"
       }`}
     >
+      {jobDescriptionLoading ? (
+        <p className="text-sm text-[#5E7397]">Loading job description…</p>
+      ) : null}
+      {!jobDescriptionLoading && jobDescriptionContent ? (
+        <div className="space-y-4">
+          {jobDescriptionContent.job_description_header ? (
+            <div
+              className="text-sm text-[#202939] [&_h3]:text-base [&_h3]:font-semibold [&_div]:text-xs [&_div]:text-[#5E7397] [&_div]:sm:text-sm"
+              dangerouslySetInnerHTML={{ __html: jobDescriptionContent.job_description_header }}
+            />
+          ) : null}
+          {jobDescriptionContent.job_description ? (
+            <div
+              className="text-xs leading-relaxed text-[#5E7397] sm:text-sm [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:mb-3 [&_p]:leading-relaxed [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1"
+              dangerouslySetInnerHTML={{ __html: jobDescriptionContent.job_description }}
+            />
+          ) : null}
+          {jobDescriptionContent.advertised_position_header ? (
+            <div
+              className="text-sm text-[#202939] [&_h3]:text-base [&_h3]:font-semibold [&_div]:text-xs [&_div]:text-[#5E7397] [&_div]:sm:text-sm"
+              dangerouslySetInnerHTML={{ __html: jobDescriptionContent.advertised_position_header }}
+            />
+          ) : null}
+          {jobDescriptionContent.advertised_position ? (
+            <div
+              className="text-xs leading-relaxed text-[#5E7397] sm:text-sm [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:mb-3 [&_p]:leading-relaxed [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1"
+              dangerouslySetInnerHTML={{ __html: jobDescriptionContent.advertised_position }}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {!jobDescriptionLoading && !jobDescriptionContent && jobDescriptionError ? (
+        <p className="text-sm text-red-600">{jobDescriptionError}</p>
+      ) : null}
+      {!jobDescriptionLoading && !jobDescriptionContent ? (
+      <>
       <section>
         <h3 className={`font-semibold text-[#202939] ${isMobile ? "mb-4 text-[15px]" : "mb-2 sm:mb-3 text-sm sm:text-base"}`}>
           {actionDrawerJobDescription.overview.title}
@@ -492,6 +638,8 @@ export default function ActionDrawer({
           ))}
         </ul>
       </section>
+      </>
+      ) : null}
     </div>
   );
 
@@ -520,15 +668,35 @@ export default function ActionDrawer({
 
   const runPrimaryAction = () => {
     if (!action) return;
-    if (isInterviewScheduled) {
-      const interviewId = resolvedInterviewId ?? action.interviewId?.trim() ?? undefined;
-      onPrimaryAction?.(action, {
-        interviewId,
-        interviewSlotId: selectedInterviewSlot,
-      });
-      return;
-    }
-    onPrimaryAction?.(action);
+    if (isSubmitting || hasSubmitted) return;
+    void (async () => {
+      setIsSubmitting(true);
+      let ok = true;
+      if (isInterviewScheduled) {
+        const interviewId = resolvedInterviewId ?? action.interviewId?.trim() ?? undefined;
+        const result = await Promise.resolve(
+          onPrimaryAction?.(action, {
+            interviewId,
+            interviewSlotId: selectedInterviewSlot,
+          })
+        );
+        ok = result !== false;
+      } else if (isRecruiterInterestReceived) {
+        const result = await Promise.resolve(
+          onPrimaryAction?.(action, {
+            availabilityDate: availableDate,
+            expectedSalary,
+            acceptTerms: hasAcceptedTerms,
+          })
+        );
+        ok = result !== false;
+      } else {
+        const result = await Promise.resolve(onPrimaryAction?.(action));
+        ok = result !== false;
+      }
+      if (ok) setHasSubmitted(true);
+      setIsSubmitting(false);
+    })();
   };
 
   const footerContent = isSalaryNegotiation ? (
@@ -552,7 +720,7 @@ export default function ActionDrawer({
     <div className="flex justify-end">
       <button
         type="button"
-        disabled={Boolean(isInterviewScheduled && interviewSubmitDisabled)}
+        disabled={Boolean((isInterviewScheduled && interviewSubmitDisabled) || isSubmitting || hasSubmitted)}
         onClick={runPrimaryAction}
         className={`rounded-md bg-[#1447E6] text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50 ${
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
@@ -573,7 +741,7 @@ export default function ActionDrawer({
             {actionDrawerJobSummary.matchBadge}
           </span>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-[#5E7397]">{actionDrawerJobSummary.postedAgo}</span>
+            <span className="text-xs text-[#5E7397]">{resolvedPostedAgo}</span>
             <ChevronDown className="h-4 w-4 text-[#202939]" />
           </div>
         </div>
@@ -582,7 +750,7 @@ export default function ActionDrawer({
         <p className="mt-2 flex items-center gap-2 text-sm text-[#5E7397]">
           <MapPin size={16} className="shrink-0" />
           <span>
-            {locationLabel} | {actionDrawerJobSummary.locationCountrySuffix}
+            {locationLabel} | {resolvedLocationSuffix}
           </span>
         </p>
       </div>
@@ -619,7 +787,7 @@ export default function ActionDrawer({
           <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
             {actionDrawerJobSummary.matchBadge}
           </span>
-          <span className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerJobSummary.postedAgo}</span>
+          <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>
         </div>
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -628,7 +796,7 @@ export default function ActionDrawer({
             <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
               <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
               <span>
-                {locationLabel} | {actionDrawerJobSummary.locationCountrySuffix}
+                {locationLabel} | {resolvedLocationSuffix}
               </span>
             </p>
           </div>
@@ -647,13 +815,13 @@ export default function ActionDrawer({
               ))}
             </div>
             <span className="text-sm font-semibold text-[#202939] sm:text-base">
-              {actionDrawerJobSummary.matchPercentLabel}
+              {resolvedMatchPercent}
             </span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-x-5 gap-y-3 text-xs md:grid-cols-2 xl:grid-cols-3 sm:gap-y-3.5 sm:text-sm">
-          {actionDrawerJobSummary.metaFields.map((field) => {
+          {resolvedMetaFields.map((field) => {
             const Icon = metaIcons[field.icon];
             return (
               <div key={field.label} className="flex items-start gap-2.5 sm:gap-3">
