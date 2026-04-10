@@ -486,10 +486,12 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
 }
 
 export async function getCandidateProfileData(candidateId: string): Promise<ResumeProfileData> {
-  const res = await fetch(`/api/method/get_data/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doctype: "Profile", name: candidateId }),
+  const url = new URL("/api/method/get_data", window.location.origin);
+  url.searchParams.set("doctype", "Profile");
+  url.searchParams.set("name", candidateId.trim());
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    credentials: "same-origin",
   });
 
   let data: UnknownRecord = {};

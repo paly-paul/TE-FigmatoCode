@@ -74,7 +74,10 @@ export async function markInterestedInJob(candidateId: string, jobId: string): P
   url.searchParams.set("candidate_id", candidateId.trim());
   url.searchParams.set("job_id", jobId.trim());
 
-  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    credentials: "same-origin",
+  });
   const data = await getJsonOrEmpty(res);
   if (!res.ok) {
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);

@@ -17,7 +17,6 @@ import {
   EllipsisVertical,
   TrendingUp,
   User,
-  Zap,
 } from "lucide-react";
 
 import AppNavbar from "../profile/AppNavbar";
@@ -47,8 +46,9 @@ import {
   postProposalCandidateAcceptance,
   postProposalCandidateNegotiation,
 } from "@/services/jobs/actionCenter";
-import { postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
+import { isLikelyJobOpeningDocName, postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
 import type { CandidateActionableApi } from "@/services/jobs/types";
+import type { CandidateActionableSlotApi } from "@/services/jobs/types";
 import {
   mapApplicationToDashboardJob,
   mapRecommendedToDashboardJob,
@@ -65,6 +65,42 @@ interface ActionCard {
   isSourcingAccepted?: boolean;
   proposalName?: string;
   interviewId?: string;
+  interviewRound?: number;
+  interviewType?: string;
+  interviewMode?: string;
+  interviewSlots?: {
+    slot_id: string;
+    slot_date: string;
+    slot_time: string;
+    label: string;
+    slot_timezone?: string;
+    slot_status?: string;
+  }[];
+  sourcingAcceptedAt?: string;
+}
+
+function mapActionableInterviewSlots(
+  slots: CandidateActionableSlotApi[] | undefined
+): ActionCard["interviewSlots"] {
+  if (!slots || slots.length === 0) return undefined;
+  return slots.map((slot, index) => {
+    const slot_date = slot.slot_date?.trim() || "";
+    const slot_time = slot.slot_time?.trim() || "";
+    const slot_timezone = slot.slot_timezone?.trim() || undefined;
+    const slot_status = slot.slot_status?.trim() || undefined;
+    const derivedId =
+      slot.slot_id?.trim() ||
+      [slot_date, slot_time, slot_timezone, String(index + 1)].filter(Boolean).join("|");
+    const label = `Slot ${index + 1}`;
+    return {
+      slot_id: derivedId,
+      slot_date,
+      slot_time,
+      label,
+      slot_timezone,
+      slot_status,
+    };
+  });
 }
 
 interface JobListing {
@@ -472,6 +508,13 @@ export default function TalentEngineDashboard() {
           getRecommendedJobs(profileName),
         ]);
 
+        const localAcceptedAtByJob = new Map<string, string>();
+        for (const row of localAcceptedActionables) {
+          const key = row.job_id?.trim();
+          if (!key) continue;
+          if (row.accepted_at?.trim()) localAcceptedAtByJob.set(key, row.accepted_at.trim());
+        }
+
         const bestActionableByJob = new Map<string, CandidateActionableApi>();
         for (const item of actionablesRes.actions) {
           const key = item.job_id?.trim();
@@ -482,20 +525,31 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => ({
-          id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
-          type: "Job",
-          title: toActionTitle(item),
-          subtitle: `${item.job_title} - ${item.job_id}`,
-          timestamp: item.stage || item.status || "Now",
-          jobDocumentId: item.job_id,
-          rrCandidateName: item.rr_candidate,
-          isSourcingAccepted: Boolean(
-            item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
-          ),
-          proposalName: item.name,
-          interviewId: item.info?.interview_id,
-        }));
+        const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => {
+          const stageText = `${item.stage} ${item.status}`.toLowerCase();
+          const isInterviewActionable = stageText.includes("interview");
+          return {
+            id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+            type: "Job",
+            title: toActionTitle(item),
+            subtitle: `${item.job_title} - ${item.job_id}`,
+            timestamp: item.stage || item.status || "Now",
+            jobDocumentId: item.job_id,
+            rrCandidateName: item.rr_candidate,
+            isSourcingAccepted: Boolean(
+              item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
+            ),
+            proposalName: item.name,
+            interviewId: isInterviewActionable
+              ? item.name?.trim() || item.info?.interview_id
+              : item.info?.interview_id,
+            interviewRound: item.info?.interview_round,
+            interviewType: item.info?.interview_type,
+            interviewMode: item.info?.interview_mode,
+            interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
+            sourcingAcceptedAt: localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+          };
+        });
 
         const localAcceptedCards: ActionCard[] = localAcceptedActionables.map((row) => ({
           id: Number.parseInt(row.job_id.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
@@ -850,6 +904,17 @@ export default function TalentEngineDashboard() {
     setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...mappedIds]));
   };
 
+  useEffect(() => {
+    if (!candidateId || activeTab !== "Your Applications") return;
+    void (async () => {
+      try {
+        await refreshJobApplications(candidateId);
+      } catch {
+        // Keep existing UI state if refresh fails.
+      }
+    })();
+  }, [activeTab, candidateId]);
+
   const handleDrawerPrimaryAction = (
     action: ActionCard,
     extras?: {
@@ -873,7 +938,12 @@ export default function TalentEngineDashboard() {
           extras?.interviewId?.trim() &&
           extras?.interviewSlotId?.trim()
         ) {
-          await postInterviewSelectSlot(extras.interviewId, extras.interviewSlotId);
+          const iid = extras.interviewId.trim();
+          if (isLikelyJobOpeningDocName(iid)) {
+            console.warn("Refusing to post Job Opening id as interview_id:", iid);
+            return false;
+          }
+          await postInterviewSelectSlot(iid, extras.interviewSlotId.trim());
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
         } else if (action.rrCandidateName?.trim()) {
@@ -1072,6 +1142,9 @@ export default function TalentEngineDashboard() {
     </div>
   );
 
+  const getActionCardKey = (card: ActionCard) =>
+    `${card.type}:${card.jobDocumentId?.trim() || card.id}`;
+
   const dashboardModals = (
     <>
       <ActionDrawer
@@ -1117,9 +1190,14 @@ export default function TalentEngineDashboard() {
     const mobileActionCenter = (
       <main className="px-4 pt-4">
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400 shadow-sm ring-2 ring-amber-200/60">
-            <Zap className="h-6 w-6 text-white" strokeWidth={2.5} />
-          </div>
+          <Image
+            src="/icons/ac-gif.gif"
+            alt="Action Center"
+            width={44}
+            height={44}
+            className="h-11 w-11 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-amber-200/60"
+            unoptimized
+          />
           <h1 className="text-xl font-bold tracking-tight text-gray-900">Action Center</h1>
         </div>
 
@@ -1139,7 +1217,7 @@ export default function TalentEngineDashboard() {
             const badge = getActionBadge(card.type);
             return (
               <button
-                key={card.id}
+                key={getActionCardKey(card)}
                 type="button"
                 onClick={() => {
                   setSelectedAction(card);
@@ -1524,7 +1602,17 @@ export default function TalentEngineDashboard() {
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 sm:py-8">
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <h2 className="text-lg sm:text-xl font-semibold">Action Center</h2>
+            <div className="flex items-center gap-2">
+              <Image
+                src="/icons/ac-gif.gif"
+                alt="Action Center"
+                width={28}
+                height={28}
+                className="h-7 w-7 shrink-0 rounded-full object-cover"
+                unoptimized
+              />
+              <h2 className="text-lg sm:text-xl font-semibold">Action Center</h2>
+            </div>
             <div className="sm:[&_span]:text-sm">{jobSearchToggle}</div>
           </div>
 
@@ -1541,7 +1629,7 @@ export default function TalentEngineDashboard() {
 
               return (
                 <div
-                  key={card.id}
+                  key={getActionCardKey(card)}
                   className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
                 >
                   <div className="flex justify-between mb-3">
