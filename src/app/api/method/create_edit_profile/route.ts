@@ -216,17 +216,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const profileName = typeof body.profile_name === "string" ? body.profile_name.trim() : "";
-  const payload = { ...body };
+  const profileName = (() => {
+    if (typeof body.profile === "string") return body.profile.trim();
+    if (typeof body.profile_id === "string") return body.profile_id.trim();
+    if (typeof body.profile_name === "string") return body.profile_name.trim();
+    return "";
+  })();
+
+  const payload = { ...body } as JsonRecord;
   if (typeof payload.action === "string") {
     payload.action = payload.action.trim().toLowerCase();
   }
-  delete payload.profile_name;
 
-  const query = profileName ? `?profile_name=${encodeURIComponent(profileName)}` : "";
+  // If caller sends profile id as `profile` (string), don't forward it in JSON body.
+  if (typeof body.profile === "string") delete payload.profile;
+  if (typeof body.profile_id === "string") delete payload.profile_id;
+  if (typeof body.profile_name === "string") delete payload.profile_name;
+
+  // Allow callers to avoid clobbering `profile` (object) by sending it as `profile_doc`.
+  if (
+    payload.profile_doc &&
+    typeof payload.profile_doc === "object" &&
+    !Array.isArray(payload.profile_doc) &&
+    (!payload.profile || typeof payload.profile !== "object" || Array.isArray(payload.profile))
+  ) {
+    payload.profile = payload.profile_doc as JsonRecord;
+  }
+  delete payload.profile_doc;
+
+  const query = profileName ? `?profile=${encodeURIComponent(profileName)}` : "";
   const url = `${backendBase}/api/method/create_edit_profile${query}`;
   console.info("create_edit_profile proxy start", {
-    profile_name: profileName || null,
+    profile: profileName || null,
     upstream_url: url,
   });
 

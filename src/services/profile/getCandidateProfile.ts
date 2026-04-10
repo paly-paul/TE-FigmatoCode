@@ -128,7 +128,7 @@ function mapEducationQualifications(value: unknown): ResumeProfileData["educatio
         title: pickString(record, "title", "degree"),
         institute: pickString(record, "institution", "institute", "school"),
         specialization: pickString(record, "specialization"),
-        graduationYear: pickString(record, "graduation_year", "year", "graduationYear"),
+        graduationYear: pickString(record, "year_of_passing", "graduation_year", "year", "graduationYear"),
         score: pickString(record, "score"),
       };
     })
@@ -166,10 +166,10 @@ function mapCertificationTable(value: unknown): ResumeProfileData["certification
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        name: pickString(record, "name", "certification", "title"),
+        name: pickString(record, "certification_name", "name", "certification", "title"),
         issuing: pickString(record, "issuing", "issuer", "issued_by", "organization"),
         certificateNumber: pickString(record, "certificate_number", "certificateNumber", "number", "id"),
-        issueDate: pickString(record, "issue_date", "issueDate", "issued_on"),
+        issueDate: pickString(record, "issue_date", "issueDate", "issued_on", "year"),
         expirationDate: pickString(record, "expiration_date", "expirationDate", "expires_on"),
         url: pickString(record, "url", "link"),
       };
@@ -196,8 +196,18 @@ function mapExternalLinks(value: unknown): ResumeProfileData["externalLinks"] {
 }
 
 function mapExternalProfileLinks(value: unknown): ResumeProfileData["externalLinks"] {
-  // Backend key: external_profile_links
-  return mapExternalLinks(value);
+  if (!Array.isArray(value)) return undefined;
+  const out = (value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      return {
+        label: pickString(record, "platform", "label", "name", "title", "type"),
+        url: pickString(record, "url", "link", "value"),
+      };
+    })
+    .filter((entry) => Boolean(entry && entry.url)) as Array<NonNullable<ResumeProfileData["externalLinks"]>[number]>);
+  return out.length ? out : undefined;
 }
 
 function mapLanguages(value: unknown): ResumeProfileData["languages"] {
@@ -272,6 +282,7 @@ function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
       const record = item as UnknownRecord;
 
       const title = pickString(record, "title", "project_title", "projectTitle", "name");
+      const projectName = pickString(record, "project_name");
       const customerCompany =
         pickString(record, "customer_company", "customerCompany", "company", "client") ??
         extractCompanyFromText(record.roles_responsibilities) ??
@@ -284,10 +295,11 @@ function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
       const responsibilities =
         pickString(record, "roles_responsibilities", "rolesResponsibilities", "responsibilities") ?? undefined;
 
-      if (!title && !customerCompany && !start) return null;
+      const resolvedTitle = projectName || title;
+      if (!resolvedTitle && !customerCompany && !start) return null;
 
       return {
-        projectTitle: title || undefined,
+        projectTitle: resolvedTitle || undefined,
         customerCompany: customerCompany || undefined,
         projectStartDate: start || "01/2000",
         projectEndDate: end || undefined,
@@ -418,6 +430,14 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
       profileRecord.keySkills ??
       root.key_skills
   );
+  const tools =
+    mapSkillsTable(
+      profileVersion.tools ??
+        profileVersion.tools_table ??
+        profileVersion.skills_table ??
+        profileRecord.tools ??
+        root.tools
+    ) ?? undefined;
   const educationFromDetails = mapEducationDetails(profileVersion.education_details);
   const educationFromQualifications = mapEducationQualifications(profileVersion.education_qualifications);
 
@@ -472,10 +492,17 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     phone: pickString(profileRecord, "contact_no", "phone", "mobile_no", "contact", "phone_number"),
     email: pickString(profileRecord, "email", "user", "candidate_id"),
     altEmail: pickString(profileRecord, "alternative_email", "alt_email", "alternate_email"),
-    nationality: pickString(profileVersion, "nationality", "country"),
-    currentLocation: pickString(profileRecord, "current_location", "currentLocation"),
-    preferredLocation: pickString(profileVersion, "preferred_location", "preferredLocation"),
+    nationality:
+      pickString(profileVersion, "nationality", "country") ??
+      pickString(profileRecord, "nationality", "country"),
+    currentLocation:
+      pickString(profileRecord, "current_location", "currentLocation") ??
+      pickString(profileVersion, "current_location", "currentLocation", "location"),
+    preferredLocation:
+      pickString(profileVersion, "preferred_location", "preferredLocation") ??
+      pickString(profileRecord, "preferred_location", "preferredLocation"),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
+    tools,
     education: educationFromDetails ?? educationFromQualifications,
     certifications,
     externalLinks,
@@ -492,6 +519,7 @@ export async function getCandidateProfileData(candidateId: string): Promise<Resu
   const res = await fetch(url.toString(), {
     method: "GET",
     credentials: "same-origin",
+    cache: "no-store",
   });
 
   let data: UnknownRecord = {};

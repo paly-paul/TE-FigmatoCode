@@ -1,7 +1,9 @@
 import { parseApiErrorMessage } from "@/services/signup/parseApiError";
 
 export interface SaveProfilePayload {
+  profile?: string | Record<string, unknown>;
   profile_name?: string;
+  profile_id?: string;
   full_name: string;
   email: string;
   professional_title?: string;
@@ -19,7 +21,7 @@ export interface SaveProfilePayload {
     from_date?: string;
     to_date?: string;
   }>;
-  profile?: Record<string, unknown>;
+  profile_doc?: Record<string, unknown>;
   profile_version?: Record<string, unknown>;
   action?: "save" | "submit";
   [key: string]: unknown;

@@ -159,6 +159,7 @@ function SkillsProjectsPageContent() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
+  const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
@@ -912,6 +913,7 @@ function SkillsProjectsPageContent() {
     if (profileName && !isLikelyDocId(profileName)) {
       profileName = "";
     }
+    setLastSubmitWasEdit(Boolean(profileName));
 
     const firstName = storedProfile?.firstName?.trim() || "";
     const lastName = storedProfile?.lastName?.trim() || "";
@@ -962,11 +964,11 @@ function SkillsProjectsPageContent() {
       email,
       first_name: firstName || undefined,
       last_name: lastName || undefined,
-      dob: storedProfile?.dob?.trim() || undefined,
+      date_of_birth: storedProfile?.dob?.trim() || undefined,
       gender: storedProfile?.gender?.trim() || undefined,
       country_code: storedProfile?.countryCode?.trim() || undefined,
-      phone: storedProfile?.phone?.trim() || undefined,
-      alt_email: storedProfile?.altEmail?.trim() || undefined,
+      contact_no: storedProfile?.phone?.trim() || undefined,
+      alternative_email: storedProfile?.altEmail?.trim() || undefined,
       nationality: storedProfile?.nationality?.trim() || undefined,
       current_location: storedProfile?.currentLocation?.trim() || undefined,
     };
@@ -975,40 +977,49 @@ function SkillsProjectsPageContent() {
       professional_title: storedProfile?.professionalTitle?.trim() || undefined,
       experience_years: storedProfile?.experienceYears?.trim() || undefined,
       experience_months: storedProfile?.experienceMonths?.trim() || undefined,
-      salary_per_month: storedProfile?.salaryPerMonth?.trim() || undefined,
-      salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
-      summary: storedProfile?.summary?.trim() || undefined,
+      current_salary: storedProfile?.salaryPerMonth?.trim() || undefined,
+      current_salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
+      professional_summary: storedProfile?.summary?.trim() || undefined,
       preferred_location: storedProfile?.preferredLocation?.trim() || undefined,
       key_skills: keySkills.length ? keySkills : undefined,
       work_experience: workExperience.length ? workExperience : undefined,
-      education_details: educationDetails.length ? educationDetails : undefined,
-      certifications: storedProfile?.certifications?.length
+      education_qualifications: educationDetails.length
+        ? educationDetails.map((entry) => ({
+            degree: entry.degree,
+            institution: entry.institution,
+            year_of_passing: entry.year,
+          }))
+        : undefined,
+      certification_table: storedProfile?.certifications?.length
         ? storedProfile.certifications
             .map((entry) => ({
-              name: entry.name?.trim() || undefined,
-              issuing: entry.issuing?.trim() || undefined,
-              certificate_number: entry.certificateNumber?.trim() || undefined,
-              issue_date: entry.issueDate?.trim() || undefined,
-              expiration_date: entry.expirationDate?.trim() || undefined,
+              certification_name: entry.name?.trim() || undefined,
+              issued_by: entry.issuing?.trim() || undefined,
+              year: entry.issueDate?.trim()?.slice(0, 4) || undefined,
               url: entry.url?.trim() || undefined,
             }))
             .filter((entry) =>
-              entry.name ||
-              entry.issuing ||
-              entry.certificate_number ||
-              entry.issue_date ||
-              entry.expiration_date ||
+              entry.certification_name ||
+              entry.issued_by ||
+              entry.year ||
               entry.url
             )
         : undefined,
-      external_links: storedProfile?.externalLinks?.length
+      external_profile_links: storedProfile?.externalLinks?.length
         ? storedProfile.externalLinks
             .map((entry) => ({
-              label: entry.label?.trim() || undefined,
+              platform: entry.label?.trim() || undefined,
               url: entry.url?.trim() || undefined,
             }))
-            .filter((entry) => entry.label || entry.url)
+            .filter((entry) => entry.platform || entry.url)
         : undefined,
+      projects_table: nonEmptyProjects()
+        .map((project) => ({
+          project_name: project.projectTitle?.trim() || undefined,
+          description: project.projectDescription?.trim() || undefined,
+          role: project.responsibilities?.trim() || undefined,
+        }))
+        .filter((entry) => entry.project_name || entry.description || entry.role),
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
@@ -1048,17 +1059,17 @@ function SkillsProjectsPageContent() {
     }
 
     const mergedEducationDetails = mergeObjectArrayRows(
-      existingEnvelope?.profile_version?.education_details,
-      educationDetails.length ? educationDetails : undefined
+      existingEnvelope?.profile_version?.education_qualifications,
+      nextProfileVersionPayload.education_qualifications
     );
     if (mergedEducationDetails) {
-      mergedProfileVersionPayload.education_details = mergedEducationDetails;
+      mergedProfileVersionPayload.education_qualifications = mergedEducationDetails;
     }
 
     setIsSubmittingProfile(true);
     try {
       const response = await saveProfile({
-        profile_name: profileName || undefined,
+        profile: profileName || undefined,
         full_name: fullName,
         email,
         professional_title: storedProfile?.professionalTitle?.trim() || undefined,
@@ -1067,7 +1078,7 @@ function SkillsProjectsPageContent() {
         key_skills: keySkills.length ? keySkills : undefined,
         work_experience: workExperience.length ? workExperience : undefined,
         education_details: educationDetails.length ? educationDetails : undefined,
-        profile: mergedProfilePayload,
+        profile_doc: mergedProfilePayload,
         profile_version: mergedProfileVersionPayload,
         action: "submit",
       });
@@ -1078,7 +1089,10 @@ function SkillsProjectsPageContent() {
           ? (response.message as Record<string, unknown>)
           : null;
       const savedProfileName =
+        (typeof (response as Record<string, unknown>).profile === "string" &&
+          ((response as Record<string, unknown>).profile as string).trim()) ||
         (typeof response.profile_name === "string" && response.profile_name.trim()) ||
+        (messageRoot && typeof messageRoot.profile === "string" && messageRoot.profile.trim()) ||
         (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
         "";
       const effectiveProfileName = linkedProfileFromServerMessage || savedProfileName || profileName;
@@ -2001,15 +2015,19 @@ function SkillsProjectsPageContent() {
               </div>
 
               <div className="mx-auto mt-5 max-w-[360px] text-center">
-                <h3 className="text-xl font-semibold text-gray-900">Resume submitted successfully!</h3>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {lastSubmitWasEdit ? "Profile updated successfully!" : "Resume submitted successfully!"}
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-gray-500">
-                  Your profile has been updated with all the key details from your resume.
+                  {lastSubmitWasEdit
+                    ? "Your latest changes have been saved and reflected in your profile."
+                    : "Your profile has been updated with all the key details from your resume."}
                 </p>
               </div>
 
               <div className="mx-auto mt-5 flex max-w-[420px] items-center justify-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-gray-700">
                 <CheckCircle2 className="h-4 w-4 text-primary-600" />
-                <span>Profile Version V1.0 created!</span>
+                <span>{lastSubmitWasEdit ? "Profile version updated." : "Profile Version V1.0 created!"}</span>
               </div>
 
               <div className="mt-6 flex justify-end">
@@ -2241,7 +2259,7 @@ function isLikelySkillToken(value: string): boolean {
 }
 
 async function fetchGeneratedSkillsForProfile(profileName: string): Promise<string[]> {
-  const url = `/api/method/generate_keyskills_for_profile?profile_name=${encodeURIComponent(profileName)}`;
+  const url = `/api/method/generate_keyskills_for_profile?profile=${encodeURIComponent(profileName)}`;
   const response = await fetch(url, { method: "GET" });
   let data: unknown = {};
   try {
