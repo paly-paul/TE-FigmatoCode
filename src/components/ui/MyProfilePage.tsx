@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
     Award,
@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 
 import VisibilityScoreCard from "../dashboard/VisibilityScoreCard";
-import { PROFILE } from "../profile-page/mockData";
+import { PROFILE as PROFILE_FALLBACK } from "../profile-page/mockData";
+import type { ProfileData } from "../profile-page/types";
 import {
     CircleProgress,
     DetailTile,
@@ -38,9 +39,105 @@ import AppNavbar from "../profile/AppNavbar";
 import Image from "next/image";
 import CandidateAppShell from "../mobile/CandidateAppShell";
 import { useIsMobile } from "@/lib/useResponsive";
+import { getCandidateProfileData } from "@/services/profile/getCandidateProfile";
+import { getProfileName } from "@/lib/authSession";
+import type { ResumeProfileData } from "@/types/profile";
+
+function parseMaybeDate(value: string | undefined): string {
+    if (!value?.trim()) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    return dt.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function toProfileData(resume: ResumeProfileData, fallback: ProfileData): ProfileData {
+    const fullName = [resume.firstName, resume.lastName].filter(Boolean).join(" ").trim();
+    const experienceParts = [resume.experienceYears && `${resume.experienceYears} years`, resume.experienceMonths && `${resume.experienceMonths} months`]
+        .filter(Boolean)
+        .join(", ");
+    const salaryText = [resume.salaryCurrency, resume.salaryPerMonth].filter(Boolean).join(" ").trim();
+    const links = resume.externalLinks ?? [];
+    const github = links.find((l) => (l.label || "").toLowerCase().includes("github"))?.url || fallback.github;
+    const linkedin = links.find((l) => (l.label || "").toLowerCase().includes("linkedin"))?.url || fallback.linkedin;
+    const website = links.find((l) => (l.label || "").toLowerCase().includes("web"))?.url || links[0]?.url || fallback.website;
+
+    return {
+        ...fallback,
+        name: fullName || fallback.name,
+        title: resume.professionalTitle || fallback.title,
+        location: resume.currentLocation || fallback.location,
+        phone: resume.phone || fallback.phone,
+        github,
+        linkedin,
+        website,
+        summary: resume.summary || fallback.summary,
+        experience: experienceParts || fallback.experience,
+        salary: salaryText || fallback.salary,
+        persona: resume.professionalTitle || fallback.persona,
+        personalInfo: {
+            dob: parseMaybeDate(resume.dob) || fallback.personalInfo.dob,
+            gender: resume.gender || fallback.personalInfo.gender,
+            emails: [resume.email, resume.altEmail].filter((v): v is string => Boolean(v?.trim())),
+            nationality: resume.nationality || fallback.personalInfo.nationality,
+            currentLocation: resume.currentLocation || fallback.personalInfo.currentLocation,
+            preferredLocation: resume.preferredLocation || fallback.personalInfo.preferredLocation,
+        },
+        education: resume.education?.[0]
+            ? {
+                degree: resume.education[0].title || fallback.education.degree,
+                school: resume.education[0].institute || fallback.education.school,
+                specialization: resume.education[0].specialization || fallback.education.specialization,
+                graduationYear: resume.education[0].graduationYear || fallback.education.graduationYear,
+                score: resume.education[0].score || fallback.education.score,
+            }
+            : fallback.education,
+        languages:
+            resume.languages?.map((lang, idx) => ({
+                id: `lang-${idx + 1}`,
+                name: lang.language || `Language ${idx + 1}`,
+                read: lang.read || "Good",
+                write: lang.write || "Good",
+                speak: lang.speak || "Good",
+            })) || fallback.languages,
+        skills: resume.keySkills?.length ? resume.keySkills : fallback.skills,
+        certifications:
+            resume.certifications?.map((cert, idx) => ({
+                id: `cert-${idx + 1}`,
+                name: cert.name || "Certification",
+                issuer: cert.issuing || "Issuer",
+                issued: parseMaybeDate(cert.issueDate) || "Issued",
+                expiry: cert.expirationDate ? parseMaybeDate(cert.expirationDate) : null,
+            })) || fallback.certifications,
+        experienceItems:
+            resume.workExperience?.map((item, idx) => ({
+                id: `exp-${idx + 1}`,
+                title: item.jobTitle || item.company || `Experience ${idx + 1}`,
+                years: Number.parseInt(resume.experienceYears || "0", 10) || 1,
+            })) || fallback.experienceItems,
+        tools:
+            (resume.tools || []).map((tool, idx) => ({
+                id: `tool-${idx + 1}`,
+                name: tool,
+                years: Number.parseInt(resume.experienceYears || "0", 10) || 1,
+            })) || fallback.tools,
+        projects:
+            resume.projects?.map((project, idx) => ({
+                id: `project-${idx + 1}`,
+                title: project.projectTitle || `Project ${idx + 1}`,
+                company: project.customerCompany || "—",
+                startDate: parseMaybeDate(project.projectStartDate) || "—",
+                endDate: project.inProgress ? "Present" : parseMaybeDate(project.projectEndDate) || "—",
+                description: project.projectDescription || "—",
+                responsibilities: project.responsibilities
+                    ? project.responsibilities.split(/\n|;|•/g).map((s) => s.trim()).filter(Boolean)
+                    : ["—"],
+            })) || fallback.projects,
+    };
+}
 
 export default function MyProfilePage() {
     const isMobile = useIsMobile();
+    const [profileData, setProfileData] = useState<ProfileData>(PROFILE_FALLBACK);
     const [activeProfile, setActiveProfile] = useState(true);
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
     const [mobileTab, setMobileTab] = useState<"about" | "professional" | "personal">("about");
@@ -54,6 +151,20 @@ export default function MyProfilePage() {
         education: true,
         languages: false,
     });
+    const PROFILE = profileData;
+
+    useEffect(() => {
+        const profileId = getProfileName();
+        if (!profileId) return;
+        void (async () => {
+            try {
+                const data = await getCandidateProfileData(profileId);
+                setProfileData(toProfileData(data, PROFILE_FALLBACK));
+            } catch {
+                // Keep fallback profile if API fails.
+            }
+        })();
+    }, []);
 
     const toggleSection = (key: keyof typeof openSections) => {
         setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));

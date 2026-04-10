@@ -30,8 +30,11 @@ import {
   type ActionDrawerTab,
 } from "./actionDrawer/actionDrawerContent";
 import {
+  coalesceInterviewDocumentId,
   getAvailableInterviewSlots,
   getInterviewsByProfile,
+  pickInterviewIdForSlotSubmit,
+  resolveInterviewIdBySlotOwnership,
   resolveInterviewIdForJob,
   type InterviewSlotOptionApi,
 } from "@/services/jobs/interviewsApi";
@@ -40,6 +43,7 @@ import {
   type RrGeneratedContentApi,
 } from "@/services/jobs/rrGeneratedContent";
 import { getRrDetails, type RrDetailsApi } from "@/services/jobs/rrDetails";
+import { getProfileName } from "@/lib/authSession";
 
 export interface ActionDrawerActionCard {
   id: number;
@@ -52,13 +56,21 @@ export interface ActionDrawerActionCard {
   isSourcingAccepted?: boolean;
   proposalName?: string;
   interviewId?: string;
+  interviewRound?: number;
+  interviewType?: string;
+  interviewMode?: string;
+  interviewSlots?: (InterviewSlotOptionApi & { slot_timezone?: string; slot_status?: string })[];
+  sourcingAcceptedAt?: string;
 }
 
 interface ActionDrawerProps {
   open: boolean;
   onClose: () => void;
   action: ActionDrawerActionCard | null;
-  /** Profile document id (same value as `profile_id` for actionables / interviews APIs). */
+  /**
+   * Profile document id for `profile_id` on interview APIs.
+   * When omitted, the drawer falls back to `getProfileName()` from session (same as actionables).
+   */
   profileId?: string | null;
   onPrimaryAction?: (
     action: ActionDrawerActionCard,
@@ -80,6 +92,15 @@ const metaIcons = {
   clock: Clock,
   users: Users,
 } as const;
+
+/** `isSourcingAccepted` only means "submit already done" for recruiter-interest cards — not interview/salary stages. */
+function shouldPrefillSubmittedFromSourcing(action: ActionDrawerActionCard | null): boolean {
+  if (!action?.isSourcingAccepted) return false;
+  const t = action.title.toLowerCase();
+  if (t.includes("interview")) return false;
+  if (t.includes("negotiation") || t.includes("proposal") || t.includes("salary")) return false;
+  return true;
+}
 
 export default function ActionDrawer({
   open,
@@ -126,9 +147,9 @@ export default function ActionDrawer({
       setJobDescriptionError(null);
       setRrDetails(null);
       setIsSubmitting(false);
-      setHasSubmitted(Boolean(action?.isSourcingAccepted));
+      setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
     }
-  }, [open, action?.isSourcingAccepted]);
+  }, [open, action?.isSourcingAccepted, action?.title]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -158,21 +179,127 @@ export default function ActionDrawer({
       : action?.title) ?? "Senior Engineer";
   const locationLabel = action?.subtitle.split(" - ")[1] ?? "Atlanta";
 
+  const resolveInterviewTags = (): string[] => {
+    if (!action) return [...actionDrawerInterview.tags];
+    const round =
+      typeof action.interviewRound === "number" ? `Round ${action.interviewRound}` : null;
+    const type = action.interviewType?.trim() || null;
+    const mode = action.interviewMode?.trim() || null;
+    const tags = [round, type, mode].filter((v): v is string => Boolean(v));
+    return tags.length > 0 ? tags : [...actionDrawerInterview.tags];
+  };
+
+  const getInterviewTagClassName = (tag: string): string => {
+    const normalized = tag.trim().toLowerCase();
+    if (normalized.startsWith("round")) {
+      return "border border-[#D1D5DB] bg-[#E5E7EB] text-[#374151]";
+    }
+    if (normalized.includes("technical")) {
+      return "border border-[#CDEAF9] bg-[#E0F2FE] text-[#0369A1]";
+    }
+    if (normalized.includes("virtual")) {
+      return "border border-[#D9D6FE] bg-[#EDE9FE] text-[#4C1D95]";
+    }
+    return "border border-[#D6DCEA] bg-white text-[#5E7397]";
+  };
+
+  const formatSlotDate = (raw: string | undefined): string => {
+    const value = raw?.trim();
+    if (!value) return "—";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    return dt.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+  };
+
+  const formatSlotTime = (
+    slot: InterviewSlotOptionApi & { slot_timezone?: string }
+  ): string => {
+    const time = slot.slot_time?.trim() || "—";
+    const tz = slot.slot_timezone?.trim() || "";
+    if (tz === "Asia/Kolkata") return `${time} IST (UTC +5.30)`;
+    return tz ? `${time} ${tz}` : time;
+  };
+
   useEffect(() => {
     if (!open || !isInterviewScheduled || !action) return;
 
     let cancelled = false;
+    const effectiveProfileId = profileId?.trim() || getProfileName()?.trim() || "";
+
+    // Actionables often return interview_slots without info.interview_id. Resolve the real Interview
+    // name via slot ownership probe + actionable record name (handles "Proposed" slots omitted from listing).
+    if (action.interviewSlots && action.interviewSlots.length > 0) {
+      setInterviewSlots(action.interviewSlots);
+      setInterviewSlotsError(null);
+      setInterviewSlotsLoading(true);
+      setSelectedInterviewSlot(action.interviewSlots[0].slot_id);
+
+      void (async () => {
+        try {
+          let resolved: string | null = null;
+          if (effectiveProfileId && action.jobDocumentId?.trim()) {
+            resolved = await resolveInterviewIdBySlotOwnership({
+              profileId: effectiveProfileId,
+              jobId: action.jobDocumentId.trim(),
+              slotId: action.interviewSlots![0].slot_id,
+              explicitInterviewId: action.interviewId,
+              actionableRecordName: action.proposalName,
+            });
+          }
+          if (cancelled) return;
+          const finalId =
+            resolved ??
+            coalesceInterviewDocumentId({
+              explicitInterviewId: action.interviewId,
+              resolvedFromProfile: null,
+              actionableRecordName: action.proposalName,
+            });
+          setResolvedInterviewId(finalId);
+          if (!finalId) {
+            setInterviewSlotsError(
+              "Could not resolve the interview for this slot. Load your profile on the dashboard and try again."
+            );
+          }
+        } catch (e) {
+          if (!cancelled) {
+            const fallbackOnly = coalesceInterviewDocumentId({
+              explicitInterviewId: action.interviewId,
+              resolvedFromProfile: null,
+              actionableRecordName: action.proposalName,
+            });
+            setResolvedInterviewId(fallbackOnly);
+            if (!fallbackOnly) {
+              setInterviewSlotsError(
+                e instanceof Error ? e.message : "Could not resolve interview for this job."
+              );
+            }
+          }
+        } finally {
+          if (!cancelled) setInterviewSlotsLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
     void (async () => {
       setInterviewSlotsLoading(true);
       setInterviewSlotsError(null);
       try {
-        let interviewId = action.interviewId?.trim() || null;
-        if (!interviewId && profileId?.trim() && action.jobDocumentId?.trim()) {
-          const list = await getInterviewsByProfile(profileId.trim());
+        let fromProfile: string | null = null;
+        if (effectiveProfileId && action.jobDocumentId?.trim()) {
+          const list = await getInterviewsByProfile(effectiveProfileId);
           if (cancelled) return;
-          interviewId = resolveInterviewIdForJob(list, action.jobDocumentId.trim());
+          fromProfile = resolveInterviewIdForJob(list, action.jobDocumentId.trim());
         }
         if (cancelled) return;
+        const interviewId = coalesceInterviewDocumentId({
+          explicitInterviewId: action.interviewId,
+          resolvedFromProfile: fromProfile,
+          actionableRecordName: action.proposalName,
+        });
         setResolvedInterviewId(interviewId);
         if (!interviewId) {
           setInterviewSlots([]);
@@ -202,7 +329,9 @@ export default function ActionDrawer({
     isInterviewScheduled,
     action?.id,
     action?.interviewId,
+    action?.interviewSlots,
     action?.jobDocumentId,
+    action?.proposalName,
     profileId,
   ]);
 
@@ -257,6 +386,11 @@ export default function ActionDrawer({
       !resolvedInterviewId ||
       interviewSlots.length === 0 ||
       !selectedInterviewSlot);
+  const primarySubmitDisabled = Boolean(
+    isSubmitting ||
+      hasSubmitted ||
+      (isInterviewScheduled && interviewSubmitDisabled)
+  );
   const resolvedMatchPercent = rrDetails?.match_score != null
     ? `${Math.round(rrDetails.match_score)}%`
     : actionDrawerJobSummary.matchPercentLabel;
@@ -357,10 +491,10 @@ export default function ActionDrawer({
       </h3>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {actionDrawerInterview.tags.map((tag) => (
+        {resolveInterviewTags().map((tag) => (
           <span
             key={tag}
-            className="rounded border border-[#D6DCEA] bg-white px-2.5 py-1 text-[11px] text-[#5E7397] sm:px-3 sm:py-1.5 sm:text-xs"
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium sm:px-3 sm:py-1.5 sm:text-xs ${getInterviewTagClassName(tag)}`}
           >
             {tag}
           </span>
@@ -398,10 +532,10 @@ export default function ActionDrawer({
                 </label>
                 <span className="text-xs text-[#202939] sm:text-sm">{slot.label}</span>
                 <span className="text-xs text-[#202939] sm:text-sm">
-                  {slot.slot_date || "—"}
+                  {formatSlotDate(slot.slot_date)}
                 </span>
                 <span className="text-xs leading-snug text-[#202939] sm:text-sm">
-                  {slot.slot_time || "—"}
+                  {formatSlotTime(slot)}
                 </span>
               </div>
             ))}
@@ -422,11 +556,11 @@ export default function ActionDrawer({
                     <p className="font-semibold text-[#202939]">{slot.label}</p>
                     <p>
                       <span className="text-[#5E7397]">{actionDrawerInterview.mobileDatePrefix} </span>
-                      <span className="font-medium">{slot.slot_date || "—"}</span>
+                      <span className="font-medium">{formatSlotDate(slot.slot_date)}</span>
                     </p>
                     <p>
                       <span className="text-[#5E7397]">{actionDrawerInterview.mobileTimePrefix} </span>
-                      <span className="font-medium">{slot.slot_time || "—"}</span>
+                      <span className="font-medium">{formatSlotTime(slot)}</span>
                     </p>
                   </div>
                 </label>
@@ -531,7 +665,8 @@ export default function ActionDrawer({
   };
 
   const renderTimelineContent = () => (
-    isFirstRecruiterInterestCard ? (
+    // Recruiter Interest: timeline should show the empty state.
+    isRecruiterInterestReceived ? (
       <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-[#F8FAFD] px-6 py-10 sm:min-h-[220px] sm:py-12">
         <Image
           width={40}
@@ -552,13 +687,15 @@ export default function ActionDrawer({
           <div className="min-w-0 flex-1">
             <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
               {isInterviewScheduled
-                ? actionDrawerTimeline.milestoneTitles.interview
+                ? "Recruiter Interest Accepted"
                 : isSalaryNegotiation
                   ? actionDrawerTimeline.milestoneTitles.salary
                   : actionDrawerTimeline.milestoneTitles.default}
             </h4>
             <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
-              {actionDrawerTimeline.milestoneDate}
+              {isInterviewScheduled
+                ? action?.sourcingAcceptedAt || actionDrawerTimeline.milestoneDate
+                : actionDrawerTimeline.milestoneDate}
             </p>
           </div>
         </div>
@@ -673,7 +810,11 @@ export default function ActionDrawer({
       setIsSubmitting(true);
       let ok = true;
       if (isInterviewScheduled) {
-        const interviewId = resolvedInterviewId ?? action.interviewId?.trim() ?? undefined;
+        const interviewId = pickInterviewIdForSlotSubmit({
+          resolvedInterviewId,
+          explicitCardInterviewId: action.interviewId,
+          actionableRecordName: action.proposalName,
+        });
         const result = await Promise.resolve(
           onPrimaryAction?.(action, {
             interviewId,
@@ -720,7 +861,7 @@ export default function ActionDrawer({
     <div className="flex justify-end">
       <button
         type="button"
-        disabled={Boolean((isInterviewScheduled && interviewSubmitDisabled) || isSubmitting || hasSubmitted)}
+        disabled={primarySubmitDisabled}
         onClick={runPrimaryAction}
         className={`rounded-md bg-[#1447E6] text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50 ${
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"

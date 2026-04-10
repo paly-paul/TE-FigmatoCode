@@ -67,6 +67,8 @@ type FormErrors = {
   projects?: Record<string, ProjectFieldErrors>;
 };
 
+type JsonRecord = Record<string, unknown>;
+
 // const SKILL_OPTIONS = [
 //   "React",
 //   "Next.js",
@@ -920,6 +922,14 @@ function SkillsProjectsPageContent() {
       return;
     }
 
+    if (!profileName) {
+      const resolved = await resolveProfileNameByEmail(email);
+      if (resolved) {
+        profileName = resolved;
+        setProfileName(resolved);
+      }
+    }
+
     const keySkills = dedupeSkills([
       ...skills,
       ...tools.map((tool) => tool.tool.trim()).filter(Boolean),
@@ -947,6 +957,104 @@ function SkillsProjectsPageContent() {
       }))
       .filter((entry) => entry.company || entry.role || entry.from_date || entry.to_date);
 
+    const nextProfilePayload = {
+      full_name: fullName || undefined,
+      email,
+      first_name: firstName || undefined,
+      last_name: lastName || undefined,
+      dob: storedProfile?.dob?.trim() || undefined,
+      gender: storedProfile?.gender?.trim() || undefined,
+      country_code: storedProfile?.countryCode?.trim() || undefined,
+      phone: storedProfile?.phone?.trim() || undefined,
+      alt_email: storedProfile?.altEmail?.trim() || undefined,
+      nationality: storedProfile?.nationality?.trim() || undefined,
+      current_location: storedProfile?.currentLocation?.trim() || undefined,
+    };
+
+    const nextProfileVersionPayload = {
+      professional_title: storedProfile?.professionalTitle?.trim() || undefined,
+      experience_years: storedProfile?.experienceYears?.trim() || undefined,
+      experience_months: storedProfile?.experienceMonths?.trim() || undefined,
+      salary_per_month: storedProfile?.salaryPerMonth?.trim() || undefined,
+      salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
+      summary: storedProfile?.summary?.trim() || undefined,
+      preferred_location: storedProfile?.preferredLocation?.trim() || undefined,
+      key_skills: keySkills.length ? keySkills : undefined,
+      work_experience: workExperience.length ? workExperience : undefined,
+      education_details: educationDetails.length ? educationDetails : undefined,
+      certifications: storedProfile?.certifications?.length
+        ? storedProfile.certifications
+            .map((entry) => ({
+              name: entry.name?.trim() || undefined,
+              issuing: entry.issuing?.trim() || undefined,
+              certificate_number: entry.certificateNumber?.trim() || undefined,
+              issue_date: entry.issueDate?.trim() || undefined,
+              expiration_date: entry.expirationDate?.trim() || undefined,
+              url: entry.url?.trim() || undefined,
+            }))
+            .filter((entry) =>
+              entry.name ||
+              entry.issuing ||
+              entry.certificate_number ||
+              entry.issue_date ||
+              entry.expiration_date ||
+              entry.url
+            )
+        : undefined,
+      external_links: storedProfile?.externalLinks?.length
+        ? storedProfile.externalLinks
+            .map((entry) => ({
+              label: entry.label?.trim() || undefined,
+              url: entry.url?.trim() || undefined,
+            }))
+            .filter((entry) => entry.label || entry.url)
+        : undefined,
+      languages: storedProfile?.languages?.length
+        ? storedProfile.languages
+            .map((entry) => ({
+              language: entry.language?.trim() || undefined,
+              read: entry.read?.trim() || undefined,
+              write: entry.write?.trim() || undefined,
+              speak: entry.speak?.trim() || undefined,
+            }))
+            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+        : undefined,
+    };
+
+    const existingEnvelope = profileName ? await fetchExistingProfileEnvelope(profileName) : null;
+    const mergedProfilePayload = mergeWithExistingObject(
+      existingEnvelope?.profile ?? {},
+      nextProfilePayload as JsonRecord
+    );
+    const mergedProfileVersionPayload = mergeWithExistingObject(
+      existingEnvelope?.profile_version ?? {},
+      nextProfileVersionPayload as JsonRecord
+    );
+
+    const mergedKeySkills = mergeKeySkillRows(
+      existingEnvelope?.profile_version?.key_skills,
+      keySkills.length ? keySkills : undefined
+    );
+    if (mergedKeySkills) {
+      mergedProfileVersionPayload.key_skills = mergedKeySkills;
+    }
+
+    const mergedWorkExperience = mergeObjectArrayRows(
+      existingEnvelope?.profile_version?.work_experience,
+      workExperience.length ? workExperience : undefined
+    );
+    if (mergedWorkExperience) {
+      mergedProfileVersionPayload.work_experience = mergedWorkExperience;
+    }
+
+    const mergedEducationDetails = mergeObjectArrayRows(
+      existingEnvelope?.profile_version?.education_details,
+      educationDetails.length ? educationDetails : undefined
+    );
+    if (mergedEducationDetails) {
+      mergedProfileVersionPayload.education_details = mergedEducationDetails;
+    }
+
     setIsSubmittingProfile(true);
     try {
       const response = await saveProfile({
@@ -959,71 +1067,12 @@ function SkillsProjectsPageContent() {
         key_skills: keySkills.length ? keySkills : undefined,
         work_experience: workExperience.length ? workExperience : undefined,
         education_details: educationDetails.length ? educationDetails : undefined,
-        profile: {
-          full_name: fullName || undefined,
-          email,
-          first_name: firstName || undefined,
-          last_name: lastName || undefined,
-          dob: storedProfile?.dob?.trim() || undefined,
-          gender: storedProfile?.gender?.trim() || undefined,
-          country_code: storedProfile?.countryCode?.trim() || undefined,
-          phone: storedProfile?.phone?.trim() || undefined,
-          alt_email: storedProfile?.altEmail?.trim() || undefined,
-          nationality: storedProfile?.nationality?.trim() || undefined,
-          current_location: storedProfile?.currentLocation?.trim() || undefined,
-        },
-        profile_version: {
-          professional_title: storedProfile?.professionalTitle?.trim() || undefined,
-          experience_years: storedProfile?.experienceYears?.trim() || undefined,
-          experience_months: storedProfile?.experienceMonths?.trim() || undefined,
-          salary_per_month: storedProfile?.salaryPerMonth?.trim() || undefined,
-          salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
-          summary: storedProfile?.summary?.trim() || undefined,
-          preferred_location: storedProfile?.preferredLocation?.trim() || undefined,
-          key_skills: keySkills.length ? keySkills : undefined,
-          work_experience: workExperience.length ? workExperience : undefined,
-          education_details: educationDetails.length ? educationDetails : undefined,
-          certifications: storedProfile?.certifications?.length
-            ? storedProfile.certifications
-                .map((entry) => ({
-                  name: entry.name?.trim() || undefined,
-                  issuing: entry.issuing?.trim() || undefined,
-                  certificate_number: entry.certificateNumber?.trim() || undefined,
-                  issue_date: entry.issueDate?.trim() || undefined,
-                  expiration_date: entry.expirationDate?.trim() || undefined,
-                  url: entry.url?.trim() || undefined,
-                }))
-                .filter((entry) =>
-                  entry.name ||
-                  entry.issuing ||
-                  entry.certificate_number ||
-                  entry.issue_date ||
-                  entry.expiration_date ||
-                  entry.url
-                )
-            : undefined,
-          external_links: storedProfile?.externalLinks?.length
-            ? storedProfile.externalLinks
-                .map((entry) => ({
-                  label: entry.label?.trim() || undefined,
-                  url: entry.url?.trim() || undefined,
-                }))
-                .filter((entry) => entry.label || entry.url)
-            : undefined,
-          languages: storedProfile?.languages?.length
-            ? storedProfile.languages
-                .map((entry) => ({
-                  language: entry.language?.trim() || undefined,
-                  read: entry.read?.trim() || undefined,
-                  write: entry.write?.trim() || undefined,
-                  speak: entry.speak?.trim() || undefined,
-                }))
-                .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-            : undefined,
-        },
+        profile: mergedProfilePayload,
+        profile_version: mergedProfileVersionPayload,
         action: "submit",
       });
 
+      const linkedProfileFromServerMessage = extractLinkedProfileIdFromServerMessages(response);
       const messageRoot =
         response.message && typeof response.message === "object"
           ? (response.message as Record<string, unknown>)
@@ -1032,10 +1081,9 @@ function SkillsProjectsPageContent() {
         (typeof response.profile_name === "string" && response.profile_name.trim()) ||
         (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
         "";
+      const effectiveProfileName = linkedProfileFromServerMessage || savedProfileName || profileName;
 
-      if (savedProfileName) {
-        profileName = savedProfileName;
-      }
+      if (effectiveProfileName) profileName = effectiveProfileName;
 
       if (profileName) {
         setProfileName(profileName);
@@ -1979,6 +2027,136 @@ function SkillsProjectsPageContent() {
       ) : null}
     </div>
   );
+}
+
+async function resolveProfileNameByEmail(email: string): Promise<string> {
+  const normalized = email.trim();
+  if (!normalized) return "";
+  try {
+    const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    resolverUrl.searchParams.set("email", normalized);
+    const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
+    if (!resolverRes.ok) return "";
+    const resolverData = (await resolverRes.json()) as { profile_name?: string };
+    return resolverData.profile_name?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+async function fetchExistingProfileEnvelope(profileName: string): Promise<{
+  profile?: JsonRecord;
+  profile_version?: JsonRecord;
+} | null> {
+  if (!profileName.trim()) return null;
+  try {
+    const rawRes = await fetch("/api/method/get_data/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doctype: "Profile", name: profileName }),
+    });
+    if (!rawRes.ok) return null;
+    const raw = (await rawRes.json()) as JsonRecord;
+    const root =
+      (raw.data as JsonRecord | undefined) ||
+      ((raw.message as JsonRecord | undefined)?.data as JsonRecord | undefined) ||
+      (raw.message as JsonRecord | undefined) ||
+      raw;
+    const profile =
+      root && typeof root === "object" && !Array.isArray(root)
+        ? (root as JsonRecord)
+        : undefined;
+    const profileVersion =
+      profile?.profile_version && typeof profile.profile_version === "object" && !Array.isArray(profile.profile_version)
+        ? (profile.profile_version as JsonRecord)
+        : undefined;
+    return { profile, profile_version: profileVersion };
+  } catch {
+    return null;
+  }
+}
+
+function mergeWithExistingObject(existing: JsonRecord, next: JsonRecord): JsonRecord {
+  const merged: JsonRecord = { ...existing, ...next };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined || value === null || value === "") {
+      if (existing[key] !== undefined) {
+        merged[key] = existing[key];
+      } else {
+        delete merged[key];
+      }
+    }
+  }
+  return merged;
+}
+
+function mergeObjectArrayRows(existing: unknown, next: unknown): JsonRecord[] | undefined {
+  const normalize = (rows: unknown): JsonRecord[] =>
+    Array.isArray(rows)
+      ? rows
+          .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+          .map((row) => row as JsonRecord)
+      : [];
+
+  const existingRows = normalize(existing);
+  const nextRows = normalize(next);
+  if (!existingRows.length && !nextRows.length) return undefined;
+
+  const seen = new Set<string>();
+  const merged: JsonRecord[] = [];
+  for (const row of [...existingRows, ...nextRows]) {
+    const signature = JSON.stringify(row);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    merged.push(row);
+  }
+  return merged.length ? merged : undefined;
+}
+
+function mergeKeySkillRows(existing: unknown, next: unknown): Array<{ key_skill: string }> | undefined {
+  const extract = (rows: unknown): string[] =>
+    Array.isArray(rows)
+      ? rows
+          .map((row) => {
+            if (!row || typeof row !== "object") return "";
+            const value = (row as { key_skill?: unknown }).key_skill;
+            return typeof value === "string" ? value.trim() : "";
+          })
+          .filter(Boolean)
+      : [];
+
+  const merged = dedupeSkills([...extract(existing), ...extract(next)]);
+  return merged.length ? merged.map((key_skill) => ({ key_skill })) : undefined;
+}
+
+function extractLinkedProfileIdFromServerMessages(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const record = raw as Record<string, unknown>;
+  const serverMessagesRaw = typeof record._server_messages === "string" ? record._server_messages : "";
+  if (!serverMessagesRaw.trim()) return "";
+
+  try {
+    const arr = JSON.parse(serverMessagesRaw) as unknown;
+    if (!Array.isArray(arr)) return "";
+    for (const entry of arr) {
+      if (typeof entry !== "string") continue;
+      let text = entry;
+      try {
+        const decoded = JSON.parse(entry) as { message?: unknown };
+        if (typeof decoded.message === "string" && decoded.message.trim()) {
+          text = decoded.message;
+        }
+      } catch {
+        // keep raw string
+      }
+      const linkedMatch = text.match(/\balready linked to profile\s+((?:PR|PROF)-[A-Za-z0-9-]+)\b/i);
+      if (linkedMatch?.[1]) return linkedMatch[1];
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
 }
 
 export default function SkillsProjectsPage() {

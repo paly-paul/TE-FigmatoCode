@@ -42,6 +42,7 @@ export type CandidateActionableApi = {
   rr_candidate: string;
   stage: string;
   status: string;
+  /** Doc name for this actionable row: Interview id (e.g. INT-00001) when stage is interview; proposal id when selection/proposal. */
   name: string;
   info?: CandidateActionableInfoApi;
 };

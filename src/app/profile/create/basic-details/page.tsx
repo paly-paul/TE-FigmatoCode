@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
@@ -483,6 +483,7 @@ function buildGeneratedSummaryFromProfile(
 
 export default function BasicDetailsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const generateButtonRef = useRef<HTMLButtonElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [lookingForJob, setLookingForJob] = useState(true);
@@ -1047,7 +1048,11 @@ export default function BasicDetailsPage() {
         // ignore storage errors
       }
     }
-    router.push("/profile/create/skills-projects");
+    const queryProfileName = searchParams.get("profile_name")?.trim() || getProfileName() || "";
+    const nextUrl = queryProfileName
+      ? `/profile/create/skills-projects?profile_name=${encodeURIComponent(queryProfileName)}`
+      : "/profile/create/skills-projects";
+    router.push(nextUrl);
   }
 
   return (
