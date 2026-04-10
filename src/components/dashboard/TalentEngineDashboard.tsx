@@ -381,96 +381,21 @@ export default function TalentEngineDashboard() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const lastStageByActionableNameRef = useRef<Map<string, string>>(new Map());
+  const selectionSideEffectFiredRef = useRef<Set<string>>(new Set());
+  const refreshInFlightRef = useRef(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const refreshDashboardData = async (input: {
+    candidateId: string | null;
+    profileName: string | null;
+  }) => {
+    const currentCandidateId = input.candidateId?.trim() || "";
+    const profileName = input.profileName?.trim() || "";
+
+    // Avoid overlapping refreshes (interval + focus events).
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     try {
-      if (window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1") {
-        window.sessionStorage.removeItem(DASHBOARD_WELCOME_PENDING_KEY);
-        setWelcomeUserName(getResolvedNavDisplayName());
-        setWelcomeModalOpen(true);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    const currentCandidateId = getCandidateId();
-    const profileName = getProfileName();
-    setCandidateId(currentCandidateId);
-    setProfileId(profileName);
-    const storageKey = currentCandidateId
-      ? `${APPLIED_JOBS_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-    const sourcingAcceptedKey = currentCandidateId
-      ? `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-    const localActionablesKey = currentCandidateId
-      ? `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-
-    if (storageKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const hydrated = parsed.filter((row): row is JobListing => {
-              return typeof row === "object" && row !== null;
-            });
-            setLocalAppliedJobs(hydrated);
-            const ids = hydrated
-              .map((j) => j.jobDocumentId)
-              .filter((v): v is string => Boolean(v?.trim()));
-            setAppliedJobDocumentIds(new Set(ids));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (sourcingAcceptedKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(sourcingAcceptedKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const names = parsed
-              .filter((v): v is string => typeof v === "string")
-              .map((v) => v.trim())
-              .filter(Boolean);
-            setSourcingAcceptedRrCandidates(new Set(names));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (localActionablesKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(localActionablesKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const rows = parsed.filter(
-              (row): row is LocalActionableSnapshot =>
-                typeof row === "object" &&
-                row !== null &&
-                typeof (row as LocalActionableSnapshot).job_id === "string" &&
-                typeof (row as LocalActionableSnapshot).job_title === "string"
-            );
-            setLocalAcceptedActionables(rows);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    void (async () => {
       if (currentCandidateId) {
         try {
           const applicationsRes = await getJobApplications(currentCandidateId);
@@ -507,6 +432,30 @@ export default function TalentEngineDashboard() {
           getCandidateActionables(profileName),
           getRecommendedJobs(profileName),
         ]);
+
+        // Best-effort side effect: when an actionable transitions into "Selection",
+        // trigger the proposal negotiation endpoint once.
+        for (const item of actionablesRes.actions) {
+          const actionableName = (item.name || "").trim();
+          if (!actionableName) continue;
+          const stageText = `${item.stage} ${item.status}`.toLowerCase();
+          const isSelection = stageText.includes("selection");
+          const prevStageText = lastStageByActionableNameRef.current.get(actionableName) || "";
+
+          if (
+            isSelection &&
+            !prevStageText.includes("selection") &&
+            !selectionSideEffectFiredRef.current.has(actionableName)
+          ) {
+            void postProposalCandidateNegotiation(
+              actionableName,
+              "Candidate moved to Selection stage."
+            );
+            selectionSideEffectFiredRef.current.add(actionableName);
+          }
+
+          lastStageByActionableNameRef.current.set(actionableName, stageText);
+        }
 
         const localAcceptedAtByJob = new Map<string, string>();
         for (const row of localAcceptedActionables) {
@@ -600,8 +549,136 @@ export default function TalentEngineDashboard() {
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       }
-    })();
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1") {
+        window.sessionStorage.removeItem(DASHBOARD_WELCOME_PENDING_KEY);
+        setWelcomeUserName(getResolvedNavDisplayName());
+        setWelcomeModalOpen(true);
+      }
+    } catch {
+      // ignore
+    }
   }, []);
+
+  useEffect(() => {
+    const currentCandidateId = getCandidateId();
+    const profileName = getProfileName();
+    setCandidateId(currentCandidateId);
+    setProfileId(profileName);
+    const storageKey = currentCandidateId
+      ? `${APPLIED_JOBS_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+    const sourcingAcceptedKey = currentCandidateId
+      ? `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+    const localActionablesKey = currentCandidateId
+      ? `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+
+    if (storageKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const hydrated = parsed.filter((row): row is JobListing => {
+              return typeof row === "object" && row !== null;
+            });
+            setLocalAppliedJobs(hydrated);
+            const ids = hydrated
+              .map((j) => j.jobDocumentId)
+              .filter((v): v is string => Boolean(v?.trim()));
+            setAppliedJobDocumentIds(new Set(ids));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (sourcingAcceptedKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(sourcingAcceptedKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const names = parsed
+              .filter((v): v is string => typeof v === "string")
+              .map((v) => v.trim())
+              .filter(Boolean);
+            setSourcingAcceptedRrCandidates(new Set(names));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (localActionablesKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(localActionablesKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const rows = parsed.filter(
+              (row): row is LocalActionableSnapshot =>
+                typeof row === "object" &&
+                row !== null &&
+                typeof (row as LocalActionableSnapshot).job_id === "string" &&
+                typeof (row as LocalActionableSnapshot).job_title === "string"
+            );
+            setLocalAcceptedActionables(rows);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    void refreshDashboardData({ candidateId: currentCandidateId, profileName });
+  }, []);
+
+  // Auto-refresh: keep actionables/recommendations up to date without needing a full remount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!candidateId && !profileId) return;
+
+    const run = () => {
+      const latestCandidateId = getCandidateId();
+      const latestProfileName = getProfileName();
+      // If auth session values changed without remount, sync state.
+      if (latestCandidateId !== candidateId) setCandidateId(latestCandidateId);
+      if (latestProfileName !== profileId) setProfileId(latestProfileName);
+      void refreshDashboardData({
+        candidateId: latestCandidateId,
+        profileName: latestProfileName,
+      });
+    };
+
+    // Refresh on focus / when returning to tab.
+    const onFocus = () => run();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") run();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    // Poll periodically (tuned to be responsive but not chatty).
+    const interval = window.setInterval(run, 30_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(interval);
+    };
+  }, [candidateId, profileId]);
 
   useEffect(() => {
     if (!candidateId || typeof window === "undefined") return;

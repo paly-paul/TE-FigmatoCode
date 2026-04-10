@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
     Award,
     BriefcaseBusiness,
@@ -43,6 +44,42 @@ import { getCandidateProfileData } from "@/services/profile/getCandidateProfile"
 import { getProfileName } from "@/lib/authSession";
 import type { ResumeProfileData } from "@/types/profile";
 
+const EMPTY_PROFILE: ProfileData = {
+    ...PROFILE_FALLBACK,
+    name: "",
+    title: "",
+    location: "",
+    phone: "",
+    github: "#",
+    linkedin: "#",
+    website: "#",
+    summary: "",
+    experience: "",
+    salary: "",
+    persona: "",
+    personalInfo: {
+        dob: "",
+        gender: "",
+        emails: [],
+        nationality: "",
+        currentLocation: "",
+        preferredLocation: "",
+    },
+    education: {
+        degree: "",
+        school: "",
+        specialization: "",
+        graduationYear: "",
+        score: "",
+    },
+    languages: [],
+    skills: [],
+    certifications: [],
+    experienceItems: [],
+    tools: [],
+    projects: [],
+};
+
 function parseMaybeDate(value: string | undefined): string {
     if (!value?.trim()) return "";
     const dt = new Date(value);
@@ -60,12 +97,28 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
     const github = links.find((l) => (l.label || "").toLowerCase().includes("github"))?.url || fallback.github;
     const linkedin = links.find((l) => (l.label || "").toLowerCase().includes("linkedin"))?.url || fallback.linkedin;
     const website = links.find((l) => (l.label || "").toLowerCase().includes("web"))?.url || links[0]?.url || fallback.website;
+    const experienceYears = Number.parseInt(resume.experienceYears || "0", 10) || 0;
+    const fallbackExperienceYears = experienceYears || 1;
+    const experienceItems =
+        resume.workExperience?.length
+            ? resume.workExperience.map((item, idx) => ({
+                id: `exp-${idx + 1}`,
+                title: [item.jobTitle, item.company].filter(Boolean).join(" @ ") || `Experience ${idx + 1}`,
+                years: fallbackExperienceYears,
+            }))
+            : resume.projects?.length
+                ? resume.projects.map((project, idx) => ({
+                    id: `exp-project-${idx + 1}`,
+                    title: [project.projectTitle, project.customerCompany].filter(Boolean).join(" @ ") || `Experience ${idx + 1}`,
+                    years: fallbackExperienceYears,
+                }))
+                : fallback.experienceItems;
 
     return {
         ...fallback,
         name: fullName || fallback.name,
         title: resume.professionalTitle || fallback.title,
-        location: resume.currentLocation || fallback.location,
+        location: resume.currentLocation || resume.preferredLocation || fallback.location,
         phone: resume.phone || fallback.phone,
         github,
         linkedin,
@@ -108,18 +161,13 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
                 issued: parseMaybeDate(cert.issueDate) || "Issued",
                 expiry: cert.expirationDate ? parseMaybeDate(cert.expirationDate) : null,
             })) || fallback.certifications,
-        experienceItems:
-            resume.workExperience?.map((item, idx) => ({
-                id: `exp-${idx + 1}`,
-                title: item.jobTitle || item.company || `Experience ${idx + 1}`,
-                years: Number.parseInt(resume.experienceYears || "0", 10) || 1,
-            })) || fallback.experienceItems,
+        experienceItems,
         tools:
-            (resume.tools || []).map((tool, idx) => ({
+            (resume.tools?.length ? resume.tools : []).map((tool, idx) => ({
                 id: `tool-${idx + 1}`,
                 name: tool,
-                years: Number.parseInt(resume.experienceYears || "0", 10) || 1,
-            })) || fallback.tools,
+                years: fallbackExperienceYears,
+            })),
         projects:
             resume.projects?.map((project, idx) => ({
                 id: `project-${idx + 1}`,
@@ -136,8 +184,9 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
 }
 
 export default function MyProfilePage() {
+    const router = useRouter();
     const isMobile = useIsMobile();
-    const [profileData, setProfileData] = useState<ProfileData>(PROFILE_FALLBACK);
+    const [profileData, setProfileData] = useState<ProfileData>(EMPTY_PROFILE);
     const [activeProfile, setActiveProfile] = useState(true);
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
     const [mobileTab, setMobileTab] = useState<"about" | "professional" | "personal">("about");
@@ -159,15 +208,23 @@ export default function MyProfilePage() {
         void (async () => {
             try {
                 const data = await getCandidateProfileData(profileId);
-                setProfileData(toProfileData(data, PROFILE_FALLBACK));
+                setProfileData(toProfileData(data, EMPTY_PROFILE));
             } catch {
-                // Keep fallback profile if API fails.
+                // Keep empty profile if API fails.
             }
         })();
     }, []);
 
     const toggleSection = (key: keyof typeof openSections) => {
         setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const handleEditProfile = () => {
+        const profileName = getProfileName();
+        const destination = profileName?.trim()
+            ? `/profile/create/basic-details?profile_name=${encodeURIComponent(profileName)}`
+            : "/profile/create/basic-details";
+        router.push(destination);
     };
 
     const renderAccordionHeader = (
@@ -212,6 +269,7 @@ export default function MyProfilePage() {
                             </button>
                             <button
                                 type="button"
+                                onClick={handleEditProfile}
                                 className="bg-[#174EE7] px-5 py-2.5 text-[14px] font-medium text-white"
                             >
                                 Edit Profile
@@ -724,6 +782,7 @@ export default function MyProfilePage() {
 
                                         <button
                                             type="button"
+                                            onClick={handleEditProfile}
                                             className="bg-[#174ee7] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#103ec1] sm:px-5"
                                         >
                                             Edit Profile

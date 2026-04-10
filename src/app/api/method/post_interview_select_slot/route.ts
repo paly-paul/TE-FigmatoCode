@@ -16,13 +16,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const interviewId =
-    typeof body.interview_id === "string" ? body.interview_id.trim() : "";
-  const slotId = typeof body.slot_id === "string" ? body.slot_id.trim() : "";
+  // Spec expects `interview_name` + `slot_name`.
+  // Accept legacy `interview_id` + `slot_id` for older clients.
+  const interviewName =
+    typeof body.interview_name === "string"
+      ? body.interview_name.trim()
+      : typeof body.interview_id === "string"
+        ? body.interview_id.trim()
+        : "";
+  const slotName =
+    typeof body.slot_name === "string"
+      ? body.slot_name.trim()
+      : typeof body.slot_id === "string"
+        ? body.slot_id.trim()
+        : "";
 
-  if (!interviewId || !slotId) {
+  if (!interviewName || !slotName) {
     return NextResponse.json(
-      { error: "interview_id and slot_id are required." },
+      { error: "interview_name and slot_name are required." },
       { status: 400 }
     );
   }
@@ -38,7 +49,7 @@ export async function POST(request: Request) {
   const upstream = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({ interview_id: interviewId, slot_id: slotId }),
+    body: JSON.stringify({ interview_name: interviewName, slot_name: slotName }),
   });
 
   const text = await upstream.text();

@@ -791,6 +791,70 @@ function BasicDetailsPageContent() {
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
+
+    // Persist manual edits immediately so the final "Finish" step
+    // (which reads from session via readResumeProfile) includes them.
+    const trimmed = typeof value === "string" ? value.trim() : value;
+    const patch: ResumeProfileData = {};
+    switch (key) {
+      case "professionalTitle":
+        patch.professionalTitle = trimmed || undefined;
+        break;
+      case "expYears":
+        patch.experienceYears = trimmed || undefined;
+        break;
+      case "expMonths":
+        patch.experienceMonths = trimmed || undefined;
+        break;
+      case "salary":
+        patch.salaryPerMonth = trimmed || undefined;
+        break;
+      case "salaryCurrency":
+        patch.salaryCurrency = trimmed || undefined;
+        break;
+      case "summary":
+        patch.summary = trimmed || undefined;
+        break;
+      case "firstName":
+        patch.firstName = trimmed || undefined;
+        break;
+      case "lastName":
+        patch.lastName = trimmed || undefined;
+        break;
+      case "dob":
+        patch.dob = value || undefined;
+        break;
+      case "gender":
+        patch.gender = trimmed || undefined;
+        break;
+      case "countryCode":
+        patch.countryCode = trimmed || undefined;
+        break;
+      case "contact":
+        patch.phone = trimmed || undefined;
+        break;
+      case "email":
+        patch.email = trimmed || undefined;
+        break;
+      case "altEmail":
+        patch.altEmail = trimmed || undefined;
+        break;
+      case "nationality":
+        patch.nationality = trimmed || undefined;
+        break;
+      case "currentLocation":
+        patch.currentLocation = trimmed || undefined;
+        break;
+      case "preferredLocation":
+        patch.preferredLocation = trimmed || undefined;
+        break;
+      default:
+        break;
+    }
+
+    if (Object.keys(patch).length) {
+      upsertResumeProfile(patch);
+    }
   }
 
   function validate(): boolean {

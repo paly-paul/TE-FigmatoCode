@@ -276,8 +276,10 @@ export async function postInterviewSelectSlot(
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      interview_id: interviewId.trim(),
-      slot_id: slotId.trim(),
+      // Backend expects `interview_name` + `slot_name` for this method.
+      // Keep legacy keys server-side for backwards compatibility.
+      interview_name: interviewId.trim(),
+      slot_name: slotId.trim(),
     }),
   });
   const data = await getJsonOrEmpty(res);

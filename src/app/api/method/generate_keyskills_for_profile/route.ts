@@ -105,9 +105,9 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const profileName = searchParams.get("profile_name")?.trim();
+  const profileName = (searchParams.get("profile") ?? searchParams.get("profile_name"))?.trim();
   if (!profileName) {
-    return NextResponse.json({ error: "profile_name is required." }, { status: 400 });
+    return NextResponse.json({ error: "profile is required." }, { status: 400 });
   }
 
 
@@ -117,7 +117,7 @@ export async function GET(request: Request) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.Cookie = cookie;
 
-  const url = `${backendBase}/api/method/generate_keyskills_for_profile?profile_name=${encodeURIComponent(profileName)}`;
+  const url = `${backendBase}/api/method/generate_keyskills_for_profile?profile=${encodeURIComponent(profileName)}`;
   const profileUrl = `${backendBase}/api/method/get_data?doctype=${encodeURIComponent("Profile")}&name=${encodeURIComponent(profileName)}`;
   const [{ response: upstream, data }, { response: profileResponse, data: profileData }] = await Promise.all([
     fetchJson(url, headers),
