@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
@@ -481,7 +481,7 @@ function buildGeneratedSummaryFromProfile(
   );
 }
 
-export default function BasicDetailsPage() {
+function BasicDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const generateButtonRef = useRef<HTMLButtonElement>(null);
@@ -2506,5 +2506,13 @@ export default function BasicDetailsPage() {
         </div>
       </BaseDrawer>
     </div>
+  );
+}
+
+export default function BasicDetailsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BasicDetailsPageContent />
+    </Suspense>
   );
 }
