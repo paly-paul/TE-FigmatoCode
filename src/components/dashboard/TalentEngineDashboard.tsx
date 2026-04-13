@@ -1258,7 +1258,7 @@ export default function TalentEngineDashboard() {
         userName={welcomeUserName}
         onClose={() => setWelcomeModalOpen(false)}
         onYesOpenToOpportunities={() => setIsLookingForJob(true)}
-        onNotRightNow={() => setIsLookingForJob(false)}
+        onNotRightNow={() => setShowPauseModal(true)}
       />
     </>
   );

@@ -8,6 +8,7 @@ import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { clearAuthSession, getProfileName } from "@/lib/authSession";
 import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
+import Image from "next/image";
 
 export default function AppNavbar() {
   const router = useRouter();
@@ -75,11 +76,18 @@ export default function AppNavbar() {
             onClick={() => router.push("/dashboard")}
             className="flex items-center gap-2 sm:gap-3"
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-tl-xl rounded-br-xl flex items-center justify-center">
+            {/* <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-tl-xl rounded-br-xl flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">TE</span>
-            </div>
+            </div> */}
+            <Image
+              src="/icons/logo.jpeg"
+              width={35}
+              height={35}
+              alt="SixFE Logo"
+            />
+            
             <span className="text-base sm:text-lg font-semibold text-gray-900">
-              Talent Engine
+              SixFE
             </span>
           </button>
 

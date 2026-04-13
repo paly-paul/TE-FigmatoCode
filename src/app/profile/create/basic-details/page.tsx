@@ -716,7 +716,7 @@ function BasicDetailsPageContent() {
         if (cancelled) return;
 
         const sessionProfile = readResumeProfile() ?? {};
-        const merged = { ...backendProfile, ...sessionProfile };
+        const merged = { ...sessionProfile, ...backendProfile };
 
         upsertResumeProfile(merged);
         applyProfileToForm(merged);
@@ -732,6 +732,35 @@ function BasicDetailsPageContent() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const section = searchParams.get("section")?.trim().toLowerCase();
+    if (!section) return;
+
+    const id =
+      section === "certifications"
+        ? "certifications-section"
+        : section === "education"
+          ? "education-section"
+          : section === "languages"
+            ? "languages-section"
+            : "";
+    if (!id) return;
+
+    if (isMobileViewport) {
+      setMobileAccordionOpen((prev) => ({
+        ...prev,
+        certifications: section === "certifications" ? true : prev.certifications,
+        education: section === "education" ? true : prev.education,
+        languages: section === "languages" ? true : prev.languages,
+      }));
+    }
+
+    const timer = window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [isMobileViewport, searchParams]);
 
   const isProfessionalSectionComplete = (() => {
     if (!form.professionalTitle.trim()) return false;
@@ -1068,27 +1097,27 @@ function BasicDetailsPageContent() {
       .filter((entry) => entry.language);
 
     const payload: ResumeProfileData = {
-      professionalTitle: form.professionalTitle.trim() || undefined,
-      experienceYears: form.expYears || undefined,
-      experienceMonths: form.expMonths || undefined,
-      salaryPerMonth: form.salary.trim() || undefined,
-      salaryCurrency: form.salaryCurrency || undefined,
-      summary: form.summary.trim() || undefined,
-      firstName: form.firstName.trim() || undefined,
-      lastName: form.lastName.trim() || undefined,
-      dob: form.dob || undefined,
-      gender: form.gender || undefined,
-      countryCode: form.countryCode || undefined,
-      phone: form.contact.trim() || undefined,
-      email: form.email.trim() || undefined,
-      altEmail: form.altEmail.trim() || undefined,
-      nationality: form.nationality || undefined,
-      currentLocation: form.currentLocation.trim() || undefined,
-      preferredLocation: form.preferredLocation.trim() || undefined,
-      education: trimmedEducation.length ? trimmedEducation : undefined,
-      certifications: trimmedCertifications.length ? trimmedCertifications : undefined,
-      externalLinks: trimmedLinks.length ? trimmedLinks : undefined,
-      languages: trimmedLanguages.length ? trimmedLanguages : undefined,
+      professionalTitle: form.professionalTitle.trim(),
+      experienceYears: form.expYears,
+      experienceMonths: form.expMonths,
+      salaryPerMonth: form.salary.trim(),
+      salaryCurrency: form.salaryCurrency,
+      summary: form.summary.trim(),
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      dob: form.dob,
+      gender: form.gender,
+      countryCode: form.countryCode,
+      phone: form.contact.trim(),
+      email: form.email.trim(),
+      altEmail: form.altEmail.trim(),
+      nationality: form.nationality,
+      currentLocation: form.currentLocation.trim(),
+      preferredLocation: form.preferredLocation.trim(),
+      education: trimmedEducation,
+      certifications: trimmedCertifications,
+      externalLinks: trimmedLinks,
+      languages: trimmedLanguages,
     };
 
     upsertResumeProfile(payload);
@@ -1112,9 +1141,13 @@ function BasicDetailsPageContent() {
         // ignore storage errors
       }
     }
-    const queryProfileName = searchParams.get("profile_name")?.trim() || getProfileName() || "";
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      getProfileName() ||
+      "";
     const nextUrl = queryProfileName
-      ? `/profile/create/skills-projects?profile_name=${encodeURIComponent(queryProfileName)}`
+      ? `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/skills-projects";
     router.push(nextUrl);
   }
@@ -1189,7 +1222,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">First Name</span>
+                      <span className="text-sm font-medium text-gray-800">First Name *</span>
                       <input
                         type="text"
                         value={form.firstName}
@@ -1203,7 +1236,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Last Name</span>
+                      <span className="text-sm font-medium text-gray-800">Last Name *</span>
                       <input
                         type="text"
                         value={form.lastName}
@@ -1219,7 +1252,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">DOB</span>
+                      <span className="text-sm font-medium text-gray-800">DOB *</span>
                       <input
                         type="date"
                         value={form.dob}
@@ -1230,7 +1263,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Gender</span>
+                      <span className="text-sm font-medium text-gray-800">Gender *</span>
                       <select
                         value={form.gender}
                         onChange={(e) => setField("gender", e.target.value)}
@@ -1250,7 +1283,7 @@ function BasicDetailsPageContent() {
                   </div>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Contact</span>
+                    <span className="text-sm font-medium text-gray-800">Contact *</span>
                     <div className="flex items-stretch gap-0 rounded-md overflow-hidden border border-gray-200 bg-white">
                       <select
                         value={form.countryCode}
@@ -1280,7 +1313,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Email</span>
+                    <span className="text-sm font-medium text-gray-800">Email *</span>
                     <input
                       type="email"
                       value={form.email}
@@ -1303,7 +1336,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Nationality</span>
+                    <span className="text-sm font-medium text-gray-800">Nationality *</span>
                       <select
                         value={form.nationality}
                         onChange={(e) => setField("nationality", e.target.value)}
@@ -1322,7 +1355,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Current Location</span>
+                    <span className="text-sm font-medium text-gray-800">Current Location *</span>
                     <div className="relative">
                       <input
                         type="text"
@@ -1365,7 +1398,7 @@ function BasicDetailsPageContent() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <label className="flex flex-col gap-2 md:col-span-1">
-                        <span className="text-sm font-medium text-gray-800">Professional Title</span>
+                        <span className="text-sm font-medium text-gray-800">Professional Title *</span>
                         <input
                           type="text"
                           value={form.professionalTitle}
@@ -1379,7 +1412,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Exp. Years</span>
+                        <span className="text-sm font-medium text-gray-800">Exp. Years *</span>
                         <select
                           value={form.expYears}
                           onChange={(e) => setField("expYears", e.target.value)}
@@ -1396,7 +1429,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Months</span>
+                        <span className="text-sm font-medium text-gray-800">Months *</span>
                         <select
                           value={form.expMonths}
                           onChange={(e) => setField("expMonths", e.target.value)}
@@ -1415,7 +1448,7 @@ function BasicDetailsPageContent() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Salary / Month</span>
+                        <span className="text-sm font-medium text-gray-800">Salary / Month *</span>
                         <input
                           type="text"
                           value={form.salary}
@@ -1427,7 +1460,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Salary Currency</span>
+                        <span className="text-sm font-medium text-gray-800">Salary Currency *</span>
                         <select
                           value={form.salaryCurrency}
                           onChange={(e) => setField("salaryCurrency", e.target.value)}
@@ -1447,7 +1480,7 @@ function BasicDetailsPageContent() {
 
                   <div className="border-t border-gray-200 pt-5 space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-gray-900">Summary</span>
+                      <span className="text-sm font-semibold text-gray-900">Summary *</span>
                       <button
                         ref={generateButtonRef}
                         type="button"
@@ -1485,7 +1518,7 @@ function BasicDetailsPageContent() {
                   }))
                 }
               >
-                <div className="p-4 sm:p-6 space-y-4">
+                <div id="education-section" className="p-4 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-500">Add degrees or diplomas you have completed</span>
                     <button
@@ -1583,7 +1616,7 @@ function BasicDetailsPageContent() {
                   }))
                 }
               >
-                <div className="p-4 sm:p-6 space-y-4">
+                <div id="certifications-section" className="p-4 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-500">List professional certificates you have earned</span>
                     <button
@@ -1690,7 +1723,7 @@ function BasicDetailsPageContent() {
                   }))
                 }
               >
-                <div className="p-4 sm:p-6 space-y-4">
+                <div id="languages-section" className="p-4 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-500">Share portfolios, GitHub, or other professional links</span>
                     <button
@@ -1866,7 +1899,7 @@ function BasicDetailsPageContent() {
           ) : (
             <>
           <div className="flex-1 min-w-0 space-y-5">
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section id="education-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Basic Details</h2>
               </div>
@@ -1875,7 +1908,7 @@ function BasicDetailsPageContent() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <label className="flex flex-col gap-2 md:col-span-1">
-                      <span className="text-sm font-medium text-gray-800">Professional Title</span>
+                      <span className="text-sm font-medium text-gray-800">Professional Title *</span>
                       <input
                         type="text"
                         value={form.professionalTitle}
@@ -1887,7 +1920,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Exp. Years</span>
+                      <span className="text-sm font-medium text-gray-800">Exp. Years *</span>
                       <select
                         value={form.expYears}
                         onChange={(e) => setField("expYears", e.target.value)}
@@ -1904,7 +1937,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Months</span>
+                      <span className="text-sm font-medium text-gray-800">Months *</span>
                       <select
                         value={form.expMonths}
                         onChange={(e) => setField("expMonths", e.target.value)}
@@ -1923,7 +1956,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Salary / Month</span>
+                      <span className="text-sm font-medium text-gray-800">Salary / Month *</span>
                       <input
                         type="text"
                         value={form.salary}
@@ -1935,7 +1968,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Salary Currency</span>
+                      <span className="text-sm font-medium text-gray-800">Salary Currency *</span>
                       <select
                         value={form.salaryCurrency}
                         onChange={(e) => setField("salaryCurrency", e.target.value)}
@@ -1953,7 +1986,7 @@ function BasicDetailsPageContent() {
 
                 <div className="border-t border-gray-200 pt-5 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-gray-900">Summary</span>
+                    <span className="text-sm font-semibold text-gray-900">Summary *</span>
                     <button
                       ref={generateButtonRef}
                       type="button"
@@ -1980,7 +2013,7 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section id="certifications-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Education</h3>
@@ -2065,7 +2098,7 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section id="languages-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Certifications</h3>
@@ -2353,7 +2386,7 @@ function BasicDetailsPageContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">First Name</span>
+                    <span className="text-sm font-medium text-gray-800">First Name *</span>
                     <input
                       type="text"
                       value={form.firstName}
@@ -2365,7 +2398,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Last Name</span>
+                    <span className="text-sm font-medium text-gray-800">Last Name *</span>
                     <input
                       type="text"
                       value={form.lastName}
@@ -2377,7 +2410,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">DOB</span>
+                    <span className="text-sm font-medium text-gray-800">DOB *</span>
                     <input
                       type="date"
                       value={form.dob}
@@ -2388,7 +2421,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Gender</span>
+                    <span className="text-sm font-medium text-gray-800">Gender *</span>
                     <select
                       value={form.gender}
                       onChange={(e) => setField("gender", e.target.value)}
@@ -2406,7 +2439,7 @@ function BasicDetailsPageContent() {
                 </div>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Email</span>
+                  <span className="text-sm font-medium text-gray-800">Email *</span>
                   <input
                     type="email"
                     value={form.email}
@@ -2430,7 +2463,7 @@ function BasicDetailsPageContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Nationality</span>
+                    <span className="text-sm font-medium text-gray-800">Nationality *</span>
                     <select
                       value={form.nationality}
                       onChange={(e) => setField("nationality", e.target.value)}
@@ -2447,7 +2480,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Current Location</span>
+                    <span className="text-sm font-medium text-gray-800">Current Location *</span>
                     <input
                       type="text"
                       value={form.currentLocation}
@@ -2471,7 +2504,7 @@ function BasicDetailsPageContent() {
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Contact</span>
+                  <span className="text-sm font-medium text-gray-800">Contact *</span>
                   <div className="grid grid-cols-[84px_1fr] gap-2">
                     <select
                       value={form.countryCode}

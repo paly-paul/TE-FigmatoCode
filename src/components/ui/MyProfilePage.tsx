@@ -215,16 +215,25 @@ export default function MyProfilePage() {
         })();
     }, []);
 
-    const toggleSection = (key: keyof typeof openSections) => {
+  const toggleSection = (key: keyof typeof openSections) => {
         setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
-    const handleEditProfile = () => {
+    const navigateToEditProfile = (section?: string) => {
         const profileName = getProfileName();
-        const destination = profileName?.trim()
-            ? `/profile/create/basic-details?profile_name=${encodeURIComponent(profileName)}`
-            : "/profile/create/basic-details";
-        router.push(destination);
+        const params = new URLSearchParams();
+        if (profileName?.trim()) {
+            params.set("profile_name", profileName.trim());
+        }
+        if (section) {
+            params.set("section", section);
+        }
+        const query = params.toString();
+        router.push(query ? `/profile/create/basic-details?${query}` : "/profile/create/basic-details");
+    };
+
+    const handleEditProfile = () => {
+        navigateToEditProfile();
     };
 
     const renderAccordionHeader = (
@@ -372,23 +381,36 @@ export default function MyProfilePage() {
                         </div>
 
                         <div className="space-y-3">
-                            {PROFILE.certifications.map((certification) => (
-                                <div key={certification.id} className="border border-[#DCE4F0] px-4 py-4">
-                                    <div className="flex items-start gap-3">
-                                        <Award className="mt-0.5 h-5 w-5 text-[#66758A]" />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <p className="text-[16px] font-medium leading-6 text-[#202939]">{certification.name}</p>
-                                                <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                            {PROFILE.certifications.length ? (
+                                PROFILE.certifications.map((certification) => (
+                                    <div key={certification.id} className="border border-[#DCE4F0] px-4 py-4">
+                                        <div className="flex items-start gap-3">
+                                            <Award className="mt-0.5 h-5 w-5 text-[#66758A]" />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <p className="text-[16px] font-medium leading-6 text-[#202939]">{certification.name}</p>
+                                                    <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                                                </div>
+                                                <p className="mt-2 text-[14px] text-[#5E7397]">{certification.issuer}</p>
+                                                <p className="mt-1 text-[14px] text-[#5E7397]">
+                                                    Issued {certification.issued} - {certification.expiry ?? "No Expiration Date"}
+                                                </p>
                                             </div>
-                                            <p className="mt-2 text-[14px] text-[#5E7397]">{certification.issuer}</p>
-                                            <p className="mt-1 text-[14px] text-[#5E7397]">
-                                                Issued {certification.issued} - {certification.expiry ?? "No Expiration Date"}
-                                            </p>
                                         </div>
                                     </div>
+                                ))
+                            ) : (
+                                <div className="border border-dashed border-[#DCE4F0] px-4 py-4 text-[14px] text-[#5E7397]">
+                                    <p>No certifications added yet.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigateToEditProfile("certifications")}
+                                        className="mt-3 font-semibold text-[#174EE7]"
+                                    >
+                                        Add your certifications
+                                    </button>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </div>
                 ) : null}
@@ -871,25 +893,38 @@ export default function MyProfilePage() {
                                 </div>
 
                                 <div className="space-y-3">
-                                    {PROFILE.certifications.map((certification) => (
-                                        <div key={certification.id} className="border border-[#dfe4ec] px-4 py-3.5">
-                                            <div className="flex items-start gap-2.5">
-                                                <BriefcaseBusiness className="mt-0.5 h-4 w-4 text-[#66758a]" />
-                                                <div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <p className="text-sm font-medium text-[#111827] sm:text-[15px]">
-                                                            {certification.name}
+                                    {PROFILE.certifications.length ? (
+                                        PROFILE.certifications.map((certification) => (
+                                            <div key={certification.id} className="border border-[#dfe4ec] px-4 py-3.5">
+                                                <div className="flex items-start gap-2.5">
+                                                    <BriefcaseBusiness className="mt-0.5 h-4 w-4 text-[#66758a]" />
+                                                    <div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <p className="text-sm font-medium text-[#111827] sm:text-[15px]">
+                                                                {certification.name}
+                                                            </p>
+                                                            <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
+                                                        </div>
+                                                        <p className="mt-1 text-sm text-[#66758a]">{certification.issuer}</p>
+                                                        <p className="mt-1 text-sm text-[#7790c7]">
+                                                            Issued {certification.issued} - {certification.expiry ?? "No Expiration Date"}
                                                         </p>
-                                                        <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
                                                     </div>
-                                                    <p className="mt-1 text-sm text-[#66758a]">{certification.issuer}</p>
-                                                    <p className="mt-1 text-sm text-[#7790c7]">
-                                                        Issued {certification.issued} - {certification.expiry ?? "No Expiration Date"}
-                                                    </p>
                                                 </div>
                                             </div>
+                                        ))
+                                    ) : (
+                                        <div className="border border-dashed border-[#dfe4ec] px-4 py-5 text-sm text-[#5f6b7d]">
+                                            <p>No certifications added yet.</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => navigateToEditProfile("certifications")}
+                                                className="mt-3 text-sm font-semibold text-[#174ee7]"
+                                            >
+                                                Add your certifications
+                                            </button>
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             </div>
                         </SectionCard>

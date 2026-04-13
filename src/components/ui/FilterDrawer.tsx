@@ -4,6 +4,7 @@ import { type ReactNode, RefObject, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { BaseDrawer } from "./BaseDrawer";
 import { useIsBelowLg } from "@/lib/useResponsive";
+import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 
 export interface FilterState {
   skills: string[];
@@ -19,6 +20,13 @@ interface FilterDrawerProps {
   onApply: (filters: FilterState) => void;
   triggerRef?: RefObject<HTMLElement>;
   initialFilters?: Partial<FilterState>;
+  dropdownConfig?: {
+    doctype?: string;
+    skillsFieldName?: string;
+    employmentTypesFieldName?: string;
+    seniorityLevelsFieldName?: string;
+    limit?: number;
+  };
 }
 
 export const SKILLS = [
@@ -47,6 +55,14 @@ export const DEFAULT_FILTERS: FilterState = {
   salaryMin: 0,
   salaryMax: 50000,
 };
+
+const DEFAULT_DROPDOWN_CONFIG = {
+  doctype: "Resource Requirement",
+  skillsFieldName: "key_skills",
+  employmentTypesFieldName: "employment_type",
+  seniorityLevelsFieldName: "seniority_level",
+  limit: 1000,
+} as const;
 
 function CollapsibleFilterSection({
   title,
@@ -225,6 +241,7 @@ export function FilterDrawer({
   onApply,
   triggerRef,
   initialFilters = {},
+  dropdownConfig,
 }: FilterDrawerProps) {
   const isCompactFilterUi = useIsBelowLg();
   const [resolvedPlacement, setResolvedPlacement] = useState<"bottom" | "right">(
@@ -235,6 +252,15 @@ export function FilterDrawer({
     ...DEFAULT_FILTERS,
     ...initialFilters,
   });
+  const [dynamicSkills, setDynamicSkills] = useState<string[]>(SKILLS);
+  const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
+  const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
+  const [hasLoadedDynamicOptions, setHasLoadedDynamicOptions] = useState(false);
+
+  const resolvedDropdownConfig = {
+    ...DEFAULT_DROPDOWN_CONFIG,
+    ...dropdownConfig,
+  };
 
   useEffect(() => {
     if (open) return;
@@ -249,7 +275,50 @@ export function FilterDrawer({
     setResolvedPlacement(isCompactFilterUi ? "bottom" : "right");
   }, [open, initialFilters]);
 
-  const filteredSkills = SKILLS.filter((skill) =>
+  useEffect(() => {
+    if (!open || hasLoadedDynamicOptions) return;
+
+    let active = true;
+    void (async () => {
+      const [skillsRes, employmentRes, seniorityRes] = await Promise.allSettled([
+        getDropdownDetailsOptions({
+          doctype: resolvedDropdownConfig.doctype,
+          fieldName: resolvedDropdownConfig.skillsFieldName,
+          limit: resolvedDropdownConfig.limit,
+        }),
+        getDropdownDetailsOptions({
+          doctype: resolvedDropdownConfig.doctype,
+          fieldName: resolvedDropdownConfig.employmentTypesFieldName,
+          limit: resolvedDropdownConfig.limit,
+        }),
+        getDropdownDetailsOptions({
+          doctype: resolvedDropdownConfig.doctype,
+          fieldName: resolvedDropdownConfig.seniorityLevelsFieldName,
+          limit: resolvedDropdownConfig.limit,
+        }),
+      ]);
+
+      if (!active) return;
+
+      if (skillsRes.status === "fulfilled" && skillsRes.value.length > 0) {
+        setDynamicSkills(skillsRes.value);
+      }
+      if (employmentRes.status === "fulfilled" && employmentRes.value.length > 0) {
+        setDynamicEmploymentTypes(employmentRes.value);
+      }
+      if (seniorityRes.status === "fulfilled" && seniorityRes.value.length > 0) {
+        setDynamicSeniorityLevels(seniorityRes.value);
+      }
+
+      setHasLoadedDynamicOptions(true);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [open, hasLoadedDynamicOptions, resolvedDropdownConfig]);
+
+  const filteredSkills = dynamicSkills.filter((skill) =>
     skill.toLowerCase().includes(skillSearch.toLowerCase())
   );
 
@@ -301,7 +370,7 @@ export function FilterDrawer({
 
   const employmentBody = (
     <CheckboxGroup
-      options={EMPLOYMENT_TYPES}
+      options={dynamicEmploymentTypes}
       selected={filters.employmentTypes}
       onChange={(value) => setValue("employmentTypes", value)}
     />
@@ -309,7 +378,7 @@ export function FilterDrawer({
 
   const seniorityBody = (
     <CheckboxGroup
-      options={SENIORITY_LEVELS}
+      options={dynamicSeniorityLevels}
       selected={filters.seniorityLevels}
       onChange={(value) => setValue("seniorityLevels", value)}
     />

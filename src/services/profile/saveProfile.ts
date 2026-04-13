@@ -1,4 +1,5 @@
 import { parseApiErrorMessage } from "@/services/signup/parseApiError";
+import { buildE164Phone, normalizeCountryCode } from "@/services/profile/phone";
 
 export interface SaveProfilePayload {
   profile?: string | Record<string, unknown>;
@@ -27,11 +28,44 @@ export interface SaveProfilePayload {
   [key: string]: unknown;
 }
 
+function normalizeContactFields(record: Record<string, unknown>): Record<string, unknown> {
+  const normalizedCountryCode =
+    typeof record.country_code === "string"
+      ? normalizeCountryCode(record.country_code) ?? record.country_code
+      : record.country_code;
+
+  const normalizedContactNo =
+    typeof record.contact_no === "string"
+      ? buildE164Phone(
+          record.contact_no,
+          typeof normalizedCountryCode === "string" ? normalizedCountryCode : undefined
+        ) ?? record.contact_no
+      : record.contact_no;
+
+  return {
+    ...record,
+    country_code: normalizedCountryCode,
+    contact_no: normalizedContactNo,
+  };
+}
+
 export async function saveProfile(payload: SaveProfilePayload): Promise<Record<string, unknown>> {
+  const normalizedPayload = {
+    ...normalizeContactFields(payload),
+    profile:
+      payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile)
+        ? normalizeContactFields(payload.profile as Record<string, unknown>)
+        : payload.profile,
+    profile_doc:
+      payload.profile_doc && typeof payload.profile_doc === "object" && !Array.isArray(payload.profile_doc)
+        ? normalizeContactFields(payload.profile_doc)
+        : payload.profile_doc,
+  };
+
   const res = await fetch("/api/method/create_edit_profile/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   });
 
   let data: Record<string, unknown> = {};
