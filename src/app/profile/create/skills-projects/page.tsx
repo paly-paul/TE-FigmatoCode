@@ -420,7 +420,10 @@ function SkillsProjectsPageContent() {
     (async () => {
       try {
         const candidateId = getCandidateId();
-        const queryProfileName = searchParams.get("profile_name")?.trim() || "";
+        const queryProfileName =
+          searchParams.get("profile")?.trim() ||
+          searchParams.get("profile_name")?.trim() ||
+          "";
         let profileName = queryProfileName || getProfileName();
 
         if (profileName && !isLikelyDocId(profileName)) {
@@ -454,6 +457,42 @@ function SkillsProjectsPageContent() {
         const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
 
+        if (backendProfile.keySkills?.length) {
+          setSkills(dedupeSkills(backendProfile.keySkills));
+        }
+
+        if (backendProfile.tools?.length) {
+          setTools(backendProfile.tools.map((tool) => createToolEntry({ tool })));
+        }
+
+        if (backendProfile.projects?.length) {
+          setProjects(
+            backendProfile.projects.map((project) =>
+              createProjectEntry({
+                projectTitle: project.projectTitle ?? "",
+                customerCompany: project.customerCompany ?? "",
+                projectStartDate: project.projectStartDate ?? "",
+                projectEndDate: project.projectEndDate ?? "",
+                inProgress: project.inProgress ?? false,
+                projectDescription: project.projectDescription ?? "",
+                responsibilities: project.responsibilities ?? "",
+              })
+            )
+          );
+        }
+
+        if (backendProfile.workExperience?.length) {
+          setExperiences(
+            backendProfile.workExperience.map((entry) =>
+              createExperienceEntry({
+                experience: [entry.jobTitle, entry.company].filter(Boolean).join(" @ "),
+                experienceYears: entry.duration ?? "",
+                experienceReference: "",
+              })
+            )
+          );
+        }
+
         // Also fetch raw `get_data` so we can map skills_table/tools + projects_table fully.
         // (Our mapped `getCandidateProfileData` intentionally normalizes to ResumeProfileData.)
         try {
@@ -469,25 +508,32 @@ function SkillsProjectsPageContent() {
 
             const skillsTable = Array.isArray(version.skills_table) ? version.skills_table : [];
             if (skillsTable.length) {
-              setTools((prev) => {
-                const hasAny = prev.some((t) => !isToolEmpty(t));
-                if (hasAny) return prev;
-                const mapped = skillsTable
-                  .map((row: any) => {
-                    const tool = typeof row?.key_skills === "string" ? row.key_skills.trim() : "";
-                    if (!tool) return null;
-                    const years =
-                      typeof row?.experience === "number"
-                        ? String(row.experience)
-                        : typeof row?.experience === "string"
-                          ? row.experience.trim()
-                          : "";
-                    const ref = typeof row?.url === "string" ? row.url.trim() : "";
-                    return createToolEntry({ tool, toolYears: years, toolReference: ref });
-                  })
-                  .filter(Boolean) as ToolEntry[];
-                return mapped.length ? mapped : prev;
-              });
+              const mapped = skillsTable
+                .map((row: any) => {
+                  const tool =
+                    typeof row?.skill === "string"
+                      ? row.skill.trim()
+                      : typeof row?.key_skills === "string"
+                        ? row.key_skills.trim()
+                        : "";
+                  if (!tool) return null;
+                  const years =
+                    typeof row?.experience_years === "number"
+                      ? String(row.experience_years)
+                      : typeof row?.experience_years === "string"
+                        ? row.experience_years.trim()
+                        : typeof row?.experience === "number"
+                          ? String(row.experience)
+                          : typeof row?.experience === "string"
+                            ? row.experience.trim()
+                            : "";
+                  const ref = typeof row?.url === "string" ? row.url.trim() : "";
+                  return createToolEntry({ tool, toolYears: years, toolReference: ref });
+                })
+                .filter(Boolean) as ToolEntry[];
+              if (mapped.length) {
+                setTools(mapped);
+              }
             }
 
             const projectsTable = Array.isArray(version.projects_table) ? version.projects_table : [];
@@ -500,43 +546,47 @@ function SkillsProjectsPageContent() {
                   raw.match(/\b(?:client|customer)\s*[:\-]\s*([A-Z][A-Za-z0-9&.,' -]{2,60})(?:\b|,|\.)/i);
                 return (m?.[1] || "").trim();
               };
-              setProjects((prev) => {
-                const hasAny = prev.some((p) => !isProjectEmpty(p));
-                if (hasAny) return prev;
-                const mapped = projectsTable
-                  .map((row: any) => {
-                    const title = typeof row?.title === "string" ? row.title.trim() : "";
-                    const company =
-                      (typeof row?.customer_company === "string" ? row.customer_company.trim() : "") ||
-                      extractCompanyFromText(row?.roles_responsibilities) ||
-                      extractCompanyFromText(row?.description);
-                    const start = typeof row?.start_date === "string" ? row.start_date : "";
-                    const end = typeof row?.end_date === "string" ? row.end_date : "";
-                    const description = typeof row?.description === "string" ? row.description.trim() : "";
-                    const resp =
-                      typeof row?.roles_responsibilities === "string" ? row.roles_responsibilities.trim() : "";
-                    if (!title && !company && !start) return null;
-                    return createProjectEntry({
-                      projectTitle: title,
-                      customerCompany: company,
-                      projectStartDate: start || "01/2000",
-                      projectEndDate: end,
-                      inProgress: !end,
-                      projectDescription: description,
-                      responsibilities: resp,
-                    });
-                  })
-                  .filter(Boolean) as ProjectEntry[];
-                return mapped.length ? mapped : prev;
-              });
+              const mapped = projectsTable
+                .map((row: any) => {
+                  const title =
+                    typeof row?.project_name === "string"
+                      ? row.project_name.trim()
+                      : typeof row?.title === "string"
+                        ? row.title.trim()
+                        : "";
+                  const company =
+                    (typeof row?.customer_company === "string" ? row.customer_company.trim() : "") ||
+                    extractCompanyFromText(row?.roles_responsibilities) ||
+                    extractCompanyFromText(row?.description);
+                  const start = typeof row?.start_date === "string" ? row.start_date : "";
+                  const end = typeof row?.end_date === "string" ? row.end_date : "";
+                  const description = typeof row?.description === "string" ? row.description.trim() : "";
+                  const resp =
+                    typeof row?.roles_responsibilities === "string"
+                      ? row.roles_responsibilities.trim()
+                      : typeof row?.role === "string"
+                        ? row.role.trim()
+                        : "";
+                  if (!title && !company && !start) return null;
+                  return createProjectEntry({
+                    projectTitle: title,
+                    customerCompany: company,
+                    projectStartDate: start || "01/2000",
+                    projectEndDate: end,
+                    inProgress: !end,
+                    projectDescription: description,
+                    responsibilities: resp,
+                  });
+                })
+                .filter(Boolean) as ProjectEntry[];
+              if (mapped.length) {
+                setProjects(mapped);
+              }
             }
 
             // Prefill "Experience" section from work history / organizations.
             // Prefer backend work_experience if present; otherwise derive from projects_table.
-            setExperiences((prev) => {
-              const hasAny = prev.some((e) => !isExperienceEmpty(e));
-              if (hasAny) return prev;
-
+            {
               const parseRoleFromText = (text: any) => {
                 const raw = typeof text === "string" ? text.trim() : "";
                 if (!raw) return "";
@@ -581,7 +631,10 @@ function SkillsProjectsPageContent() {
                       .filter(Boolean)
                   : [];
 
-              if (fromWorkExp.length) return fromWorkExp as ExperienceEntry[];
+              if (fromWorkExp.length) {
+                setExperiences(fromWorkExp as ExperienceEntry[]);
+                return;
+              }
 
               const fromProjects =
                 projectsTable.length
@@ -600,7 +653,9 @@ function SkillsProjectsPageContent() {
                       .filter(Boolean)
                   : [];
 
-              if (!(fromProjects as ExperienceEntry[])?.length) return prev;
+              if (!(fromProjects as ExperienceEntry[])?.length) {
+                return;
+              }
 
               // De-dupe by normalized label.
               const seen = new Set<string>();
@@ -612,8 +667,10 @@ function SkillsProjectsPageContent() {
                 return true;
               });
 
-              return deduped.length ? deduped : prev;
-            });
+              if (deduped.length) {
+                setExperiences(deduped);
+              }
+            }
           }
         } catch {
           // non-fatal
@@ -623,7 +680,7 @@ function SkillsProjectsPageContent() {
         const combinedSkills = dedupeSkills([...generatedSkills, ...existingSkills]);
 
         if (combinedSkills.length) {
-          setSuggestedSkills((prev) => dedupeSkills([...combinedSkills, ...prev]));
+          setSuggestedSkills(combinedSkills);
 
           if (generatedSkills.length && existingSkills.length) {
             setBackendSkillsStatus(
@@ -907,7 +964,10 @@ function SkillsProjectsPageContent() {
     if (!validate()) return;
 
     const storedProfile = readResumeProfile();
-    const queryProfileName = searchParams.get("profile_name")?.trim() || "";
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
     let profileName = queryProfileName || getProfileName() || "";
 
     if (profileName && !isLikelyDocId(profileName)) {
@@ -932,10 +992,24 @@ function SkillsProjectsPageContent() {
       }
     }
 
-    const keySkills = dedupeSkills([
-      ...skills,
-      ...tools.map((tool) => tool.tool.trim()).filter(Boolean),
-    ]).map((key_skill) => ({ key_skill }));
+    const keySkills = dedupeSkills(skills).map((key_skill) => ({ key_skill }));
+
+    const skillsTable = [...nonEmptyExperiences(), ...nonEmptyTools()]
+      .map((entry) => {
+        const skillName = "experience" in entry ? entry.experience.trim() : entry.tool.trim();
+        const yearsRaw = "experienceYears" in entry ? entry.experienceYears.trim() : entry.toolYears.trim();
+        const years = Number.parseFloat(yearsRaw);
+        const referenceUrl =
+          "experienceReference" in entry
+            ? entry.experienceReference.trim()
+            : entry.toolReference.trim();
+        return {
+          skill: skillName || "",
+          experience_years: Number.isFinite(years) && years >= 0 ? years : "",
+          url: referenceUrl,
+        };
+      })
+      .filter((entry) => entry.skill || entry.experience_years !== "" || entry.url);
 
     const educationDetails =
       storedProfile?.education?.map((entry) => ({
@@ -950,121 +1024,136 @@ function SkillsProjectsPageContent() {
       return Number.isFinite(years) && years >= 0 ? years : undefined;
     })();
 
-    const workExperience = nonEmptyProjects()
-      .map((project) => ({
-        company: project.customerCompany.trim() || undefined,
-        role: project.projectTitle.trim() || undefined,
-        from_date: project.projectStartDate || undefined,
-        to_date: project.inProgress ? undefined : project.projectEndDate || undefined,
-      }))
-      .filter((entry) => entry.company || entry.role || entry.from_date || entry.to_date);
-
     const nextProfilePayload = {
-      full_name: fullName || undefined,
+      full_name: fullName,
       email,
-      first_name: firstName || undefined,
-      last_name: lastName || undefined,
-      date_of_birth: storedProfile?.dob?.trim() || undefined,
-      gender: storedProfile?.gender?.trim() || undefined,
-      country_code: storedProfile?.countryCode?.trim() || undefined,
-      contact_no: storedProfile?.phone?.trim() || undefined,
-      alternative_email: storedProfile?.altEmail?.trim() || undefined,
-      nationality: storedProfile?.nationality?.trim() || undefined,
-      current_location: storedProfile?.currentLocation?.trim() || undefined,
+      first_name: firstName,
+      last_name: lastName,
+      date_of_birth: storedProfile?.dob?.trim() || "",
+      gender: storedProfile?.gender?.trim() || "",
+      country_code: storedProfile?.countryCode?.trim() || "",
+      contact_no: storedProfile?.phone?.trim() || "",
+      alternative_email: storedProfile?.altEmail?.trim() || "",
+      current_location: storedProfile?.currentLocation?.trim() || "",
     };
 
     const nextProfileVersionPayload = {
-      professional_title: storedProfile?.professionalTitle?.trim() || undefined,
-      experience_years: storedProfile?.experienceYears?.trim() || undefined,
-      experience_months: storedProfile?.experienceMonths?.trim() || undefined,
-      current_salary: storedProfile?.salaryPerMonth?.trim() || undefined,
-      current_salary_currency: storedProfile?.salaryCurrency?.trim() || undefined,
-      professional_summary: storedProfile?.summary?.trim() || undefined,
-      preferred_location: storedProfile?.preferredLocation?.trim() || undefined,
-      key_skills: keySkills.length ? keySkills : undefined,
-      work_experience: workExperience.length ? workExperience : undefined,
-      education_qualifications: educationDetails.length
-        ? educationDetails.map((entry) => ({
-            degree: entry.degree,
-            institution: entry.institution,
-            year_of_passing: entry.year,
-          }))
-        : undefined,
+      professional_title: storedProfile?.professionalTitle?.trim() || "",
+      experience_years: storedProfile?.experienceYears?.trim() || "",
+      experience_months: storedProfile?.experienceMonths?.trim() || "",
+      current_salary: storedProfile?.salaryPerMonth?.trim() || "",
+      current_salary_currency: storedProfile?.salaryCurrency?.trim() || "",
+      professional_summary: storedProfile?.summary?.trim() || "",
+      nationality: storedProfile?.nationality?.trim() || "",
+      preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      skills_table: skillsTable,
+      key_skills: keySkills,
+      education_qualifications: educationDetails.map((entry) => ({
+        degree: entry.degree || "",
+        institution: entry.institution || "",
+        year_of_passing: entry.year || "",
+      })),
       certification_table: storedProfile?.certifications?.length
         ? storedProfile.certifications
             .map((entry) => ({
-              certification_name: entry.name?.trim() || undefined,
-              issued_by: entry.issuing?.trim() || undefined,
-              year: entry.issueDate?.trim()?.slice(0, 4) || undefined,
-              url: entry.url?.trim() || undefined,
+              certification_name: entry.name?.trim() || "",
+              issued_by: entry.issuing?.trim() || "",
+              certificate_number: entry.certificateNumber?.trim() || "",
+              issue_date: entry.issueDate?.trim() || "",
+              expiration_date: entry.expirationDate?.trim() || "",
+              year: entry.issueDate?.trim()?.slice(0, 4) || "",
+              url: entry.url?.trim() || "",
             }))
             .filter((entry) =>
               entry.certification_name ||
               entry.issued_by ||
+              entry.certificate_number ||
+              entry.issue_date ||
+              entry.expiration_date ||
               entry.year ||
               entry.url
             )
-        : undefined,
+        : [],
       external_profile_links: storedProfile?.externalLinks?.length
         ? storedProfile.externalLinks
             .map((entry) => ({
-              platform: entry.label?.trim() || undefined,
-              url: entry.url?.trim() || undefined,
+              platform: entry.label?.trim() || "",
+              url: entry.url?.trim() || "",
             }))
             .filter((entry) => entry.platform || entry.url)
-        : undefined,
+        : [],
       projects_table: nonEmptyProjects()
         .map((project) => ({
-          project_name: project.projectTitle?.trim() || undefined,
-          description: project.projectDescription?.trim() || undefined,
-          role: project.responsibilities?.trim() || undefined,
+          project_name: project.projectTitle?.trim() || "",
+          customer_company: project.customerCompany?.trim() || "",
+          start_date: project.projectStartDate || "",
+          end_date: project.inProgress ? "" : project.projectEndDate || "",
+          description: project.projectDescription?.trim() || "",
+          role: project.responsibilities?.trim() || "",
+          roles_responsibilities: project.responsibilities?.trim() || "",
         }))
-        .filter((entry) => entry.project_name || entry.description || entry.role),
+        .filter((entry) =>
+          entry.project_name ||
+          entry.customer_company ||
+          entry.start_date ||
+          entry.end_date ||
+          entry.description ||
+          entry.role
+        ),
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
-              language: entry.language?.trim() || undefined,
-              read: entry.read?.trim() || undefined,
-              write: entry.write?.trim() || undefined,
-              speak: entry.speak?.trim() || undefined,
+              language: entry.language?.trim() || "",
+              read: entry.read?.trim() || "",
+              write: entry.write?.trim() || "",
+              speak: entry.speak?.trim() || "",
             }))
             .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-        : undefined,
+        : [],
     };
 
     const existingEnvelope = profileName ? await fetchExistingProfileEnvelope(profileName) : null;
+    const editableProfileFields = [
+      "name",
+      "full_name",
+      "email",
+      "first_name",
+      "last_name",
+      "date_of_birth",
+      "gender",
+      "country_code",
+      "contact_no",
+      "alternative_email",
+      "current_location",
+    ];
+    const editableProfileVersionFields = [
+      "name",
+      "version",
+      "profile",
+      "professional_title",
+      "experience_years",
+      "experience_months",
+      "current_salary",
+      "current_salary_currency",
+      "professional_summary",
+      "nationality",
+      "preferred_location",
+      "skills_table",
+      "key_skills",
+      "education_qualifications",
+      "certification_table",
+      "external_profile_links",
+      "projects_table",
+      "languages",
+    ];
     const mergedProfilePayload = mergeWithExistingObject(
-      existingEnvelope?.profile ?? {},
+      pickObjectFields(existingEnvelope?.profile, editableProfileFields),
       nextProfilePayload as JsonRecord
     );
     const mergedProfileVersionPayload = mergeWithExistingObject(
-      existingEnvelope?.profile_version ?? {},
+      pickObjectFields(existingEnvelope?.profile_version, editableProfileVersionFields),
       nextProfileVersionPayload as JsonRecord
     );
-
-    const mergedKeySkills = mergeKeySkillRows(
-      existingEnvelope?.profile_version?.key_skills,
-      keySkills.length ? keySkills : undefined
-    );
-    if (mergedKeySkills) {
-      mergedProfileVersionPayload.key_skills = mergedKeySkills;
-    }
-
-    const mergedWorkExperience = mergeObjectArrayRows(
-      existingEnvelope?.profile_version?.work_experience,
-      workExperience.length ? workExperience : undefined
-    );
-    if (mergedWorkExperience) {
-      mergedProfileVersionPayload.work_experience = mergedWorkExperience;
-    }
-
-    const mergedEducationDetails = mergeObjectArrayRows(
-      existingEnvelope?.profile_version?.education_qualifications,
-      nextProfileVersionPayload.education_qualifications
-    );
-    if (mergedEducationDetails) {
-      mergedProfileVersionPayload.education_qualifications = mergedEducationDetails;
-    }
 
     setIsSubmittingProfile(true);
     try {
@@ -1076,7 +1165,6 @@ function SkillsProjectsPageContent() {
         total_experience: totalExperience,
         current_location: storedProfile?.currentLocation?.trim() || undefined,
         key_skills: keySkills.length ? keySkills : undefined,
-        work_experience: workExperience.length ? workExperience : undefined,
         education_details: educationDetails.length ? educationDetails : undefined,
         profile_doc: mergedProfilePayload,
         profile_version: mergedProfileVersionPayload,
@@ -1196,7 +1284,7 @@ function SkillsProjectsPageContent() {
               >
                 <div className="p-4 space-y-4">
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Skills</span>
+                    <span className="text-sm font-medium text-gray-800">Skills *</span>
                     <select
                       value={selectedSkill}
                       onChange={(e) => handleSkillsChange(e.target.value)}
@@ -1287,7 +1375,7 @@ function SkillsProjectsPageContent() {
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Experience</span>
+                            <span className="text-sm font-medium text-gray-800">Experience *</span>
                             <input
                               type="text"
                               value={entry.experience}
@@ -1299,7 +1387,7 @@ function SkillsProjectsPageContent() {
                           </label>
 
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                            <span className="text-sm font-medium text-gray-800">Exp. in Years *</span>
                             <input
                               type="number"
                               min={0}
@@ -1374,7 +1462,7 @@ function SkillsProjectsPageContent() {
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Tools</span>
+                            <span className="text-sm font-medium text-gray-800">Tools *</span>
                             <input
                               type="text"
                               value={entry.tool}
@@ -1386,7 +1474,7 @@ function SkillsProjectsPageContent() {
                           </label>
 
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                            <span className="text-sm font-medium text-gray-800">Exp. in Years *</span>
                             <input
                               type="number"
                               min={0}
@@ -1455,7 +1543,7 @@ function SkillsProjectsPageContent() {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Project Title</span>
+                            <span className="text-sm font-medium text-gray-800">Project Title *</span>
                             <input
                               type="text"
                               value={entry.projectTitle}
@@ -1469,7 +1557,7 @@ function SkillsProjectsPageContent() {
                           </label>
 
                           <label className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-gray-800">Customer / Company</span>
+                            <span className="text-sm font-medium text-gray-800">Customer / Company *</span>
                             <input
                               type="text"
                               value={entry.customerCompany}
@@ -1486,7 +1574,7 @@ function SkillsProjectsPageContent() {
 
                           <div className="grid grid-cols-2 gap-3 col-span-full">
                             <label className="flex flex-col gap-2">
-                              <span className="text-sm font-medium text-gray-800">Project Start Date</span>
+                              <span className="text-sm font-medium text-gray-800">Project Start Date *</span>
                               <input
                                 type="date"
                                 value={entry.projectStartDate}
@@ -1501,7 +1589,7 @@ function SkillsProjectsPageContent() {
                             </label>
 
                             <div className="flex flex-col gap-2">
-                              <span className="text-sm font-medium text-gray-800">Project End Date</span>
+                              <span className="text-sm font-medium text-gray-800">Project End Date *</span>
                               <input
                                 type="date"
                                 value={entry.projectEndDate}
@@ -1550,7 +1638,7 @@ function SkillsProjectsPageContent() {
                         </div>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Description</span>
+                          <span className="text-sm font-medium text-gray-800">Description *</span>
                           <textarea
                             value={entry.projectDescription}
                             onChange={(e) =>
@@ -1572,7 +1660,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Responsibilities</span>
+                          <span className="text-sm font-medium text-gray-800">Responsibilities *</span>
                           <textarea
                             value={entry.responsibilities}
                             onChange={(e) =>
@@ -1609,7 +1697,7 @@ function SkillsProjectsPageContent() {
 
               <div className="p-4 sm:p-6 space-y-4">
                 <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Skills</span>
+                  <span className="text-sm font-medium text-gray-800">Skills *</span>
                   <select
                     value={selectedSkill}
                     onChange={(e) => handleSkillsChange(e.target.value)}
@@ -1692,7 +1780,7 @@ function SkillsProjectsPageContent() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Experience</span>
+                          <span className="text-sm font-medium text-gray-800">Experience *</span>
                           <input
                             type="text"
                             value={entry.experience}
@@ -1704,7 +1792,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                          <span className="text-sm font-medium text-gray-800">Exp. in Years *</span>
                           <input
                             type="number"
                             min={0}
@@ -1765,7 +1853,7 @@ function SkillsProjectsPageContent() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_1.6fr] gap-3">
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Tools</span>
+                          <span className="text-sm font-medium text-gray-800">Tools *</span>
                           <input
                             type="text"
                             value={entry.tool}
@@ -1777,7 +1865,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Exp. in Years</span>
+                          <span className="text-sm font-medium text-gray-800">Exp. in Years *</span>
                           <input
                             type="number"
                             min={0}
@@ -1836,7 +1924,7 @@ function SkillsProjectsPageContent() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Project Title</span>
+                          <span className="text-sm font-medium text-gray-800">Project Title *</span>
                           <input
                             type="text"
                             value={entry.projectTitle}
@@ -1848,7 +1936,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Customer / Company</span>
+                          <span className="text-sm font-medium text-gray-800">Customer / Company *</span>
                           <input
                             type="text"
                             value={entry.customerCompany}
@@ -1860,7 +1948,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <label className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Project Start Date</span>
+                          <span className="text-sm font-medium text-gray-800">Project Start Date *</span>
                           <input
                             type="date"
                             value={entry.projectStartDate}
@@ -1871,7 +1959,7 @@ function SkillsProjectsPageContent() {
                         </label>
 
                         <div className="flex flex-col gap-2">
-                          <span className="text-sm font-medium text-gray-800">Project End Date</span>
+                          <span className="text-sm font-medium text-gray-800">Project End Date *</span>
                           <input
                             type="date"
                             value={entry.projectEndDate}
@@ -1913,7 +2001,7 @@ function SkillsProjectsPageContent() {
                       </div>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Description</span>
+                        <span className="text-sm font-medium text-gray-800">Description *</span>
                         <textarea
                           value={entry.projectDescription}
                           onChange={(e) => updateProject(entry.id, { projectDescription: e.target.value })}
@@ -1933,7 +2021,7 @@ function SkillsProjectsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Responsibilities</span>
+                        <span className="text-sm font-medium text-gray-800">Responsibilities *</span>
                         <textarea
                           value={entry.responsibilities}
                           onChange={(e) => updateProject(entry.id, { responsibilities: e.target.value })}
@@ -2080,14 +2168,27 @@ async function fetchExistingProfileEnvelope(profileName: string): Promise<{
       ((raw.message as JsonRecord | undefined)?.data as JsonRecord | undefined) ||
       (raw.message as JsonRecord | undefined) ||
       raw;
-    const profile =
+    const rootRecord =
       root && typeof root === "object" && !Array.isArray(root)
         ? (root as JsonRecord)
         : undefined;
+
+    const profile =
+      rootRecord?.profile && typeof rootRecord.profile === "object" && !Array.isArray(rootRecord.profile)
+        ? (rootRecord.profile as JsonRecord)
+        : rootRecord;
+
     const profileVersion =
-      profile?.profile_version && typeof profile.profile_version === "object" && !Array.isArray(profile.profile_version)
-        ? (profile.profile_version as JsonRecord)
-        : undefined;
+      rootRecord?.profile_version &&
+      typeof rootRecord.profile_version === "object" &&
+      !Array.isArray(rootRecord.profile_version)
+        ? (rootRecord.profile_version as JsonRecord)
+        : profile?.profile_version &&
+            typeof profile.profile_version === "object" &&
+            !Array.isArray(profile.profile_version)
+          ? (profile.profile_version as JsonRecord)
+          : undefined;
+
     return { profile, profile_version: profileVersion };
   } catch {
     return null;
@@ -2095,56 +2196,26 @@ async function fetchExistingProfileEnvelope(profileName: string): Promise<{
 }
 
 function mergeWithExistingObject(existing: JsonRecord, next: JsonRecord): JsonRecord {
-  const merged: JsonRecord = { ...existing, ...next };
+  const merged: JsonRecord = { ...existing };
   for (const [key, value] of Object.entries(next)) {
-    if (value === undefined || value === null || value === "") {
-      if (existing[key] !== undefined) {
-        merged[key] = existing[key];
-      } else {
-        delete merged[key];
-      }
+    if (value === undefined) {
+      delete merged[key];
+      continue;
     }
+    merged[key] = value;
   }
   return merged;
 }
 
-function mergeObjectArrayRows(existing: unknown, next: unknown): JsonRecord[] | undefined {
-  const normalize = (rows: unknown): JsonRecord[] =>
-    Array.isArray(rows)
-      ? rows
-          .filter((row) => row && typeof row === "object" && !Array.isArray(row))
-          .map((row) => row as JsonRecord)
-      : [];
-
-  const existingRows = normalize(existing);
-  const nextRows = normalize(next);
-  if (!existingRows.length && !nextRows.length) return undefined;
-
-  const seen = new Set<string>();
-  const merged: JsonRecord[] = [];
-  for (const row of [...existingRows, ...nextRows]) {
-    const signature = JSON.stringify(row);
-    if (seen.has(signature)) continue;
-    seen.add(signature);
-    merged.push(row);
+function pickObjectFields(source: JsonRecord | undefined, keys: string[]): JsonRecord {
+  if (!source) return {};
+  const picked: JsonRecord = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) {
+      picked[key] = source[key];
+    }
   }
-  return merged.length ? merged : undefined;
-}
-
-function mergeKeySkillRows(existing: unknown, next: unknown): Array<{ key_skill: string }> | undefined {
-  const extract = (rows: unknown): string[] =>
-    Array.isArray(rows)
-      ? rows
-          .map((row) => {
-            if (!row || typeof row !== "object") return "";
-            const value = (row as { key_skill?: unknown }).key_skill;
-            return typeof value === "string" ? value.trim() : "";
-          })
-          .filter(Boolean)
-      : [];
-
-  const merged = dedupeSkills([...extract(existing), ...extract(next)]);
-  return merged.length ? merged.map((key_skill) => ({ key_skill })) : undefined;
+  return picked;
 }
 
 function extractLinkedProfileIdFromServerMessages(raw: unknown): string {
@@ -2236,6 +2307,9 @@ function isLikelySkillToken(value: string): boolean {
   const normalized = token.toLowerCase().replace(/\s+/g, " ");
   if (!token) return false;
   if (token.length < 2 || token.length > 50) return false;
+  if (/^(?:new-|row-|tmp-)/i.test(token)) return false;
+  if (/^[A-Z]{2,10}-\d+(?:-\d+)*$/i.test(token)) return false;
+  if (/^[a-f0-9]{8,}$/i.test(token) && !/[aeiou]/i.test(token)) return false;
   if (
     normalized === "skills" ||
     normalized === "technical skills" ||

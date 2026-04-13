@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
   Calendar,
@@ -26,6 +26,9 @@ import {
 } from "../ui/FilterDrawer";
 import { DEFAULT_LOCATIONS, LocationDrawer } from "../ui/LocationDrawer";
 import { useIsBelowLg } from "@/lib/useResponsive";
+import { getProfileName, setProfileName } from "@/lib/authSession";
+import { getRecommendedJobs } from "@/services/jobs/actionCenter";
+import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
 
 interface JobCard {
   id: number;
@@ -569,8 +572,57 @@ export default function TalentEngineJobsPage() {
   const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
+  const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      let profileName = getProfileName()?.trim() || "";
+      if (!profileName) {
+        try {
+          const resolverUrl = new URL("/api/method/resolve_profile_name", window.location.origin);
+          const resolverRes = await fetch(resolverUrl.toString(), {
+            method: "GET",
+            credentials: "same-origin",
+          });
+          if (resolverRes.ok) {
+            const resolverData = (await resolverRes.json()) as { profile_name?: string };
+            if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
+              profileName = resolverData.profile_name.trim();
+              setProfileName(profileName);
+            }
+          }
+        } catch {
+          // ignore resolver failures; empty state will be shown.
+        }
+      }
+
+      if (!profileName) {
+        if (!active) return;
+        setApiRecommendedJobs([]);
+        setHasAttemptedJobsLoad(true);
+        return;
+      }
+
+      try {
+        const recommended = await getRecommendedJobs(profileName);
+        if (!active) return;
+        setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
+      } catch {
+        if (!active) return;
+        setApiRecommendedJobs([]);
+      } finally {
+        if (active) setHasAttemptedJobsLoad(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const primaryLocation = selectedLocations[0]
     ? getLocationLabel(selectedLocations[0])
@@ -588,7 +640,9 @@ export default function TalentEngineJobsPage() {
   const filteredJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    const results = JOBS.filter((job) => {
+    const jobsSource = hasAttemptedJobsLoad ? apiRecommendedJobs : JOBS;
+
+    const results = jobsSource.filter((job) => {
       const matchesSearch =
         normalizedQuery.length === 0 ||
         [job.title, job.location, job.locationFull]
@@ -634,7 +688,16 @@ export default function TalentEngineJobsPage() {
     }
 
     return [...results].sort((a, b) => b.matchPercentage - a.matchPercentage);
-  }, [filters, searchQuery, selectedLocations, sortBy, showSavedOnly, savedJobIds]);
+  }, [
+    apiRecommendedJobs,
+    filters,
+    hasAttemptedJobsLoad,
+    searchQuery,
+    selectedLocations,
+    sortBy,
+    showSavedOnly,
+    savedJobIds,
+  ]);
 
   const toggleSavedJob = (jobId: number) => {
     setSavedJobIds((prev) => {

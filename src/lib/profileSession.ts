@@ -54,16 +54,6 @@ function assignDefinedValue<Key extends keyof ResumeProfileData>(
   key: Key,
   value: ResumeProfileData[Key] | undefined,
 ) {
-  if (value === undefined || value === null) return;
-  if (typeof value === "string" && value.trim() === "") {
-    const existing = target[key];
-    if (
-      existing !== undefined &&
-      existing !== null &&
-      !(typeof existing === "string" && existing.trim() === "")
-    ) {
-      return;
-    }
-  }
+  if (value === undefined) return;
   target[key] = value;
 }
