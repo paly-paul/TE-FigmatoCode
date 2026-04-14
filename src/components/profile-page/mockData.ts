@@ -5,10 +5,16 @@ export const PROFILE: ProfileData = {
   verified: true,
   title: "Senior Engineer",
   location: "Brooklyn Heights, United States",
+  countryCode: "+1",
   phone: "(832) 555-1209",
   github: "#",
   linkedin: "#",
   website: "#",
+  externalLinks: [
+    { label: "Github", url: "#", platform: "github" },
+    { label: "LinkedIn", url: "#", platform: "linkedin" },
+    { label: "Website", url: "#", platform: "website" },
+  ],
   summary:
     "Experienced energy professional with over 6 years of expertise in designing efficient energy systems and optimizing operational performance across power and renewable projects using modern engineering tools and technologies. Proven track record of managing scalable energy solutions and integrating advanced monitoring systems to enhance reliability and efficiency. Skilled in developing data-driven strategies for energy optimization, analytics, and sustainability initiatives, with a strong focus on delivering high-impact solutions that meet organizational and regulatory goals. Eager to leverage expertise in energy management, renewable integration.",
   experience: "6 years, 2 months",

@@ -49,10 +49,16 @@ export interface ProfileData {
   verified: boolean;
   title: string;
   location: string;
+  countryCode: string;
   phone: string;
   github: string;
   linkedin: string;
   website: string;
+  externalLinks: {
+    label: string;
+    url: string;
+    platform: "github" | "linkedin" | "website";
+  }[];
   summary: string;
   experience: string;
   salary: string;
