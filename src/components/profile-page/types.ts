@@ -67,7 +67,7 @@ export interface ProfileData {
     currentLocation: string;
     preferredLocation: string;
   };
-  education: EducationItem;
+  education: EducationItem[];
   languages: LanguageItem[];
   skills: string[];
   certifications: Certification[];

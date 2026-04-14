@@ -95,7 +95,7 @@ export function MobileSignupScreen() {
           ) : null}
 
           <Button type="submit" className="mt-1 min-h-[48px] text-base" disabled={isLoading}>
-            {isLoading ? "Creating account…" : "Create Account"}
+            {isLoading ? "Sending OTP..." : "Create Account"}
           </Button>
         </form>
 

@@ -50,9 +50,9 @@ const EMPTY_PROFILE: ProfileData = {
     title: "",
     location: "",
     phone: "",
-    github: "#",
-    linkedin: "#",
-    website: "#",
+    github: "",
+    linkedin: "",
+    website: "",
     summary: "",
     experience: "",
     salary: "",
@@ -65,13 +65,15 @@ const EMPTY_PROFILE: ProfileData = {
         currentLocation: "",
         preferredLocation: "",
     },
-    education: {
-        degree: "",
-        school: "",
-        specialization: "",
-        graduationYear: "",
-        score: "",
-    },
+    education: [
+        {
+            degree: "",
+            school: "",
+            specialization: "",
+            graduationYear: "",
+            score: "",
+        },
+    ],
     languages: [],
     skills: [],
     certifications: [],
@@ -87,6 +89,58 @@ function parseMaybeDate(value: string | undefined): string {
     return dt.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
 }
 
+function parseYearsFromDuration(duration: string | undefined, fallbackYears: number): number {
+    const raw = (duration || "").trim();
+    if (!raw) return fallbackYears;
+    const match = raw.match(/(\d+(?:\.\d+)?)/);
+    if (!match?.[1]) return fallbackYears;
+    const parsed = Number.parseFloat(match[1]);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallbackYears;
+    return parsed;
+}
+
+function normalizeExternalUrl(url: string | undefined): string {
+    if (!url) return "";
+    const trimmed = url.trim();
+    if (!trimmed) return "";
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+}
+
+function inferExternalLinks(links: Array<{ label?: string; url?: string }>) {
+    let github = "";
+    let linkedin = "";
+    let website = "";
+
+    for (const link of links) {
+        const url = normalizeExternalUrl(link.url);
+        if (!url) continue;
+        const label = (link.label || "").toLowerCase();
+        const lowerUrl = url.toLowerCase();
+
+        if (!github && (label.includes("github") || lowerUrl.includes("github.com"))) {
+            github = url;
+            continue;
+        }
+        if (!linkedin && (label.includes("linkedin") || lowerUrl.includes("linkedin.com"))) {
+            linkedin = url;
+            continue;
+        }
+        if (
+            !website &&
+            (label.includes("website") || label.includes("portfolio") || label.includes("web"))
+        ) {
+            website = url;
+            continue;
+        }
+        if (!website) {
+            website = url;
+        }
+    }
+
+    return { github, linkedin, website };
+}
+
 function toProfileData(resume: ResumeProfileData, fallback: ProfileData): ProfileData {
     const fullName = [resume.firstName, resume.lastName].filter(Boolean).join(" ").trim();
     const experienceParts = [resume.experienceYears && `${resume.experienceYears} years`, resume.experienceMonths && `${resume.experienceMonths} months`]
@@ -94,22 +148,20 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         .join(", ");
     const salaryText = [resume.salaryCurrency, resume.salaryPerMonth].filter(Boolean).join(" ").trim();
     const links = resume.externalLinks ?? [];
-    const github = links.find((l) => (l.label || "").toLowerCase().includes("github"))?.url || fallback.github;
-    const linkedin = links.find((l) => (l.label || "").toLowerCase().includes("linkedin"))?.url || fallback.linkedin;
-    const website = links.find((l) => (l.label || "").toLowerCase().includes("web"))?.url || links[0]?.url || fallback.website;
+    const inferredLinks = inferExternalLinks(links);
     const experienceYears = Number.parseInt(resume.experienceYears || "0", 10) || 0;
     const fallbackExperienceYears = experienceYears || 1;
     const experienceItems =
         resume.workExperience?.length
             ? resume.workExperience.map((item, idx) => ({
                 id: `exp-${idx + 1}`,
-                title: [item.jobTitle, item.company].filter(Boolean).join(" @ ") || `Experience ${idx + 1}`,
-                years: fallbackExperienceYears,
+                title: item.jobTitle || item.company || `Experience ${idx + 1}`,
+                years: parseYearsFromDuration(item.duration, fallbackExperienceYears),
             }))
             : resume.projects?.length
                 ? resume.projects.map((project, idx) => ({
                     id: `exp-project-${idx + 1}`,
-                    title: [project.projectTitle, project.customerCompany].filter(Boolean).join(" @ ") || `Experience ${idx + 1}`,
+                    title: project.customerCompany || `Experience ${idx + 1}`,
                     years: fallbackExperienceYears,
                 }))
                 : fallback.experienceItems;
@@ -120,9 +172,9 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         title: resume.professionalTitle || fallback.title,
         location: resume.currentLocation || resume.preferredLocation || fallback.location,
         phone: resume.phone || fallback.phone,
-        github,
-        linkedin,
-        website,
+        github: inferredLinks.github,
+        linkedin: inferredLinks.linkedin,
+        website: inferredLinks.website,
         summary: resume.summary || fallback.summary,
         experience: experienceParts || fallback.experience,
         salary: salaryText || fallback.salary,
@@ -135,15 +187,24 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
             currentLocation: resume.currentLocation || fallback.personalInfo.currentLocation,
             preferredLocation: resume.preferredLocation || fallback.personalInfo.preferredLocation,
         },
-        education: resume.education?.[0]
-            ? {
-                degree: resume.education[0].title || fallback.education.degree,
-                school: resume.education[0].institute || fallback.education.school,
-                specialization: resume.education[0].specialization || fallback.education.specialization,
-                graduationYear: resume.education[0].graduationYear || fallback.education.graduationYear,
-                score: resume.education[0].score || fallback.education.score,
-            }
-            : fallback.education,
+        education:
+            resume.education?.length
+                ? resume.education.map((entry, idx) => ({
+                    degree: entry.title || fallback.education[idx]?.degree || fallback.education[0]?.degree || "",
+                    school: entry.institute || fallback.education[idx]?.school || fallback.education[0]?.school || "",
+                    specialization:
+                        entry.specialization ||
+                        fallback.education[idx]?.specialization ||
+                        fallback.education[0]?.specialization ||
+                        "",
+                    graduationYear:
+                        entry.graduationYear ||
+                        fallback.education[idx]?.graduationYear ||
+                        fallback.education[0]?.graduationYear ||
+                        "",
+                    score: entry.score || fallback.education[idx]?.score || fallback.education[0]?.score || "",
+                }))
+                : fallback.education,
         languages:
             resume.languages?.map((lang, idx) => ({
                 id: `lang-${idx + 1}`,
@@ -162,12 +223,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
                 expiry: cert.expirationDate ? parseMaybeDate(cert.expirationDate) : null,
             })) || fallback.certifications,
         experienceItems,
-        tools:
-            (resume.tools?.length ? resume.tools : []).map((tool, idx) => ({
-                id: `tool-${idx + 1}`,
-                name: tool,
-                years: fallbackExperienceYears,
-            })),
+        tools: [],
         projects:
             resume.projects?.map((project, idx) => ({
                 id: `project-${idx + 1}`,
@@ -312,18 +368,24 @@ export default function MyProfilePage() {
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
-                        <a href={PROFILE.github} className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
+                        {PROFILE.github ? (
+                        <a href={PROFILE.github} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
                             <Image width={18} height={18} src="/icons/github-logo.svg" alt="" />
                             Github
                         </a>
-                        <a href={PROFILE.linkedin} className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
+                        ) : null}
+                        {PROFILE.linkedin ? (
+                        <a href={PROFILE.linkedin} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
                             <Image width={18} height={18} src="/icons/linkedin-logo.svg" alt="" />
                             LinkedIn
                         </a>
-                        <a href={PROFILE.website} className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
+                        ) : null}
+                        {PROFILE.website ? (
+                        <a href={PROFILE.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
                             <Image width={18} height={18} src="/icons/web-logo.svg" alt="" />
                             Website
                         </a>
+                        ) : null}
                     </div>
 
                     <div className="mt-4 border-t border-[#E6ECF6] pt-4">
@@ -441,30 +503,6 @@ export default function MyProfilePage() {
             </section>
 
             <section className="mt-4 border border-[#DCE4F0] bg-white">
-                {renderAccordionHeader("Tools", "tools")}
-                {openSections.tools ? (
-                    <div className="border-t border-[#E6ECF6] px-4 py-4">
-                        <div className="space-y-3">
-                            {PROFILE.tools.map((tool) => (
-                                <div key={tool.id} className="border border-[#DCE4F0] px-4 py-4">
-                                    <div className="flex items-start gap-3">
-                                        <Wrench className="mt-0.5 h-5 w-5 text-[#66758A]" />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <p className="text-[16px] font-medium text-[#202939]">{tool.name}</p>
-                                                <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
-                                            </div>
-                                            <p className="mt-2 text-[14px] text-[#5E7397]">{tool.years} years experience</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ) : null}
-            </section>
-
-            <section className="mt-4 border border-[#DCE4F0] bg-white">
                 {renderAccordionHeader("Projects", "projects")}
                 {openSections.projects ? (
                     <div className="border-t border-[#E6ECF6] px-4 py-4">
@@ -560,23 +598,27 @@ export default function MyProfilePage() {
                 {renderAccordionHeader("Education", "education")}
                 {openSections.education ? (
                     <div className="border-t border-[#E6ECF6] px-4 py-4">
-                        <div className="border border-[#DCE4F0] px-4 py-4">
-                            <div className="flex items-start gap-3">
-                                <GraduationCap className="mt-0.5 h-5 w-5 text-[#66758A]" />
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-[16px] font-medium text-[#202939]">{PROFILE.education.degree}</p>
-                                    <p className="mt-2 text-[14px] text-[#5E7397]">{PROFILE.education.school}</p>
-                                    <div className="mt-3 border-t border-[#E6ECF6] pt-3">
-                                        <LabelValue label="Specialization" value={PROFILE.education.specialization} />
-                                        <div className="mt-3">
-                                            <LabelValue label="Graduation Year" value={PROFILE.education.graduationYear} />
-                                        </div>
-                                        <div className="mt-3">
-                                            <LabelValue label="Score" value={PROFILE.education.score} />
+                        <div className="space-y-3">
+                            {PROFILE.education.map((education, idx) => (
+                                <div key={`education-mobile-${idx}`} className="border border-[#DCE4F0] px-4 py-4">
+                                    <div className="flex items-start gap-3">
+                                        <GraduationCap className="mt-0.5 h-5 w-5 text-[#66758A]" />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[16px] font-medium text-[#202939]">{education.degree}</p>
+                                            <p className="mt-2 text-[14px] text-[#5E7397]">{education.school}</p>
+                                            <div className="mt-3 border-t border-[#E6ECF6] pt-3">
+                                                <LabelValue label="Specialization" value={education.specialization} />
+                                                <div className="mt-3">
+                                                    <LabelValue label="Graduation Year" value={education.graduationYear} />
+                                                </div>
+                                                <div className="mt-3">
+                                                    <LabelValue label="Score" value={education.score} />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 ) : null}
@@ -825,7 +867,8 @@ export default function MyProfilePage() {
                                 </div>
 
                                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3 text-sm font-medium text-[#111827] sm:text-[15px]">
-                                    <a href={PROFILE.github} className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
+                                    {PROFILE.github ? (
+                                    <a href={PROFILE.github} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
                                         {/* <Globe className="h-4 w-4" /> */}
                                         <Image
                                             width={20}
@@ -835,8 +878,12 @@ export default function MyProfilePage() {
                                         />
                                         Github
                                     </a>
+                                    ) : null}
+                                    {PROFILE.linkedin ? (
                                     <a
                                         href={PROFILE.linkedin}
+                                        target="_blank"
+                                        rel="noreferrer"
                                         className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors"
                                     >
                                         {/* <Linkedin className="h-4 w-4 text-[#0a66c2]" /> */}
@@ -848,7 +895,9 @@ export default function MyProfilePage() {
                                         />
                                         LinkedIn
                                     </a>
-                                    <a href={PROFILE.website} className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
+                                    ) : null}
+                                    {PROFILE.website ? (
+                                    <a href={PROFILE.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
                                         {/* <Globe className="h-4 w-4" /> */}
                                         <Image
                                             width={20}
@@ -858,6 +907,7 @@ export default function MyProfilePage() {
                                         />
                                         Website
                                     </a>
+                                    ) : null}
                                 </div>
 
                                 <div className="mt-5 border-t border-[#e7ebf1] pt-4">
@@ -937,19 +987,6 @@ export default function MyProfilePage() {
                                         icon={<CircleCheck className="h-4 w-4" />}
                                         title={item.title}
                                         subtitle={`${item.years} years experience`}
-                                    />
-                                ))}
-                            </div>
-                        </SectionCard>
-
-                        <SectionCard title="Tools">
-                            <div className="grid gap-3 px-4 py-4 sm:px-5 sm:py-5 md:grid-cols-2">
-                                {PROFILE.tools.map((tool) => (
-                                    <DetailTile
-                                        key={tool.id}
-                                        icon={<Settings2 className="h-4 w-4" />}
-                                        title={tool.name}
-                                        subtitle={`${tool.years} years experience`}
                                     />
                                 ))}
                             </div>
@@ -1037,31 +1074,35 @@ export default function MyProfilePage() {
 
                         <SectionCard title="Education">
                             <div className="px-4 py-4 sm:px-5 sm:py-5">
-                                <div className="border border-[#dfe4ec] px-4 py-4">
-                                    <div className="flex items-start gap-2.5">
-                                        <GraduationCap className="mt-0.5 h-4 w-4 text-[#66758a]" />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-semibold text-[#111827] sm:text-[15px]">
-                                                {PROFILE.education.degree}
-                                            </p>
-                                            <p className="mt-1 text-sm text-[#4f6fae]">{PROFILE.education.school}</p>
+                                <div className="space-y-3">
+                                    {PROFILE.education.map((education, idx) => (
+                                        <div key={`education-desktop-${idx}`} className="border border-[#dfe4ec] px-4 py-4">
+                                            <div className="flex items-start gap-2.5">
+                                                <GraduationCap className="mt-0.5 h-4 w-4 text-[#66758a]" />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-semibold text-[#111827] sm:text-[15px]">
+                                                        {education.degree}
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-[#4f6fae]">{education.school}</p>
 
-                                            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                                                <LabelValue
-                                                    label="Specialization"
-                                                    value={PROFILE.education.specialization}
-                                                />
-                                                <LabelValue
-                                                    label="Graduation Year"
-                                                    value={PROFILE.education.graduationYear}
-                                                />
-                                            </div>
+                                                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                                                        <LabelValue
+                                                            label="Specialization"
+                                                            value={education.specialization}
+                                                        />
+                                                        <LabelValue
+                                                            label="Graduation Year"
+                                                            value={education.graduationYear}
+                                                        />
+                                                    </div>
 
-                                            <div className="mt-3">
-                                                <LabelValue label="Score" value={PROFILE.education.score} />
+                                                    <div className="mt-3">
+                                                        <LabelValue label="Score" value={education.score} />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    ))}
                                 </div>
                             </div>
                         </SectionCard>

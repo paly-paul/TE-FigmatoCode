@@ -8,6 +8,7 @@ import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { clearAuthSession, getProfileName } from "@/lib/authSession";
 import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
+import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import Image from "next/image";
 
 export default function AppNavbar() {
@@ -47,6 +48,7 @@ export default function AppNavbar() {
       clearAuthSession();
       clearSessionLoginEmail();
       clearResumeWizardSession();
+      clearAllRecommendedJobsCache();
       setMobileMenuOpen(false);
       setProfileOpen(false);
       router.push("/login");

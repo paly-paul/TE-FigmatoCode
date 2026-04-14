@@ -28,6 +28,11 @@ import VisibilityScoreCard from "./VisibilityScoreCard";
 import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
+import {
+  isRecommendedJobsCacheStale,
+  readRecommendedJobsCache,
+  writeRecommendedJobsCache,
+} from "@/lib/recommendedJobsCache";
 import { LocationDrawer, type LocationOption } from "../ui/LocationDrawer";
 import {
   DEFAULT_FILTERS,
@@ -37,6 +42,7 @@ import {
 import Image from "next/image";
 import { useIsMobile } from "@/lib/useResponsive";
 import { getCandidateId, getProfileName } from "@/lib/authSession";
+import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { getCandidateActionables } from "@/services/jobs/getCandidateActionables";
 import {
   getJobApplications,
@@ -46,6 +52,7 @@ import {
   postProposalCandidateAcceptance,
   postProposalCandidateNegotiation,
 } from "@/services/jobs/actionCenter";
+import { updateJobSearchStatus } from "@/services/jobs/jobSearchStatus";
 import { isLikelyJobOpeningDocName, postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
 import type { CandidateActionableApi } from "@/services/jobs/types";
 import type { CandidateActionableSlotApi } from "@/services/jobs/types";
@@ -184,6 +191,7 @@ const ACTION_CARDS: ActionCard[] = [
 
 /** Max Action Center cards shown before "See All" (per tab). */
 const ACTION_CENTER_PAGE_SIZE = 4;
+const DASHBOARD_RECOMMENDED_JOBS_LIMIT = 6;
 const APPLIED_JOBS_STORAGE_PREFIX = "dashboard_applied_jobs_v1";
 const SOURCING_ACCEPTED_STORAGE_PREFIX = "dashboard_sourcing_accepted_v1";
 const LOCAL_ACTIONABLES_STORAGE_PREFIX = "dashboard_local_actionables_v1";
@@ -313,6 +321,39 @@ function actionCardStageRank(card: Pick<ActionCard, "title">): number {
   return 1;
 }
 
+function stableNumericId(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) || 1;
+}
+
+function actionCardSignature(card: ActionCard): string {
+  return [
+    card.type,
+    card.jobDocumentId?.trim() || String(card.id),
+    card.title,
+    card.subtitle,
+    card.timestamp,
+    card.rrCandidateName || "",
+    card.isSourcingAccepted ? "1" : "0",
+    card.proposalName || "",
+    card.interviewId || "",
+  ].join("|");
+}
+
+function jobListingSignature(job: JobListing): string {
+  return [
+    job.jobDocumentId || String(job.id),
+    job.title,
+    job.status,
+    job.stage,
+    job.postedTime,
+    String(job.matchPercentage),
+  ].join("|");
+}
+
 function buildAcceptedRecruiterInterestCard(input: {
   jobId: string;
   jobTitle: string;
@@ -339,6 +380,37 @@ function formatJobLocation(location: string, locationFull: string): string {
   const normalizedFull = full.toLowerCase();
   if (normalizedCity === normalizedFull || normalizedCity.includes(normalizedFull)) return city;
   return `${city} | ${full}`;
+}
+
+function recencyScoreFromPostedTime(postedTime: string): number {
+  const text = postedTime.trim().toLowerCase();
+  if (!text) return Number.MAX_SAFE_INTEGER;
+  if (text.includes("just now")) return 0;
+  const match = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const value = Number.parseInt(match[1], 10);
+  const unit = match[2];
+  const multiplier =
+    unit === "second"
+      ? 1
+      : unit === "minute"
+        ? 60
+        : unit === "hour"
+          ? 60 * 60
+          : unit === "day"
+            ? 60 * 60 * 24
+            : unit === "week"
+              ? 60 * 60 * 24 * 7
+              : unit === "month"
+                ? 60 * 60 * 24 * 30
+                : 60 * 60 * 24 * 365;
+  return value * multiplier;
+}
+
+function addMonthsIso(start: Date, months: number): string {
+  const next = new Date(start);
+  next.setMonth(next.getMonth() + months);
+  return next.toISOString();
 }
 
 export default function TalentEngineDashboard() {
@@ -384,6 +456,48 @@ export default function TalentEngineDashboard() {
   const lastStageByActionableNameRef = useRef<Map<string, string>>(new Map());
   const selectionSideEffectFiredRef = useRef<Set<string>>(new Set());
   const refreshInFlightRef = useRef(false);
+  const actionCardsSignatureRef = useRef("");
+  const generalCardsSignatureRef = useRef("");
+  const recommendedJobsSignatureRef = useRef("");
+
+  const resolveJobSearchUserId = () => {
+    const fromCandidate = candidateId?.trim();
+    if (fromCandidate) return fromCandidate;
+    const fromProfile = profileId?.trim();
+    if (fromProfile) return fromProfile;
+    const fromEmail = getSessionLoginEmail()?.trim();
+    if (fromEmail) return fromEmail;
+    return "";
+  };
+
+  const sendActiveJobSearchStatus = async () => {
+    const userId = resolveJobSearchUserId();
+    if (!userId) return;
+    await updateJobSearchStatus({
+      userId,
+      jobSearchStatus: "ACTIVE",
+      isOpenToOpportunities: true,
+      pauseDuration: null,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const sendPausedJobSearchStatus = async (durationMonths: number) => {
+    const userId = resolveJobSearchUserId();
+    if (!userId) return;
+    const now = new Date();
+    await updateJobSearchStatus({
+      userId,
+      jobSearchStatus: "PAUSED",
+      isOpenToOpportunities: false,
+      pauseDuration: {
+        value: durationMonths,
+        unit: "MONTHS",
+      },
+      resumeDate: addMonthsIso(now, durationMonths),
+      updatedAt: now.toISOString(),
+    });
+  };
 
   const refreshDashboardData = async (input: {
     candidateId: string | null;
@@ -428,10 +542,18 @@ export default function TalentEngineDashboard() {
       }
 
       try {
+        const cachedRecommended = readRecommendedJobsCache(profileName);
+        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileName);
         const [actionablesRes, recommendedJobsRes] = await Promise.all([
           getCandidateActionables(profileName),
-          getRecommendedJobs(profileName),
+          shouldRefreshRecommended
+            ? getRecommendedJobs(profileName)
+            : Promise.resolve(cachedRecommended?.jobs ?? []),
         ]);
+
+        if (shouldRefreshRecommended) {
+          writeRecommendedJobsCache(profileName, recommendedJobsRes);
+        }
 
         // Best-effort side effect: when an actionable transitions into "Selection",
         // trigger the proposal negotiation endpoint once.
@@ -477,8 +599,9 @@ export default function TalentEngineDashboard() {
         const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => {
           const stageText = `${item.stage} ${item.status}`.toLowerCase();
           const isInterviewActionable = stageText.includes("interview");
+          const stableIdSeed = item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
           return {
-            id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+            id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
             type: "Job",
             title: toActionTitle(item),
             subtitle: `${item.job_title} - ${item.job_id}`,
@@ -501,7 +624,9 @@ export default function TalentEngineDashboard() {
         });
 
         const localAcceptedCards: ActionCard[] = localAcceptedActionables.map((row) => ({
-          id: Number.parseInt(row.job_id.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
+          id:
+            Number.parseInt(row.job_id.replace(/\D/g, "").slice(0, 9), 10) ||
+            stableNumericId(`${row.job_id}|${row.job_title}|accepted`),
           type: "Job",
           title: "Recruiter interest accepted",
           subtitle: `${row.job_title} - ${row.job_id}`,
@@ -521,25 +646,69 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const nextGeneral: ActionCard[] = recommendedJobsRes.slice(0, 3).map((job, index) => ({
-          id: 100000 + index,
-          type: "General",
-          title: "New Matching Roles Added",
-          subtitle: `${job.job_title} - ${job.location || job.job_id}`,
-          timestamp: job.status || "Recommended",
-          jobDocumentId: job.job_id,
-        }));
+        const sortedRecommendedForGeneral = [...recommendedJobsRes]
+          .map((job, index) => ({ job, index }))
+          .sort((a, b) => {
+            const aScore = recencyScoreFromPostedTime(a.job.status || "");
+            const bScore = recencyScoreFromPostedTime(b.job.status || "");
+            if (aScore !== bScore) return aScore - bScore;
+            return a.index - b.index;
+          })
+          .map((row) => row.job);
+        const nextGeneral: ActionCard[] = sortedRecommendedForGeneral
+          .slice(0, 3)
+          .map((job, index) => ({
+            id: 100000 + index,
+            type: "General",
+            title: "New Matching Roles Added",
+            subtitle: `${job.job_title} - ${job.location || job.job_id}`,
+            timestamp: job.status || "Recommended",
+            jobDocumentId: job.job_id,
+          }));
         const nextRecommendedJobs: JobListing[] = recommendedJobsRes.map((job) =>
           mapRecommendedToDashboardJob(job)
         );
-
-        setApiActionCards(Array.from(mergedByJob.values()));
-        setApiGeneralCards(nextGeneral);
-        setApiRecommendedJobs(
-          nextRecommendedJobs.filter(
-            (job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))
-          )
+        const filteredRecommendedJobs = nextRecommendedJobs.filter(
+          (job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))
         );
+
+        // Keep source ordering for UI (backend/local insertion order -> newest first),
+        // but build signatures from a stable key sort to avoid unnecessary re-renders.
+        const orderedActions = Array.from(mergedByJob.values());
+        const actionSignature = [...orderedActions]
+          .sort((a, b) =>
+            (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
+          )
+          .map(actionCardSignature)
+          .join("::");
+        if (actionCardsSignatureRef.current !== actionSignature) {
+          actionCardsSignatureRef.current = actionSignature;
+          setApiActionCards(orderedActions);
+        }
+
+        const orderedGeneral = [...nextGeneral];
+        const generalSignature = [...orderedGeneral]
+          .sort((a, b) =>
+            (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
+          )
+          .map(actionCardSignature)
+          .join("::");
+        if (generalCardsSignatureRef.current !== generalSignature) {
+          generalCardsSignatureRef.current = generalSignature;
+          setApiGeneralCards(orderedGeneral);
+        }
+
+        const orderedRecommended = [...filteredRecommendedJobs];
+        const recommendedSignature = [...orderedRecommended]
+          .sort((a, b) =>
+            (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
+          )
+          .map(jobListingSignature)
+          .join("::");
+        if (recommendedJobsSignatureRef.current !== recommendedSignature) {
+          recommendedJobsSignatureRef.current = recommendedSignature;
+          setApiRecommendedJobs(orderedRecommended);
+        }
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       } catch {
@@ -644,41 +813,6 @@ export default function TalentEngineDashboard() {
 
     void refreshDashboardData({ candidateId: currentCandidateId, profileName });
   }, []);
-
-  // Auto-refresh: keep actionables/recommendations up to date without needing a full remount.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!candidateId && !profileId) return;
-
-    const run = () => {
-      const latestCandidateId = getCandidateId();
-      const latestProfileName = getProfileName();
-      // If auth session values changed without remount, sync state.
-      if (latestCandidateId !== candidateId) setCandidateId(latestCandidateId);
-      if (latestProfileName !== profileId) setProfileId(latestProfileName);
-      void refreshDashboardData({
-        candidateId: latestCandidateId,
-        profileName: latestProfileName,
-      });
-    };
-
-    // Refresh on focus / when returning to tab.
-    const onFocus = () => run();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") run();
-    };
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    // Poll periodically (tuned to be responsive but not chatty).
-    const interval = window.setInterval(run, 30_000);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(interval);
-    };
-  }, [candidateId, profileId]);
 
   useEffect(() => {
     if (!candidateId || typeof window === "undefined") return;
@@ -828,8 +962,12 @@ export default function TalentEngineDashboard() {
         );
       });
 
+    const recommendedFiltered = filterList(recommendedSourceJobs)
+      .sort((a, b) => recencyScoreFromPostedTime(a.postedTime) - recencyScoreFromPostedTime(b.postedTime))
+      .slice(0, DASHBOARD_RECOMMENDED_JOBS_LIMIT);
+
     return {
-      visibleRecommendedJobs: filterList(recommendedSourceJobs),
+      visibleRecommendedJobs: recommendedFiltered,
       visibleApplicationJobs: filterList(applicationSourceJobs),
     };
   }, [
@@ -1024,13 +1162,14 @@ export default function TalentEngineDashboard() {
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
         } else if (action.rrCandidateName?.trim()) {
+          const availabilityDate = extras?.availabilityDate?.trim() || undefined;
           const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
           await postCandidateSourcingAcceptance({
             rrcandidate_name: action.rrCandidateName.trim(),
             expected_salary: Number.isFinite(parsedSalary) ? parsedSalary : undefined,
-            billing_frequency: "Monthly",
+            billing_frequency: "hourly",
             billing_currency: "USD",
-            availability_date: extras?.availabilityDate?.trim() || undefined,
+            availability_date: availabilityDate,
             accept_terms: extras?.acceptTerms === true,
           });
           setSourcingAcceptedRrCandidates((prev) => {
@@ -1114,9 +1253,18 @@ export default function TalentEngineDashboard() {
   };
 
   const handlePauseSave = (duration: string) => {
-    console.log("Paused for:", duration, "months");
-    setIsLookingForJob(false);
-    setShowPauseModal(false);
+    const durationMonths = Number.parseInt(duration, 10);
+    if (!Number.isFinite(durationMonths) || durationMonths <= 0) return;
+    void (async () => {
+      try {
+        await sendPausedJobSearchStatus(durationMonths);
+      } catch {
+        // Keep UX responsive even if backend update fails.
+      } finally {
+        setIsLookingForJob(false);
+        setShowPauseModal(false);
+      }
+    })();
   };
 
   const renderEmptyJobs = (message: string) => (
@@ -1142,7 +1290,15 @@ export default function TalentEngineDashboard() {
         if (isLookingForJob) {
           setShowPauseModal(true);
         } else {
-          setIsLookingForJob(false);
+          void (async () => {
+            try {
+              await sendActiveJobSearchStatus();
+            } catch {
+              // Keep UX responsive even if backend update fails.
+            } finally {
+              setIsLookingForJob(true);
+            }
+          })();
         }
       }}
       className="flex items-center gap-3 group"
@@ -1257,7 +1413,17 @@ export default function TalentEngineDashboard() {
         open={welcomeModalOpen}
         userName={welcomeUserName}
         onClose={() => setWelcomeModalOpen(false)}
-        onYesOpenToOpportunities={() => setIsLookingForJob(true)}
+        onYesOpenToOpportunities={() => {
+          void (async () => {
+            try {
+              await sendActiveJobSearchStatus();
+            } catch {
+              // Keep UX responsive even if backend update fails.
+            } finally {
+              setIsLookingForJob(true);
+            }
+          })();
+        }}
         onNotRightNow={() => setShowPauseModal(true)}
       />
     </>

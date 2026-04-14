@@ -820,7 +820,7 @@ function findProjects(text: string) {
   for (const chunk of chunks.slice(0, 3)) {
     const normalizedChunk = chunk.replace(/\s+/g, " ").trim();
     const sentences = normalizedChunk.split(/(?<=[.?!])\s+/).filter(Boolean);
-    const titleCandidate = chunk.split("\n")[0]?.trim();
+    const titleCandidate = extractProjectTitleFromChunk(chunk);
     const title =
       titleCandidate &&
       titleCandidate.length >= 3 &&
@@ -841,6 +841,35 @@ function findProjects(text: string) {
   }
 
   return projects.filter((project) => project.projectDescription || project.responsibilities);
+}
+
+function extractProjectTitleFromChunk(chunk: string) {
+  const lines = chunk
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return undefined;
+
+  const normalizeCandidate = (value: string) => {
+    const withoutBullet = value.replace(/^[-*•]\s*/, "");
+    const withoutNumber = withoutBullet.replace(/^\d+\s*[\).:-]\s*/, "");
+    const labeledMatch = withoutNumber.match(
+      /^(?:project(?:\s*(?:title|name))?|title)\s*[:\-]\s*(.+)$/i
+    );
+    const normalized = (labeledMatch?.[1] ?? withoutNumber).trim();
+    return normalized.replace(/\s{2,}/g, " ");
+  };
+
+  // Prefer explicitly labeled title/name lines if present.
+  for (const line of lines.slice(0, 5)) {
+    if (/^(?:project(?:\s*(?:title|name))?|title)\s*[:\-]\s*/i.test(line)) {
+      return normalizeCandidate(line);
+    }
+  }
+
+  // Otherwise use the first meaningful short line as title.
+  return normalizeCandidate(lines[0]);
 }
 
 function hasUsefulResumeText(text: string) {

@@ -93,6 +93,19 @@ const metaIcons = {
   users: Users,
 } as const;
 
+function getTodayIsoDate(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function sanitizeDecimalInput(value: string): string {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) return cleaned;
+  return `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, "")}`;
+}
+
 /** `isSourcingAccepted` only means "submit already done" for recruiter-interest cards — not interview/salary stages. */
 function shouldPrefillSubmittedFromSourcing(action: ActionDrawerActionCard | null): boolean {
   if (!action?.isSourcingAccepted) return false;
@@ -110,9 +123,10 @@ export default function ActionDrawer({
   onPrimaryAction,
   onRequestClarification,
 }: ActionDrawerProps) {
+  const minAvailableDate = getTodayIsoDate();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [activeTab, setActiveTab] = useState<ActionDrawerTab>("Job Action");
-  const [availableDate, setAvailableDate] = useState<string>(actionDrawerFormDefaults.availableDate);
+  const [availableDate, setAvailableDate] = useState<string>(minAvailableDate);
   const [expectedSalary, setExpectedSalary] = useState<string>(actionDrawerFormDefaults.expectedSalary);
   const [selectedInterviewSlot, setSelectedInterviewSlot] = useState<string>(
     actionDrawerFormDefaults.selectedInterviewSlotId
@@ -133,7 +147,7 @@ export default function ActionDrawer({
   useEffect(() => {
     if (open) {
       setActiveTab("Job Action");
-      setAvailableDate(actionDrawerFormDefaults.availableDate);
+      setAvailableDate(minAvailableDate);
       setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
       setIsProposalExpanded(true);
@@ -149,7 +163,7 @@ export default function ActionDrawer({
       setIsSubmitting(false);
       setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
     }
-  }, [open, action?.isSourcingAccepted, action?.title]);
+  }, [open, action?.isSourcingAccepted, action?.title, minAvailableDate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -386,10 +400,16 @@ export default function ActionDrawer({
       !resolvedInterviewId ||
       interviewSlots.length === 0 ||
       !selectedInterviewSlot);
+  const parsedExpectedSalary = Number.parseFloat(expectedSalary);
+  const recruiterDateInvalid = !availableDate || availableDate < minAvailableDate;
+  const recruiterSalaryInvalid = !Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0;
+  const recruiterSubmitDisabled =
+    isRecruiterInterestReceived && (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms);
   const primarySubmitDisabled = Boolean(
     isSubmitting ||
       hasSubmitted ||
-      (isInterviewScheduled && interviewSubmitDisabled)
+      (isInterviewScheduled && interviewSubmitDisabled) ||
+      recruiterSubmitDisabled
   );
   const resolvedMatchPercent = rrDetails?.match_score != null
     ? `${Math.round(rrDetails.match_score)}%`
@@ -444,7 +464,11 @@ export default function ActionDrawer({
             <input
               type="date"
               value={availableDate}
-              onChange={(event) => setAvailableDate(event.target.value)}
+              min={minAvailableDate}
+              onChange={(event) => {
+                const next = event.target.value;
+                setAvailableDate(next && next < minAvailableDate ? minAvailableDate : next);
+              }}
               className="h-10 w-full rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
             />
             <Calendar className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5E7397] sm:right-3.5 sm:h-4 sm:w-4" />
@@ -461,7 +485,7 @@ export default function ActionDrawer({
             </div>
             <input
               value={expectedSalary}
-              onChange={(event) => setExpectedSalary(event.target.value.replace(/[^\d.]/g, ""))}
+              onChange={(event) => setExpectedSalary(sanitizeDecimalInput(event.target.value))}
               className="min-w-0 flex-1 px-3 text-xs text-[#202939] outline-none sm:px-3.5 sm:text-sm"
               inputMode="decimal"
             />

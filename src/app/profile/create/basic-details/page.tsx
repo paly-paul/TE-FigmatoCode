@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
-import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { BaseDrawer } from "@/components/ui/BaseDrawer";
 import { SmallUploadIcon, TrashIcon } from "@/components/icons";
@@ -206,6 +205,32 @@ function normalizeDateForInput(value: string | undefined): string {
 function withCurrentOption(options: string[], currentValue: string) {
   const value = currentValue.trim();
   return value && !options.includes(value) ? [value, ...options] : options;
+}
+
+function hasMeaningfulProfileValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean") return true;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return false;
+}
+
+function mergeProfilePreferringExisting(existing: ResumeProfileData, incoming: ResumeProfileData): ResumeProfileData {
+  const merged: ResumeProfileData = { ...incoming };
+  for (const [key, value] of Object.entries(existing)) {
+    if (hasMeaningfulProfileValue(value)) {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}
+
+function preferExistingFormValue(existing: string, incoming: string): string {
+  const left = (existing || "").trim();
+  if (left) return existing;
+  return incoming;
 }
 
 const initialForm: BasicDetailsForm = {
@@ -486,7 +511,6 @@ function BasicDetailsPageContent() {
   const searchParams = useSearchParams();
   const generateButtonRef = useRef<HTMLButtonElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
-  const [lookingForJob, setLookingForJob] = useState(true);
   const [form, setForm] = useState<BasicDetailsForm>(initialForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [education, setEducation] = useState<EducationEntry[]>(() => [createEducationEntry()]);
@@ -605,23 +629,23 @@ function BasicDetailsPageContent() {
     const normalizedDob = normalizeDateForInput(profile.dob);
     setForm((prev) => ({
       ...prev,
-      professionalTitle: profile.professionalTitle ?? prev.professionalTitle,
-      expYears: expYearsNorm || prev.expYears,
-      expMonths: expMonthsNorm || prev.expMonths,
-      salary: profile.salaryPerMonth ?? prev.salary,
-      salaryCurrency: profile.salaryCurrency ?? prev.salaryCurrency,
-      summary: profile.summary ?? prev.summary,
-      firstName: profile.firstName ?? prev.firstName,
-      lastName: profile.lastName ?? prev.lastName,
-      dob: normalizedDob || prev.dob,
-      gender: normalizedGender || prev.gender,
-      countryCode: normalizedCountryCode || prev.countryCode,
-      contact: profile.phone ?? prev.contact,
-      email: profile.email ?? prev.email,
-      altEmail: profile.altEmail ?? prev.altEmail,
-      nationality: profile.nationality ?? prev.nationality,
-      currentLocation: profile.currentLocation ?? prev.currentLocation,
-      preferredLocation: profile.preferredLocation ?? prev.preferredLocation,
+      professionalTitle: preferExistingFormValue(prev.professionalTitle, profile.professionalTitle ?? ""),
+      expYears: preferExistingFormValue(prev.expYears, expYearsNorm),
+      expMonths: preferExistingFormValue(prev.expMonths, expMonthsNorm),
+      salary: preferExistingFormValue(prev.salary, profile.salaryPerMonth ?? ""),
+      salaryCurrency: preferExistingFormValue(prev.salaryCurrency, profile.salaryCurrency ?? ""),
+      summary: preferExistingFormValue(prev.summary, profile.summary ?? ""),
+      firstName: preferExistingFormValue(prev.firstName, profile.firstName ?? ""),
+      lastName: preferExistingFormValue(prev.lastName, profile.lastName ?? ""),
+      dob: preferExistingFormValue(prev.dob, normalizedDob),
+      gender: preferExistingFormValue(prev.gender, normalizedGender),
+      countryCode: preferExistingFormValue(prev.countryCode, normalizedCountryCode),
+      contact: preferExistingFormValue(prev.contact, profile.phone ?? ""),
+      email: preferExistingFormValue(prev.email, profile.email ?? ""),
+      altEmail: preferExistingFormValue(prev.altEmail, profile.altEmail ?? ""),
+      nationality: preferExistingFormValue(prev.nationality, profile.nationality ?? ""),
+      currentLocation: preferExistingFormValue(prev.currentLocation, profile.currentLocation ?? ""),
+      preferredLocation: preferExistingFormValue(prev.preferredLocation, profile.preferredLocation ?? ""),
     }));
 
     if (profile.education && profile.education.length) {
@@ -679,21 +703,32 @@ function BasicDetailsPageContent() {
   }
 
   useEffect(() => {
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
+    const effectiveProfileName = queryProfileName || getProfileName() || "";
+    // In edit mode, prefer API hydration to avoid stale create-session data overwriting fields.
+    if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) return;
     const stored = readResumeProfile();
     console.log("Data from session storage:", stored);
     if (!stored) return;
     applyProfileToForm(stored);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const candidateId = getCandidateId();
-        let profileName = getProfileName() || "";
+        const queryProfileName =
+          new URLSearchParams(window.location.search).get("profile")?.trim() ||
+          new URLSearchParams(window.location.search).get("profile_name")?.trim() ||
+          "";
+        let profileName = queryProfileName || getProfileName() || "";
 
-        if (profileName && !isLikelyDocId(profileName)) {
-          profileName = "";
+        if (queryProfileName && queryProfileName !== getProfileName()) {
+          setProfileName(queryProfileName);
         }
 
         if (!profileName && candidateId && isLikelyDocId(candidateId)) {
@@ -703,7 +738,7 @@ function BasicDetailsPageContent() {
           if (resolverRes.ok) {
             const resolverData = (await resolverRes.json()) as { profile_name?: string };
             const resolvedProfileName = resolverData.profile_name?.trim() || "";
-            if (resolvedProfileName && isLikelyDocId(resolvedProfileName)) {
+            if (resolvedProfileName) {
               profileName = resolvedProfileName;
               setProfileName(resolvedProfileName);
             }
@@ -715,9 +750,11 @@ function BasicDetailsPageContent() {
         const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
 
-        const sessionProfile = readResumeProfile() ?? {};
-        const merged = { ...sessionProfile, ...backendProfile };
-
+        const isEditMode = isLikelyDocId(profileName);
+        const existingSessionProfile = readResumeProfile() ?? {};
+        const merged = isEditMode
+          ? backendProfile
+          : mergeProfilePreferringExisting(existingSessionProfile, backendProfile);
         upsertResumeProfile(merged);
         applyProfileToForm(merged);
       } catch {
@@ -761,6 +798,60 @@ function BasicDetailsPageContent() {
     }, 150);
     return () => window.clearTimeout(timer);
   }, [isMobileViewport, searchParams]);
+
+  useEffect(() => {
+    const trimmedEducation = education
+      .map(({ title, institute, specialization, graduationYear, score }) => ({
+        title: title.trim(),
+        institute: institute.trim(),
+        specialization: specialization.trim(),
+        graduationYear: graduationYear.trim(),
+        score: score.trim(),
+      }))
+      .filter((entry) => entry.title || entry.institute || entry.specialization || entry.graduationYear || entry.score);
+
+    const trimmedCertifications = certifications
+      .map(({ name, issuing, certificateNumber, issueDate, expirationDate, url }) => ({
+        name: name.trim(),
+        issuing: issuing.trim(),
+        certificateNumber: certificateNumber.trim(),
+        issueDate: issueDate || undefined,
+        expirationDate: expirationDate || undefined,
+        url: url.trim(),
+      }))
+      .filter(
+        (entry) =>
+          entry.name ||
+          entry.issuing ||
+          entry.certificateNumber ||
+          entry.issueDate ||
+          entry.expirationDate ||
+          entry.url
+      );
+
+    const trimmedLinks = externalLinks
+      .map(({ label, url }) => ({
+        label: label.trim(),
+        url: url.trim(),
+      }))
+      .filter((entry) => entry.label || entry.url);
+
+    const trimmedLanguages = languages
+      .map(({ language, read, write, speak }) => ({
+        language: language.trim(),
+        read,
+        write,
+        speak,
+      }))
+      .filter((entry) => entry.language || entry.read || entry.write || entry.speak);
+
+    upsertResumeProfile({
+      education: trimmedEducation,
+      certifications: trimmedCertifications,
+      externalLinks: trimmedLinks,
+      languages: trimmedLanguages,
+    });
+  }, [education, certifications, externalLinks, languages]);
 
   const isProfessionalSectionComplete = (() => {
     if (!form.professionalTitle.trim()) return false;
@@ -1078,7 +1169,15 @@ function BasicDetailsPageContent() {
         expirationDate: expirationDate || undefined,
         url: url.trim(),
       }))
-      .filter((entry) => entry.name || entry.issuing);
+      .filter(
+        (entry) =>
+          entry.name ||
+          entry.issuing ||
+          entry.certificateNumber ||
+          entry.issueDate ||
+          entry.expirationDate ||
+          entry.url
+      );
 
     const trimmedLinks = externalLinks
       .map(({ label, url }) => ({
@@ -1166,14 +1265,6 @@ function BasicDetailsPageContent() {
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4">
           <h1 className="text-lg font-bold text-gray-900">Create Profile</h1>
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 w-fit">
-            <Toggle
-              id="looking-for-job"
-              label="Looking for a Job"
-              checked={lookingForJob}
-              onChange={setLookingForJob}
-            />
-          </div>
         </div>
 
         <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
@@ -1222,7 +1313,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">First Name *</span>
+                      <span className="text-sm font-medium text-gray-800">First Name <span className="text-red-500">*</span></span>
                       <input
                         type="text"
                         value={form.firstName}
@@ -1236,7 +1327,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Last Name *</span>
+                      <span className="text-sm font-medium text-gray-800">Last Name <span className="text-red-500">*</span></span>
                       <input
                         type="text"
                         value={form.lastName}
@@ -1252,7 +1343,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">DOB *</span>
+                      <span className="text-sm font-medium text-gray-800">DOB <span className="text-red-500">*</span></span>
                       <input
                         type="date"
                         value={form.dob}
@@ -1263,7 +1354,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Gender *</span>
+                      <span className="text-sm font-medium text-gray-800">Gender <span className="text-red-500">*</span></span>
                       <select
                         value={form.gender}
                         onChange={(e) => setField("gender", e.target.value)}
@@ -1283,7 +1374,7 @@ function BasicDetailsPageContent() {
                   </div>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Contact *</span>
+                    <span className="text-sm font-medium text-gray-800">Contact <span className="text-red-500">*</span></span>
                     <div className="flex items-stretch gap-0 rounded-md overflow-hidden border border-gray-200 bg-white">
                       <select
                         value={form.countryCode}
@@ -1313,7 +1404,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Email *</span>
+                    <span className="text-sm font-medium text-gray-800">Email <span className="text-red-500">*</span></span>
                     <input
                       type="email"
                       value={form.email}
@@ -1336,7 +1427,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Nationality *</span>
+                    <span className="text-sm font-medium text-gray-800">Nationality <span className="text-red-500">*</span></span>
                       <select
                         value={form.nationality}
                         onChange={(e) => setField("nationality", e.target.value)}
@@ -1355,7 +1446,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Current Location *</span>
+                    <span className="text-sm font-medium text-gray-800">Current Location <span className="text-red-500">*</span></span>
                     <div className="relative">
                       <input
                         type="text"
@@ -1398,7 +1489,7 @@ function BasicDetailsPageContent() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <label className="flex flex-col gap-2 md:col-span-1">
-                        <span className="text-sm font-medium text-gray-800">Professional Title *</span>
+                        <span className="text-sm font-medium text-gray-800">Professional Title <span className="text-red-500">*</span></span>
                         <input
                           type="text"
                           value={form.professionalTitle}
@@ -1412,7 +1503,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Exp. Years *</span>
+                        <span className="text-sm font-medium text-gray-800">Exp. Years <span className="text-red-500">*</span></span>
                         <select
                           value={form.expYears}
                           onChange={(e) => setField("expYears", e.target.value)}
@@ -1429,7 +1520,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Months *</span>
+                        <span className="text-sm font-medium text-gray-800">Months <span className="text-red-500">*</span></span>
                         <select
                           value={form.expMonths}
                           onChange={(e) => setField("expMonths", e.target.value)}
@@ -1448,7 +1539,7 @@ function BasicDetailsPageContent() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Salary / Month *</span>
+                        <span className="text-sm font-medium text-gray-800">Salary / Hour <span className="text-red-500">*</span></span>
                         <input
                           type="text"
                           value={form.salary}
@@ -1460,7 +1551,7 @@ function BasicDetailsPageContent() {
                       </label>
 
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-gray-800">Salary Currency *</span>
+                        <span className="text-sm font-medium text-gray-800">Salary Currency <span className="text-red-500">*</span></span>
                         <select
                           value={form.salaryCurrency}
                           onChange={(e) => setField("salaryCurrency", e.target.value)}
@@ -1480,7 +1571,7 @@ function BasicDetailsPageContent() {
 
                   <div className="border-t border-gray-200 pt-5 space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-gray-900">Summary *</span>
+                      <span className="text-sm font-semibold text-gray-900">Summary <span className="text-red-500">*</span></span>
                       <button
                         ref={generateButtonRef}
                         type="button"
@@ -1908,7 +1999,7 @@ function BasicDetailsPageContent() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <label className="flex flex-col gap-2 md:col-span-1">
-                      <span className="text-sm font-medium text-gray-800">Professional Title *</span>
+                      <span className="text-sm font-medium text-gray-800">Professional Title <span className="text-red-500">*</span></span>
                       <input
                         type="text"
                         value={form.professionalTitle}
@@ -1920,7 +2011,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Exp. Years *</span>
+                      <span className="text-sm font-medium text-gray-800">Exp. Years <span className="text-red-500">*</span></span>
                       <select
                         value={form.expYears}
                         onChange={(e) => setField("expYears", e.target.value)}
@@ -1937,7 +2028,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Months *</span>
+                      <span className="text-sm font-medium text-gray-800">Months <span className="text-red-500">*</span></span>
                       <select
                         value={form.expMonths}
                         onChange={(e) => setField("expMonths", e.target.value)}
@@ -1956,7 +2047,7 @@ function BasicDetailsPageContent() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Salary / Month *</span>
+                      <span className="text-sm font-medium text-gray-800">Salary / Hour <span className="text-red-500">*</span></span>
                       <input
                         type="text"
                         value={form.salary}
@@ -1968,7 +2059,7 @@ function BasicDetailsPageContent() {
                     </label>
 
                     <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium text-gray-800">Salary Currency *</span>
+                      <span className="text-sm font-medium text-gray-800">Salary Currency <span className="text-red-500">*</span></span>
                       <select
                         value={form.salaryCurrency}
                         onChange={(e) => setField("salaryCurrency", e.target.value)}
@@ -1986,7 +2077,7 @@ function BasicDetailsPageContent() {
 
                 <div className="border-t border-gray-200 pt-5 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-gray-900">Summary *</span>
+                    <span className="text-sm font-semibold text-gray-900">Summary <span className="text-red-500">*</span></span>
                     <button
                       ref={generateButtonRef}
                       type="button"
@@ -2386,7 +2477,7 @@ function BasicDetailsPageContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">First Name *</span>
+                    <span className="text-sm font-medium text-gray-800">First Name <span className="text-red-500">*</span></span>
                     <input
                       type="text"
                       value={form.firstName}
@@ -2398,7 +2489,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Last Name *</span>
+                    <span className="text-sm font-medium text-gray-800">Last Name <span className="text-red-500">*</span></span>
                     <input
                       type="text"
                       value={form.lastName}
@@ -2410,7 +2501,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">DOB *</span>
+                    <span className="text-sm font-medium text-gray-800">DOB <span className="text-red-500">*</span></span>
                     <input
                       type="date"
                       value={form.dob}
@@ -2421,7 +2512,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Gender *</span>
+                    <span className="text-sm font-medium text-gray-800">Gender <span className="text-red-500">*</span></span>
                     <select
                       value={form.gender}
                       onChange={(e) => setField("gender", e.target.value)}
@@ -2439,7 +2530,7 @@ function BasicDetailsPageContent() {
                 </div>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Email *</span>
+                  <span className="text-sm font-medium text-gray-800">Email <span className="text-red-500">*</span></span>
                   <input
                     type="email"
                     value={form.email}
@@ -2463,7 +2554,7 @@ function BasicDetailsPageContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Nationality *</span>
+                    <span className="text-sm font-medium text-gray-800">Nationality <span className="text-red-500">*</span></span>
                     <select
                       value={form.nationality}
                       onChange={(e) => setField("nationality", e.target.value)}
@@ -2480,7 +2571,7 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Current Location *</span>
+                    <span className="text-sm font-medium text-gray-800">Current Location <span className="text-red-500">*</span></span>
                     <input
                       type="text"
                       value={form.currentLocation}
@@ -2504,7 +2595,7 @@ function BasicDetailsPageContent() {
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Contact *</span>
+                  <span className="text-sm font-medium text-gray-800">Contact <span className="text-red-500">*</span></span>
                   <div className="grid grid-cols-[84px_1fr] gap-2">
                     <select
                       value={form.countryCode}

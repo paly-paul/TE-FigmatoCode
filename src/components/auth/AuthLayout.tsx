@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { RightPanel } from "@/components/desktop/RightPanel";
 
 interface AuthLayoutProps {
@@ -47,14 +48,13 @@ export function AuthLayout({
         <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
           {/* Logo */}
           <div className="flex items-center gap-2.5 px-8 pt-7 pb-0">
-            <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
-              <span className="text-white font-bold text-sm tracking-wide">
-                TE
-              </span>
-            </div>
-            <span className="font-semibold text-gray-800 text-base">
-              Talent Engine
-            </span>
+            <Image
+              src="/icons/logo.jpeg"
+              width={35}
+              height={35}
+              alt="SixFE Logo"
+            />
+            <span className="font-semibold text-gray-800 text-base">SixFE</span>
           </div>
 
           {/* Card container — grows to fill remaining height */}
