@@ -24,13 +24,15 @@ export const PROFILE: ProfileData = {
     currentLocation: "Brooklyn Heights, United States",
     preferredLocation: "Atlanta, United States",
   },
-  education: {
-    degree: "Master of Computer Applications",
-    school: "Harvard University",
-    specialization: "Computers",
-    graduationYear: "2016",
-    score: "9.8",
-  },
+  education: [
+    {
+      degree: "Master of Computer Applications",
+      school: "Harvard University",
+      specialization: "Computers",
+      graduationYear: "2016",
+      score: "9.8",
+    },
+  ],
   languages: [
     { id: "l1", name: "English", read: "Good", write: "Excellent", speak: "Good" },
     { id: "l2", name: "French", read: "Medium", write: "Excellent", speak: "Good" },

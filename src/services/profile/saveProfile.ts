@@ -10,7 +10,7 @@ export interface SaveProfilePayload {
   professional_title?: string;
   total_experience?: number;
   current_location?: string;
-  key_skills?: Array<{ key_skill: string }>;
+  key_skills?: string[];
   education_details?: Array<{
     degree?: string;
     institution?: string;

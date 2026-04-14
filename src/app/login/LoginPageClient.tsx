@@ -24,6 +24,7 @@ export default function LoginPageClient() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const { submit, isLoading, error } = useCandidateLogin();
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
@@ -36,8 +37,10 @@ export default function LoginPageClient() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isLoading || isRedirecting) return;
     const ok = await submit({ email, password });
     if (!ok) return;
+    setIsRedirecting(true);
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
     console.log("[login-page] final-decision", {
@@ -47,9 +50,9 @@ export default function LoginPageClient() {
     });
     if (skipWizard) {
       setDashboardWelcomePending();
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } else {
-      router.push("/profile/create");
+      router.replace("/profile/create");
     }
   }
 
@@ -115,8 +118,8 @@ export default function LoginPageClient() {
           </p>
         ) : null}
 
-        <Button type="submit" className="mt-1" disabled={isLoading}>
-          {isLoading ? "Signing in…" : "Continue"}
+        <Button type="submit" className="mt-1" disabled={isLoading || isRedirecting}>
+          {isLoading ? "Signing in..." : isRedirecting ? "Redirecting..." : "Continue"}
         </Button>
       </form>
 

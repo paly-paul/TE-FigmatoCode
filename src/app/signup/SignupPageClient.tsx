@@ -113,7 +113,7 @@ export default function SignupPageClient() {
         ) : null}
 
         <Button type="submit" className="mt-1" disabled={isLoading}>
-          {isLoading ? "Creating account…" : "Create Account"}
+          {isLoading ? "Sending OTP..." : "Create Account"}
         </Button>
       </form>
 

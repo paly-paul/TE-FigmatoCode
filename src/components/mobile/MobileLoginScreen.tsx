@@ -22,11 +22,14 @@ export function MobileLoginScreen() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const { submit, isLoading, error } = useCandidateLogin();
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isLoading || isRedirecting) return;
     const ok = await submit({ email, password });
     if (!ok) return;
+    setIsRedirecting(true);
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
     console.log("[mobile-login-page] final-decision", {
@@ -36,9 +39,9 @@ export function MobileLoginScreen() {
     });
     if (skipWizard) {
       setDashboardWelcomePending();
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } else {
-      router.push("/profile/create");
+      router.replace("/profile/create");
     }
   }
 
@@ -100,9 +103,9 @@ export function MobileLoginScreen() {
           <Button
             type="submit"
             className="mt-1 min-h-[48px] text-base"
-            disabled={isLoading}
+            disabled={isLoading || isRedirecting}
           >
-            {isLoading ? "Signing in…" : "Continue"}
+            {isLoading ? "Signing in..." : isRedirecting ? "Redirecting..." : "Continue"}
           </Button>
         </form>
 

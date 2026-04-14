@@ -24,9 +24,18 @@ import {
   SENIORITY_LEVELS,
   SKILLS,
 } from "../ui/FilterDrawer";
-import { DEFAULT_LOCATIONS, LocationDrawer } from "../ui/LocationDrawer";
+import {
+  DEFAULT_LOCATIONS,
+  LocationDrawer,
+  type LocationOption,
+} from "../ui/LocationDrawer";
 import { useIsBelowLg } from "@/lib/useResponsive";
 import { getProfileName, setProfileName } from "@/lib/authSession";
+import {
+  isRecommendedJobsCacheStale,
+  readRecommendedJobsCache,
+  writeRecommendedJobsCache,
+} from "@/lib/recommendedJobsCache";
 import { getRecommendedJobs } from "@/services/jobs/actionCenter";
 import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
 
@@ -159,18 +168,6 @@ const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
   salaryMax: 10000,
 };
-
-const LOCATION_LABELS = DEFAULT_LOCATIONS.reduce<Record<string, string>>(
-  (accumulator, location) => {
-    accumulator[location.id] = location.label;
-    return accumulator;
-  },
-  {}
-);
-
-function getLocationLabel(locationId: string) {
-  return LOCATION_LABELS[locationId] || locationId;
-}
 
 function FilterCheckboxGroup({
   options,
@@ -565,7 +562,7 @@ export default function TalentEngineJobsPage() {
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
   const [showReferModal, setShowReferModal] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>(["bangor-us"]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("Most Relevant");
   const [skillSearch, setSkillSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>(JOBS_FILTER_DEFAULTS);
@@ -608,7 +605,14 @@ export default function TalentEngineJobsPage() {
       }
 
       try {
-        const recommended = await getRecommendedJobs(profileName);
+        const cachedRecommended = readRecommendedJobsCache(profileName);
+        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileName);
+        const recommended = shouldRefreshRecommended
+          ? await getRecommendedJobs(profileName)
+          : (cachedRecommended?.jobs ?? []);
+        if (shouldRefreshRecommended) {
+          writeRecommendedJobsCache(profileName, recommended);
+        }
         if (!active) return;
         setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
       } catch {
@@ -624,8 +628,31 @@ export default function TalentEngineJobsPage() {
     };
   }, []);
 
+  const availableLocations = useMemo<LocationOption[]>(() => {
+    const sourceJobs = hasAttemptedJobsLoad && apiRecommendedJobs.length > 0 ? apiRecommendedJobs : JOBS;
+    const byId = new Map<string, string>();
+    for (const job of sourceJobs) {
+      const id = job.locationId?.trim();
+      if (!id || id === "—") continue;
+      const label = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
+      byId.set(id, label || id);
+    }
+
+    if (byId.size === 0) return DEFAULT_LOCATIONS;
+    return Array.from(byId.entries()).map(([id, label]) => ({ id, label }));
+  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
+
+  const locationLabelMap = useMemo<Record<string, string>>(
+    () =>
+      availableLocations.reduce<Record<string, string>>((accumulator, location) => {
+        accumulator[location.id] = location.label;
+        return accumulator;
+      }, {}),
+    [availableLocations]
+  );
+
   const primaryLocation = selectedLocations[0]
-    ? getLocationLabel(selectedLocations[0])
+    ? locationLabelMap[selectedLocations[0]] || selectedLocations[0]
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
 
@@ -918,7 +945,7 @@ export default function TalentEngineJobsPage() {
                   key={locationId}
                   className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700"
                 >
-                  {getLocationLabel(locationId)}
+                  {locationLabelMap[locationId] || locationId}
                 </span>
               ))}
             </div>
@@ -957,6 +984,7 @@ export default function TalentEngineJobsPage() {
         onApply={(locations) => setSelectedLocations(locations)}
         triggerRef={locationButtonRef}
         initialSelected={selectedLocations}
+        options={availableLocations}
       />
       <FilterDrawer
         open={filterDrawerOpen}

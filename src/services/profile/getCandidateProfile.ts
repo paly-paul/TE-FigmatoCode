@@ -11,6 +11,15 @@ function looksLikeRecordId(value: string | undefined) {
   if (/^(?:new-|row-|idx-|tmp-)/i.test(trimmed)) return true;
   if (/^[A-Z]{2,10}-\d+(?:-\d+)*$/i.test(trimmed)) return true;
   if (/^[a-f0-9]{8,}$/i.test(trimmed) && !/[aeiou]/i.test(trimmed)) return true;
+  // Common child-row IDs are compact alphanumeric tokens (e.g. "39lgg49ac7").
+  if (
+    /^[a-z0-9]{8,24}$/i.test(trimmed) &&
+    /\d/.test(trimmed) &&
+    /[a-z]/i.test(trimmed) &&
+    !/\s/.test(trimmed)
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -59,6 +68,14 @@ function splitFullName(fullName: string | undefined) {
     firstName: parts[0],
     lastName: parts.slice(1).join(" ") || undefined,
   };
+}
+
+function normalizeLocation(value: string | undefined) {
+  if (!value) return undefined;
+  return value
+    .replace(/\s*--\s*/g, ", ")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
 }
 
 function mapKeySkills(value: unknown): ResumeProfileData["keySkills"] {
@@ -146,15 +163,28 @@ function mapEducationDetails(value: unknown): ResumeProfileData["education"] {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        title: pickDisplayString(record, "degree", "title"),
+        title: pickDisplayString(record, "degree", "title", "qualification", "course", "program"),
         institute: pickDisplayString(record, "institution", "institute", "school"),
         specialization: pickDisplayString(record, "specialization", "stream", "branch"),
-        graduationYear: pickString(record, "year_of_passing", "graduation_year", "year", "graduationYear"),
-        score: pickString(record, "score", "cgpa", "percentage"),
+        graduationYear: pickString(
+          record,
+          "year_of_passing",
+          "graduation_year",
+          "passing_year",
+          "year",
+          "graduationYear"
+        ),
+        score: pickString(record, "score", "cgpa", "percentage", "grade", "marks"),
       };
     })
-    // Keep entries that look meaningful, but avoid strict type-predicate issues.
-    .filter((entry) => Boolean(entry && (entry.title || entry.institute))) as Array<
+    // Keep any row that contains at least one meaningful field.
+    .filter(
+      (entry) =>
+        Boolean(
+          entry &&
+            (entry.title || entry.institute || entry.specialization || entry.graduationYear || entry.score)
+        )
+    ) as Array<
     NonNullable<ResumeProfileData["education"]>[number]
   >);
 
@@ -168,14 +198,27 @@ function mapEducationQualifications(value: unknown): ResumeProfileData["educatio
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        title: pickDisplayString(record, "degree", "title"),
+        title: pickDisplayString(record, "degree", "title", "qualification", "course", "program"),
         institute: pickDisplayString(record, "institution", "institute", "school"),
         specialization: pickDisplayString(record, "specialization", "stream", "branch"),
-        graduationYear: pickString(record, "year_of_passing", "graduation_year", "year", "graduationYear"),
-        score: pickString(record, "score"),
+        graduationYear: pickString(
+          record,
+          "year_of_passing",
+          "graduation_year",
+          "passing_year",
+          "year",
+          "graduationYear"
+        ),
+        score: pickString(record, "score", "cgpa", "percentage", "grade", "marks"),
       };
     })
-    .filter((entry) => Boolean(entry && (entry.title || entry.institute))) as Array<
+    .filter(
+      (entry) =>
+        Boolean(
+          entry &&
+            (entry.title || entry.institute || entry.specialization || entry.graduationYear || entry.score)
+        )
+    ) as Array<
     NonNullable<ResumeProfileData["education"]>[number]
   >);
   return education.length ? education : undefined;
@@ -188,11 +231,19 @@ function mapCertifications(value: unknown): ResumeProfileData["certifications"] 
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        name: pickDisplayString(record, "certification_name", "name", "certification", "title"),
+        name: pickDisplayString(
+          record,
+          "certificate",
+          "certification_name",
+          "certification",
+          "cert_name",
+          "certificate_name",
+          "title"
+        ),
         issuing: pickDisplayString(record, "issuing", "issuer", "issued_by", "organization"),
         certificateNumber: pickString(record, "certificate_number", "certificateNumber", "number", "id"),
-        issueDate: pickString(record, "issue_date", "issueDate", "issued_on"),
-        expirationDate: pickString(record, "expiration_date", "expirationDate", "expires_on"),
+        issueDate: pickString(record, "issued_date", "issue_date", "issueDate", "issued_on"),
+        expirationDate: pickString(record, "expiry_date", "expiration_date", "expirationDate", "expires_on"),
         url: pickString(record, "url", "link"),
       };
     })
@@ -209,11 +260,19 @@ function mapCertificationTable(value: unknown): ResumeProfileData["certification
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        name: pickDisplayString(record, "certification_name", "name", "certification", "title"),
+        name: pickDisplayString(
+          record,
+          "certificate",
+          "certification_name",
+          "certification",
+          "cert_name",
+          "certificate_name",
+          "title"
+        ),
         issuing: pickDisplayString(record, "issuing", "issuer", "issued_by", "organization"),
         certificateNumber: pickString(record, "certificate_number", "certificateNumber", "number", "id"),
-        issueDate: pickString(record, "issue_date", "issueDate", "issued_on", "year"),
-        expirationDate: pickString(record, "expiration_date", "expirationDate", "expires_on"),
+        issueDate: pickString(record, "issued_date", "issue_date", "issueDate", "issued_on", "year"),
+        expirationDate: pickString(record, "expiry_date", "expiration_date", "expirationDate", "expires_on"),
         url: pickString(record, "url", "link"),
       };
     })
@@ -245,7 +304,7 @@ function mapExternalProfileLinks(value: unknown): ResumeProfileData["externalLin
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        label: pickDisplayString(record, "platform", "label", "title", "type"),
+        label: pickDisplayString(record, "platform", "plateform", "label", "title", "type"),
         url: pickString(record, "url", "link", "value"),
       };
     })
@@ -254,19 +313,139 @@ function mapExternalProfileLinks(value: unknown): ResumeProfileData["externalLin
 }
 
 function mapLanguages(value: unknown): ResumeProfileData["languages"] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return mapLanguages(parsed);
+      } catch {
+        // fall through to delimiter-based parsing
+      }
+    }
+    const items = value
+      .split(/,|\/|;|\||•|\n/g)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((language) => ({ language }));
+    return items.length ? items : undefined;
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as UnknownRecord;
+    const directLanguage = pickDisplayString(
+      record,
+      "language",
+      "language_name",
+      "language_known",
+      "known_language",
+      "lang",
+      "lang_name",
+      "title",
+      "name"
+    );
+    const directRead = pickString(
+      record,
+      "read",
+      "reading",
+      "can_read",
+      "read_level",
+      "read_proficiency"
+    );
+    const directWrite = pickString(
+      record,
+      "write",
+      "writing",
+      "can_write",
+      "write_level",
+      "write_proficiency"
+    );
+    const directSpeak = pickString(
+      record,
+      "speak",
+      "speaking",
+      "can_speak",
+      "speak_level",
+      "speak_proficiency"
+    );
+    const directProficiency = pickString(record, "proficiency", "level", "fluency");
+    if (directLanguage || directRead || directWrite || directSpeak || directProficiency) {
+      return [
+        {
+          language: directLanguage,
+          read: directRead ?? directProficiency,
+          write: directWrite ?? directProficiency,
+          speak: directSpeak ?? directProficiency,
+        },
+      ];
+    }
+    return (
+      mapLanguages(record.items) ??
+      mapLanguages(record.rows) ??
+      mapLanguages(record.data) ??
+      mapLanguages(record.languages) ??
+      mapLanguages(record.language_details) ??
+      mapLanguages(record.language_table) ??
+      mapLanguages(record.language_proficiency)
+    );
+  }
+
   if (!Array.isArray(value)) return undefined;
   const out = (value
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       return {
-        language: pickDisplayString(record, "language", "language_name", "title", "name"),
-        read: pickString(record, "read", "reading"),
-        write: pickString(record, "write", "writing"),
-        speak: pickString(record, "speak", "speaking"),
+        language: pickDisplayString(
+          record,
+          "language",
+          "language_name",
+          "language_known",
+          "known_language",
+          "lang",
+          "lang_name",
+          "title",
+          "name"
+        ),
+        read: pickString(
+          record,
+          "read",
+          "reading",
+          "can_read",
+          "read_level",
+          "read_proficiency",
+          "proficiency",
+          "level",
+          "fluency"
+        ),
+        write: pickString(
+          record,
+          "write",
+          "writing",
+          "can_write",
+          "write_level",
+          "write_proficiency",
+          "proficiency",
+          "level",
+          "fluency"
+        ),
+        speak: pickString(
+          record,
+          "speak",
+          "speaking",
+          "can_speak",
+          "speak_level",
+          "speak_proficiency",
+          "proficiency",
+          "level",
+          "fluency"
+        ),
       };
     })
-    .filter((entry) => Boolean(entry && entry.language)) as Array<NonNullable<ResumeProfileData["languages"]>[number]>);
+    .filter((entry) => Boolean(entry && (entry.language || entry.read || entry.write || entry.speak))) as Array<
+    NonNullable<ResumeProfileData["languages"]>[number]
+  >);
   return out.length ? out : undefined;
 }
 
@@ -305,6 +484,28 @@ function mapWorkExperience(value: unknown): ResumeProfileData["workExperience"] 
   return out.length ? out : undefined;
 }
 
+function mapToolsTableToWorkExperience(value: unknown): ResumeProfileData["workExperience"] {
+  if (!Array.isArray(value)) return undefined;
+  const out = value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as UnknownRecord;
+      const toolName =
+        pickDisplayString(record, "tool_name", "toolName", "skill", "key_skills", "name") ??
+        undefined;
+      const years = pickString(record, "experience_years", "experience", "years", "duration");
+      if (!toolName && !years) return null;
+      return {
+        jobTitle: toolName,
+        company: undefined,
+        duration: years,
+        responsibilities: undefined,
+      };
+    })
+    .filter(Boolean) as NonNullable<ResumeProfileData["workExperience"]>;
+  return out.length ? out : undefined;
+}
+
 function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
   if (!Array.isArray(value)) return undefined;
 
@@ -324,8 +525,15 @@ function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
 
-      const title = pickDisplayString(record, "title", "project_title", "projectTitle");
-      const projectName = pickDisplayString(record, "project_name", "project");
+      const title = pickDisplayString(
+        record,
+        "project_name",
+        "project_title",
+        "projectTitle",
+        "title",
+        "project",
+        "name_of_project"
+      );
       const customerCompany =
         pickDisplayString(record, "customer_company", "customerCompany", "company", "client") ??
         extractCompanyFromText(record.roles_responsibilities) ??
@@ -338,7 +546,7 @@ function mapProjectsTable(value: unknown): ResumeProfileData["projects"] {
       const responsibilities =
         pickString(record, "roles_responsibilities", "rolesResponsibilities", "responsibilities", "role") ?? undefined;
 
-      const resolvedTitle = projectName || title;
+      const resolvedTitle = title;
       if (!resolvedTitle && !customerCompany && !start) return null;
 
       return {
@@ -478,8 +686,16 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     mapSkillsTable(profileVersion.skills_table) ??
     mapSkillsTable(profileRecord.tools) ??
     mapSkillsTable(root.tools);
-  const educationFromDetails = mapEducationDetails(profileVersion.education_details);
-  const educationFromQualifications = mapEducationQualifications(profileVersion.education_qualifications);
+  const educationFromDetails =
+    mapEducationDetails(profileVersion.education_details) ??
+    mapEducationDetails(profileRecord.education_details) ??
+    mapEducationDetails(root.education_details);
+  const educationFromQualifications =
+    mapEducationQualifications(profileVersion.education_qualifications) ??
+    mapEducationQualifications(profileRecord.education_qualifications) ??
+    mapEducationQualifications(root.education_qualifications) ??
+    mapEducationQualifications(profileRecord.education) ??
+    mapEducationQualifications(root.education);
 
   const workExperience =
     profileVersion.work_experience ??
@@ -490,7 +706,13 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     root.workExperience;
   const mappedProjects = mapWorkExperienceToProjects(workExperience);
   const mappedProjectsFromProjectsTable = mapProjectsTable(profileVersion.projects_table);
-  const mappedWorkExperience = mapWorkExperience(workExperience);
+  const mappedWorkExperience =
+    mapWorkExperience(workExperience) ??
+    mapToolsTableToWorkExperience(profileVersion.skills_table) ??
+    mapToolsTableToWorkExperience(profileVersion.tools_table) ??
+    mapToolsTableToWorkExperience(profileVersion.tools) ??
+    mapToolsTableToWorkExperience(root.skills_table) ??
+    mapToolsTableToWorkExperience(root.tools_table);
 
   const certifications =
     mapCertifications(profileVersion.certifications) ??
@@ -511,7 +733,16 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     mapLanguages(profileVersion.languages) ??
     mapLanguages(profileVersion.language_details) ??
     mapLanguages((profileVersion as UnknownRecord).language_table) ??
+    mapLanguages((profileVersion as UnknownRecord).languages_table) ??
+    mapLanguages((profileVersion as UnknownRecord).known_languages) ??
+    mapLanguages((profileVersion as UnknownRecord).languages_known) ??
     mapLanguages((profileVersion as UnknownRecord).language_proficiency) ??
+    mapLanguages(profileRecord.language_details) ??
+    mapLanguages((profileRecord as UnknownRecord).language_table) ??
+    mapLanguages((profileRecord as UnknownRecord).languages_table) ??
+    mapLanguages((profileRecord as UnknownRecord).known_languages) ??
+    mapLanguages((profileRecord as UnknownRecord).languages_known) ??
+    mapLanguages((profileRecord as UnknownRecord).language_proficiency) ??
     mapLanguages(profileRecord.languages) ??
     mapLanguages(root.languages);
 
@@ -520,16 +751,55 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     pickString(profileRecord, "country_code", "countryCode")
   );
 
+  const totalExperienceRaw =
+    pickString(profileVersion, "total_experience", "totalExperience", "experience") ??
+    pickString(profileRecord, "total_experience", "totalExperience", "experience") ??
+    pickString(root, "total_experience", "totalExperience", "experience");
+  const parsedYearsFromTotal = totalExperienceRaw?.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/i)?.[1];
+  const parsedMonthsFromTotal = totalExperienceRaw?.match(/(\d+)\s*(?:months?|mos?)/i)?.[1];
+
+  const experienceYearsValue =
+    pickString(profileVersion, "experience_years", "experienceYears", "total_experience_years", "totalExperienceYears") ??
+    pickString(profileVersion, "total_experience") ??
+    pickString(profileRecord, "experience_years", "experienceYears", "total_experience_years", "totalExperienceYears") ??
+    pickString(profileRecord, "total_experience") ??
+    pickString(root, "experience_years", "experienceYears", "total_experience_years", "totalExperienceYears") ??
+    pickString(root, "total_experience") ??
+    parsedYearsFromTotal;
+
+  const experienceMonthsValue =
+    pickString(profileVersion, "experience_months", "experienceMonths") ??
+    pickString(profileRecord, "experience_months", "experienceMonths") ??
+    pickString(root, "experience_months", "experienceMonths") ??
+    parsedMonthsFromTotal;
+
   return {
     professionalTitle: pickString(profileVersion, "professional_title", "professionalTitle", "designation"),
-    experienceYears:
-      pickString(profileVersion, "experience_years", "experienceYears") ??
-      pickString(profileVersion, "total_experience_years", "totalExperienceYears") ??
-      pickString(profileVersion, "total_experience"),
-    experienceMonths: pickString(profileVersion, "experience_months", "experienceMonths"),
+    experienceYears: experienceYearsValue,
+    experienceMonths: experienceMonthsValue,
     summary: pickString(profileVersion, "professional_summary", "summary", "about_me"),
     salaryPerMonth: pickString(
       profileVersion,
+      "current_salary_per_hour",
+      "salary_per_hour",
+      "current_salary",
+      "salary_per_month",
+      "salaryPerMonth",
+      "salary"
+    ) ??
+    pickString(
+      profileRecord,
+      "current_salary_per_hour",
+      "salary_per_hour",
+      "current_salary",
+      "salary_per_month",
+      "salaryPerMonth",
+      "salary"
+    ) ??
+    pickString(
+      root,
+      "current_salary_per_hour",
+      "salary_per_hour",
       "current_salary",
       "salary_per_month",
       "salaryPerMonth",
@@ -540,7 +810,9 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
       "current_salary_currency",
       "salary_currency",
       "salaryCurrency"
-    ),
+    ) ??
+    pickString(profileRecord, "current_salary_currency", "salary_currency", "salaryCurrency", "currency") ??
+    pickString(root, "current_salary_currency", "salary_currency", "salaryCurrency", "currency"),
     firstName: pickString(profileRecord, "first_name", "firstName") ?? splitName.firstName,
     lastName: pickString(profileRecord, "last_name", "lastName") ?? splitName.lastName,
     dob: pickString(profileRecord, "dob", "date_of_birth"),
@@ -552,12 +824,26 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     nationality:
       pickString(profileVersion, "nationality", "country") ??
       pickString(profileRecord, "nationality", "country"),
-    currentLocation:
+    currentLocation: normalizeLocation(
       pickString(profileRecord, "current_location", "currentLocation") ??
-      pickString(profileVersion, "current_location", "currentLocation", "location"),
+        pickString(profileVersion, "current_location", "currentLocation", "current_city", "location") ??
+        pickString(root, "current_location", "currentLocation", "current_city", "location")
+    ),
     preferredLocation:
-      pickString(profileVersion, "preferred_location", "preferredLocation") ??
-      pickString(profileRecord, "preferred_location", "preferredLocation"),
+      pickString(
+        profileVersion,
+        "preferred_location",
+        "preferredLocation",
+        "preferred_job_location",
+        "preferredLocationText"
+      ) ??
+      pickString(
+        profileRecord,
+        "preferred_location",
+        "preferredLocation",
+        "preferred_job_location",
+        "preferredLocationText"
+      ),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
     tools,
     education: educationFromQualifications ?? educationFromDetails,

@@ -7,6 +7,16 @@ function splitSkillText(value: string) {
     .filter(Boolean);
 }
 
+function isLikelyNoise(value: string) {
+  const token = value.trim();
+  const normalized = token.toLowerCase();
+  if (!token) return true;
+  if (/^invalid or missing payload$/i.test(token)) return true;
+  if (/^pr-\d+-\d+(?:-\d+)?$/i.test(token)) return true;
+  if (/^[a-z0-9]{10}$/i.test(token) && !/[aeiou]/i.test(token)) return true;
+  return false;
+}
+
 function pickString(obj: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
     const value = obj[key];
@@ -31,7 +41,6 @@ function collectSkillStrings(value: unknown): string[] {
     "key_skill",
     "keySkill",
     "skill",
-    "name",
     "label",
     "value"
   );
@@ -51,7 +60,9 @@ function collectSkillStrings(value: unknown): string[] {
       record.profile_version,
       record.skills_table,
     ].flatMap((nested) => collectSkillStrings(nested)),
-  ].filter((skill) => skill.length >= 2 && skill.length <= 50);
+  ]
+    .filter((skill) => skill.length >= 2 && skill.length <= 50)
+    .filter((skill) => !isLikelyNoise(skill));
 }
 
 function dedupeSkills(skills: string[]) {
@@ -105,7 +116,7 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const profileName = (searchParams.get("profile") ?? searchParams.get("profile_name"))?.trim();
+  const profileName = (searchParams.get("profile_name") ?? searchParams.get("profile"))?.trim();
   if (!profileName) {
     return NextResponse.json({ error: "profile is required." }, { status: 400 });
   }

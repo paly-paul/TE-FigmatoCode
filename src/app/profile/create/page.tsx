@@ -6,20 +6,52 @@ import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { ResumeUploadArea } from "@/components/profile/ResumeUploadArea";
-import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
 import { clearProfileName, getUserDisplayName, setCandidateId, setProfileName } from "@/lib/authSession";
 import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
 import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { createPreProfile, generateProfileFromPreProfile, getCandidateProfileData, uploadProfileFile } from "@/services/profile";
+import {
+  createPreProfile,
+  generateProfileFromPreProfile,
+  getCandidateProfileData,
+  saveProfile,
+  uploadProfileFile,
+} from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
 
 interface UploadedFile {
   name: string;
   uploadDate: string;
   updated_resume?: string;
+}
+
+function extractPreProfileNameFromCreateEditProfileResponse(
+  payload: Record<string, unknown> | null
+): string {
+  if (!payload) return "";
+  const roots: Array<Record<string, unknown>> = [
+    payload,
+    payload.message && typeof payload.message === "object"
+      ? (payload.message as Record<string, unknown>)
+      : {},
+    payload.data && typeof payload.data === "object"
+      ? (payload.data as Record<string, unknown>)
+      : {},
+  ];
+  for (const root of roots) {
+    const candidate =
+      typeof root.pre_profile_name === "string"
+        ? root.pre_profile_name
+        : typeof root.pre_profile === "string"
+          ? root.pre_profile
+          : typeof root.preProfileName === "string"
+            ? root.preProfileName
+            : "";
+    if (candidate.trim()) return candidate.trim();
+  }
+  return "";
 }
 
 function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null): string {
@@ -99,7 +131,6 @@ async function tryResolveProfileNameByEmail(email: string): Promise<string> {
 
 export default function CreateProfilePage() {
   const router = useRouter();
-  const [lookingForJob, setLookingForJob] = useState(true);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isProcessingResume, setIsProcessingResume] = useState(false);
   const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
@@ -233,6 +264,24 @@ export default function CreateProfilePage() {
       return;
     }
 
+    await handleGenerateAndContinue({
+      resumeFileName: uploadedFile.name,
+      updatedResumeRef: uploadedFile.updated_resume || "",
+    });
+  }
+
+  async function handleContinueWithoutResume() {
+    await handleGenerateAndContinue({
+      resumeFileName: "",
+      updatedResumeRef: "",
+    });
+  }
+
+  async function handleGenerateAndContinue(input: {
+    resumeFileName: string;
+    updatedResumeRef: string;
+  }) {
+
     if (isGeneratingProfile) return;
     setIsGeneratingProfile(true);
     try {
@@ -244,7 +293,7 @@ export default function CreateProfilePage() {
         return;
       }
 
-      const baseData = deriveFallbackResumeData(uploadedFile.name);
+      const baseData = deriveFallbackResumeData(input.resumeFileName);
       const derivedFullNameFromDisplayOrEmail =
         displayName ||
         sessionEmail
@@ -266,7 +315,7 @@ export default function CreateProfilePage() {
       const firstName = nameParts[0] || "";
       const lastName = nameParts.slice(1).join(" ");
 
-      const updatedResumeRef = uploadedFile.updated_resume || "";
+      const updatedResumeRef = input.updatedResumeRef || "";
 
       const identityData: ResumeProfileData = {
         ...baseData,
@@ -278,20 +327,48 @@ export default function CreateProfilePage() {
 
       let effectiveProfileId = "";
       try {
-        const createPreProfilePayload = new FormData();
-        createPreProfilePayload.append("email", sessionEmail);
-        createPreProfilePayload.append("full_name", derivedFullName);
-        if (firstName) createPreProfilePayload.append("first_name", firstName);
-        if (lastName) createPreProfilePayload.append("last_name", lastName);
-        if (updatedResumeRef) createPreProfilePayload.append("updated_resume", updatedResumeRef);
+        if (updatedResumeRef) {
+          const createPreProfilePayload = new FormData();
+          createPreProfilePayload.append("email", sessionEmail);
+          createPreProfilePayload.append("full_name", derivedFullName);
+          if (firstName) createPreProfilePayload.append("first_name", firstName);
+          if (lastName) createPreProfilePayload.append("last_name", lastName);
+          createPreProfilePayload.append("updated_resume", updatedResumeRef);
 
-        const { preProfileName } = await createPreProfile(createPreProfilePayload);
-        const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
+          const { preProfileName } = await createPreProfile(createPreProfilePayload);
+          const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
 
-        if (generatedProfileName) {
-          effectiveProfileId = generatedProfileName;
-          setProfileName(generatedProfileName);
-          setCandidateId(generatedProfileName);
+          if (generatedProfileName) {
+            effectiveProfileId = generatedProfileName;
+            setProfileName(generatedProfileName);
+            setCandidateId(generatedProfileName);
+          }
+        } else {
+          const createEditResponse = await saveProfile({
+            full_name: derivedFullName,
+            email: sessionEmail,
+            action: "save",
+          });
+
+          const inferredProfileId =
+            (typeof createEditResponse.profile_name === "string" && createEditResponse.profile_name.trim()) ||
+            (typeof createEditResponse.profile === "string" && createEditResponse.profile.trim()) ||
+            "";
+          if (inferredProfileId) {
+            effectiveProfileId = inferredProfileId;
+            setProfileName(inferredProfileId);
+            setCandidateId(inferredProfileId);
+          }
+
+          const preProfileName = extractPreProfileNameFromCreateEditProfileResponse(createEditResponse);
+          if (preProfileName) {
+            const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
+            if (generatedProfileName) {
+              effectiveProfileId = generatedProfileName;
+              setProfileName(generatedProfileName);
+              setCandidateId(generatedProfileName);
+            }
+          }
         }
       } catch (error) {
         const raw = (
@@ -338,8 +415,21 @@ export default function CreateProfilePage() {
       }
 
       if (!effectiveProfileId) {
-        alert("Unable to generate/update profile from resume. Please try again.");
+        alert("Unable to create/update profile. Please try again.");
         return;
+      }
+
+      if (updatedResumeRef) {
+        try {
+          await saveProfile({
+            profile: effectiveProfileId,
+            full_name: derivedFullName,
+            email: sessionEmail,
+            action: "save",
+          });
+        } catch {
+          // Continue to basic details even if the best-effort save call fails.
+        }
       }
 
       // Prefill from backend profile, but never crash the wizard if backend generation rolled back.
@@ -490,19 +580,28 @@ export default function CreateProfilePage() {
                 them in the next steps.
               </p>
             </div>
+
+            {!uploadedFile ? (
+              <div className="bg-white border border-gray-200 rounded px-4 py-4">
+                <h3 className="text-base font-semibold text-gray-900">No Resume? No Problem</h3>
+                <p className="mt-1 text-sm text-gray-600">
+                  You can still explore opportunities by creating your profile step-by-step.
+                </p>
+                <Button
+                  type="button"
+                  className="mt-3"
+                  onClick={handleContinueWithoutResume}
+                  disabled={isProcessingResume || isGeneratingProfile}
+                >
+                  {isGeneratingProfile ? "Generating..." : "Continue Without Resume"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : (
           <>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4">
               <h1 className="text-lg font-bold text-gray-900">Create Profile</h1>
-              <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 w-fit">
-                <Toggle
-                  id="looking-for-job"
-                  label="Looking for a Job"
-                  checked={lookingForJob}
-                  onChange={setLookingForJob}
-                />
-              </div>
             </div>
 
             <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
@@ -519,14 +618,31 @@ export default function CreateProfilePage() {
                 </div>
 
                 {!uploadedFile && (
-                  <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-                    <span className="shrink-0 mt-0.5">
-                      <LightbulbIcon />
-                    </span>
-                    <p className="text-sm text-gray-600">
-                      Upload your resume to auto-fill skills and projects. You can edit
-                      them in the next steps.
-                    </p>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                      <span className="shrink-0 mt-0.5">
+                        <LightbulbIcon />
+                      </span>
+                      <p className="text-sm text-gray-600">
+                        Upload your resume to auto-fill skills and projects. You can edit
+                        them in the next steps.
+                      </p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-xl px-4 py-4">
+                      <h3 className="text-base font-semibold text-gray-900">No Resume? No Problem</h3>
+                      <p className="mt-1 text-sm text-gray-600">
+                        You can still explore opportunities by creating your profile step-by-step.
+                      </p>
+                      <Button
+                        type="button"
+                        fullWidth={false}
+                        className="mt-3"
+                        onClick={handleContinueWithoutResume}
+                        disabled={isProcessingResume || isGeneratingProfile}
+                      >
+                        {isGeneratingProfile ? "Generating..." : "Continue Without Resume"}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
