@@ -49,10 +49,12 @@ const EMPTY_PROFILE: ProfileData = {
     name: "",
     title: "",
     location: "",
+    countryCode: "",
     phone: "",
     github: "",
     linkedin: "",
     website: "",
+    externalLinks: [],
     summary: "",
     experience: "",
     salary: "",
@@ -107,6 +109,50 @@ function normalizeExternalUrl(url: string | undefined): string {
     return `https://${trimmed}`;
 }
 
+function detectPlatformFromUrl(url: string): "github" | "linkedin" | "website" {
+    try {
+        const hostname = new URL(url).hostname.toLowerCase();
+        if (hostname === "github.com" || hostname.endsWith(".github.com")) return "github";
+        if (hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")) return "linkedin";
+        return "website";
+    } catch {
+        const lowerUrl = url.toLowerCase();
+        if (lowerUrl.includes("github.com")) return "github";
+        if (lowerUrl.includes("linkedin.com")) return "linkedin";
+        return "website";
+    }
+}
+
+function platformLabel(platform: "github" | "linkedin" | "website"): string {
+    if (platform === "github") return "Github";
+    if (platform === "linkedin") return "LinkedIn";
+    return "Website";
+}
+
+function platformIcon(platform: "github" | "linkedin" | "website"): string {
+    if (platform === "github") return "/icons/github-logo.svg";
+    if (platform === "linkedin") return "/icons/linkedin-logo.svg";
+    return "/icons/web-logo.svg";
+}
+
+function normalizeExternalLinksList(links: Array<{ label?: string; url?: string }>) {
+    const seen = new Set<string>();
+    const out: Array<{ label: string; url: string; platform: "github" | "linkedin" | "website" }> = [];
+
+    for (const link of links) {
+        const url = normalizeExternalUrl(link.url);
+        if (!url) continue;
+        const key = url.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const platform = detectPlatformFromUrl(url);
+        const label = (link.label || "").trim() || platformLabel(platform);
+        out.push({ label, url, platform });
+    }
+    return out;
+}
+
 function inferExternalLinks(links: Array<{ label?: string; url?: string }>) {
     let github = "";
     let linkedin = "";
@@ -116,20 +162,29 @@ function inferExternalLinks(links: Array<{ label?: string; url?: string }>) {
         const url = normalizeExternalUrl(link.url);
         if (!url) continue;
         const label = (link.label || "").toLowerCase();
-        const lowerUrl = url.toLowerCase();
+        const platformFromUrl = detectPlatformFromUrl(url);
 
-        if (!github && (label.includes("github") || lowerUrl.includes("github.com"))) {
+        if (!github && platformFromUrl === "github") {
             github = url;
             continue;
         }
-        if (!linkedin && (label.includes("linkedin") || lowerUrl.includes("linkedin.com"))) {
+        if (!linkedin && platformFromUrl === "linkedin") {
             linkedin = url;
             continue;
         }
-        if (
-            !website &&
-            (label.includes("website") || label.includes("portfolio") || label.includes("web"))
-        ) {
+        if (!website && platformFromUrl === "website") {
+            website = url;
+            continue;
+        }
+        if (!github && label.includes("github")) {
+            github = url;
+            continue;
+        }
+        if (!linkedin && label.includes("linkedin")) {
+            linkedin = url;
+            continue;
+        }
+        if (!website && (label.includes("website") || label.includes("portfolio") || label.includes("web"))) {
             website = url;
             continue;
         }
@@ -141,6 +196,63 @@ function inferExternalLinks(links: Array<{ label?: string; url?: string }>) {
     return { github, linkedin, website };
 }
 
+function splitFromRight(value: string, chunkSize: number): string[] {
+    const parts: string[] = [];
+    let cursor = value.length;
+    while (cursor > 0) {
+        const start = Math.max(0, cursor - chunkSize);
+        parts.unshift(value.slice(start, cursor));
+        cursor = start;
+    }
+    return parts;
+}
+
+function formatNationalNumber(digits: string, countryCode: string): string {
+    if (!digits) return "";
+    if (digits.length === 10) {
+        return `${digits.slice(0, 5)} ${digits.slice(5)}`;
+    }
+    if (countryCode === "44" && (digits.length === 10 || digits.length === 11)) {
+        const head = digits.slice(0, 4);
+        const mid = digits.slice(4, 7);
+        const tail = digits.slice(7);
+        return [head, mid, tail].filter(Boolean).join(" ");
+    }
+    return splitFromRight(digits, 3).join(" ");
+}
+
+function formatContactNumber(phone: string | undefined, countryCode: string | undefined): string {
+    const rawPhone = (phone || "").trim();
+    if (!rawPhone) return "";
+
+    let ccDigits = (countryCode || "").replace(/\D/g, "");
+    const phoneDigits = rawPhone.replace(/\D/g, "");
+    if (!phoneDigits) return rawPhone;
+
+    // Fallback when country code is missing but embedded in phone input.
+    if (!ccDigits) {
+        if (phoneDigits.length === 12 && phoneDigits.startsWith("91")) {
+            ccDigits = "91";
+        } else if (phoneDigits.length === 11 && phoneDigits.startsWith("1")) {
+            ccDigits = "1";
+        } else if (
+            (phoneDigits.length === 12 || phoneDigits.length === 13) &&
+            phoneDigits.startsWith("44")
+        ) {
+            ccDigits = "44";
+        }
+    }
+
+    let nationalDigits = phoneDigits;
+    if (ccDigits && phoneDigits.startsWith(ccDigits) && phoneDigits.length > ccDigits.length + 5) {
+        nationalDigits = phoneDigits.slice(ccDigits.length);
+    }
+
+    const formattedNational = formatNationalNumber(nationalDigits, ccDigits);
+    if (!ccDigits) return formattedNational || rawPhone;
+    return `+${ccDigits} ${formattedNational}`.trim();
+}
+
 function toProfileData(resume: ResumeProfileData, fallback: ProfileData): ProfileData {
     const fullName = [resume.firstName, resume.lastName].filter(Boolean).join(" ").trim();
     const experienceParts = [resume.experienceYears && `${resume.experienceYears} years`, resume.experienceMonths && `${resume.experienceMonths} months`]
@@ -148,6 +260,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         .join(", ");
     const salaryText = [resume.salaryCurrency, resume.salaryPerMonth].filter(Boolean).join(" ").trim();
     const links = resume.externalLinks ?? [];
+    const normalizedExternalLinks = normalizeExternalLinksList(links);
     const inferredLinks = inferExternalLinks(links);
     const experienceYears = Number.parseInt(resume.experienceYears || "0", 10) || 0;
     const fallbackExperienceYears = experienceYears || 1;
@@ -171,10 +284,12 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         name: fullName || fallback.name,
         title: resume.professionalTitle || fallback.title,
         location: resume.currentLocation || resume.preferredLocation || fallback.location,
+        countryCode: resume.countryCode || fallback.countryCode,
         phone: resume.phone || fallback.phone,
         github: inferredLinks.github,
         linkedin: inferredLinks.linkedin,
         website: inferredLinks.website,
+        externalLinks: normalizedExternalLinks,
         summary: resume.summary || fallback.summary,
         experience: experienceParts || fallback.experience,
         salary: salaryText || fallback.salary,
@@ -257,6 +372,7 @@ export default function MyProfilePage() {
         languages: false,
     });
     const PROFILE = profileData;
+    const formattedPhone = formatContactNumber(PROFILE.phone, PROFILE.countryCode);
 
     useEffect(() => {
         const profileId = getProfileName();
@@ -362,30 +478,24 @@ export default function MyProfilePage() {
                         </div>
                         <div className="flex items-center gap-2">
                             <Phone className="h-4 w-4" />
-                            <span>{PROFILE.phone}</span>
+                            <span>{formattedPhone || PROFILE.phone}</span>
                             <Copy className="h-4 w-4" />
                         </div>
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
-                        {PROFILE.github ? (
-                        <a href={PROFILE.github} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
-                            <Image width={18} height={18} src="/icons/github-logo.svg" alt="" />
-                            Github
-                        </a>
-                        ) : null}
-                        {PROFILE.linkedin ? (
-                        <a href={PROFILE.linkedin} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
-                            <Image width={18} height={18} src="/icons/linkedin-logo.svg" alt="" />
-                            LinkedIn
-                        </a>
-                        ) : null}
-                        {PROFILE.website ? (
-                        <a href={PROFILE.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]">
-                            <Image width={18} height={18} src="/icons/web-logo.svg" alt="" />
-                            Website
-                        </a>
-                        ) : null}
+                        {PROFILE.externalLinks.map((link) => (
+                            <a
+                                key={`${link.platform}:${link.url}`}
+                                href={link.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]"
+                            >
+                                <Image width={18} height={18} src={platformIcon(link.platform)} alt="" />
+                                {platformLabel(link.platform)}
+                            </a>
+                        ))}
                     </div>
 
                     <div className="mt-4 border-t border-[#E6ECF6] pt-4">
@@ -861,53 +971,24 @@ export default function MyProfilePage() {
                                     </span>
                                     <span className="inline-flex items-center gap-1.5">
                                         <Phone className="h-5 w-5" />
-                                        {PROFILE.phone}
+                                        {formattedPhone || PROFILE.phone}
                                         <Copy className="h-4 w-4" />
                                     </span>
                                 </div>
 
                                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3 text-sm font-medium text-[#111827] sm:text-[15px]">
-                                    {PROFILE.github ? (
-                                    <a href={PROFILE.github} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
-                                        {/* <Globe className="h-4 w-4" /> */}
-                                        <Image
-                                            width={20}
-                                            height={20}
-                                            src="/icons/github-logo.svg"
-                                            alt=""
-                                        />
-                                        Github
-                                    </a>
-                                    ) : null}
-                                    {PROFILE.linkedin ? (
-                                    <a
-                                        href={PROFILE.linkedin}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors"
-                                    >
-                                        {/* <Linkedin className="h-4 w-4 text-[#0a66c2]" /> */}
-                                        <Image
-                                            width={20}
-                                            height={20}
-                                            src="/icons/linkedin-logo.svg"
-                                            alt=""
-                                        />
-                                        LinkedIn
-                                    </a>
-                                    ) : null}
-                                    {PROFILE.website ? (
-                                    <a href={PROFILE.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors">
-                                        {/* <Globe className="h-4 w-4" /> */}
-                                        <Image
-                                            width={20}
-                                            height={20}
-                                            src="/icons/web-logo.svg"
-                                            alt=""
-                                        />
-                                        Website
-                                    </a>
-                                    ) : null}
+                                    {PROFILE.externalLinks.map((link) => (
+                                        <a
+                                            key={`${link.platform}:${link.url}`}
+                                            href={link.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors"
+                                        >
+                                            <Image width={20} height={20} src={platformIcon(link.platform)} alt="" />
+                                            {platformLabel(link.platform)}
+                                        </a>
+                                    ))}
                                 </div>
 
                                 <div className="mt-5 border-t border-[#e7ebf1] pt-4">
@@ -917,7 +998,7 @@ export default function MyProfilePage() {
 
                                 <div className="mt-4 grid gap-4 border-t border-[#e7ebf1] pt-4 sm:grid-cols-2">
                                     <MiniInfo label="Experience" value={PROFILE.experience} />
-                                    <MiniInfo label="Salary / month" value={PROFILE.salary} />
+                                    <MiniInfo label="Salary / Hour" value={PROFILE.salary} />
                                 </div>
                             </div>
                         </SectionCard>
