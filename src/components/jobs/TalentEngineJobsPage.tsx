@@ -24,6 +24,7 @@ import {
   SENIORITY_LEVELS,
   SKILLS,
 } from "../ui/FilterDrawer";
+import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import {
   DEFAULT_LOCATIONS,
   LocationDrawer,
@@ -208,13 +209,19 @@ function JobsFilterPanel({
   onSearchSkillsChange,
   filters,
   onFiltersChange,
+  skillsOptions,
+  employmentTypeOptions,
+  seniorityLevelOptions,
 }: {
   searchSkills: string;
   onSearchSkillsChange: (value: string) => void;
   filters: FilterState;
   onFiltersChange: (value: FilterState) => void;
+  skillsOptions: string[];
+  employmentTypeOptions: string[];
+  seniorityLevelOptions: string[];
 }) {
-  const filteredSkills = SKILLS.filter((skill) =>
+  const filteredSkills = skillsOptions.filter((skill) =>
     skill.toLowerCase().includes(searchSkills.toLowerCase())
   );
 
@@ -253,7 +260,7 @@ function JobsFilterPanel({
           <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
         </div>
         <FilterCheckboxGroup
-          options={EMPLOYMENT_TYPES}
+          options={employmentTypeOptions}
           selected={filters.employmentTypes}
           onChange={(value) => setValue("employmentTypes", value)}
         />
@@ -265,7 +272,7 @@ function JobsFilterPanel({
           <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
         </div>
         <FilterCheckboxGroup
-          options={SENIORITY_LEVELS}
+          options={seniorityLevelOptions}
           selected={filters.seniorityLevels}
           onChange={(value) => setValue("seniorityLevels", value)}
         />
@@ -571,6 +578,9 @@ export default function TalentEngineJobsPage() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
+  const [dynamicSkills, setDynamicSkills] = useState<string[]>(SKILLS);
+  const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
+  const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -620,6 +630,26 @@ export default function TalentEngineJobsPage() {
         setApiRecommendedJobs([]);
       } finally {
         if (active) setHasAttemptedJobsLoad(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const skillsRes = await getDropdownDetailsOptions({
+        doctype: "Resource Requirement",
+        fieldName: "key_skills",
+        limit: 1000,
+      }).catch(() => null);
+
+      if (!active) return;
+      if (Array.isArray(skillsRes) && skillsRes.length > 0) {
+        setDynamicSkills(skillsRes);
       }
     })();
 
@@ -875,6 +905,9 @@ export default function TalentEngineJobsPage() {
             onSearchSkillsChange={setSkillSearch}
             filters={filters}
             onFiltersChange={setFilters}
+            skillsOptions={dynamicSkills}
+            employmentTypeOptions={dynamicEmploymentTypes}
+            seniorityLevelOptions={dynamicSeniorityLevels}
           />
 
           <section className="space-y-4">

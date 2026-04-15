@@ -1,13 +1,21 @@
 "use client";
 
 import { ChevronDown, ArrowLeft, ArrowRight, Clock, Bandage } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppNavbar from "../profile/AppNavbar";
 import CandidateAppShell, { type TimesheetBottomTab } from "../mobile/CandidateAppShell";
 import { useIs768AndBelow } from "@/lib/useResponsive";
 import CommentModal from "../ui/CommentModal";
+import { getCandidateId, setCandidateId } from "@/lib/authSession";
+import { createEditCandidateTimesheet } from "@/services/timesheet/candidateTimesheet";
+import { getProjectsForProfile } from "@/services/timesheet/profileProjects";
+import { getTimesheetForProject } from "@/services/timesheet/projectTimesheet";
+import { getDaysOfWeek } from "@/services/timesheet/weekCalendar";
+import { getTimesheetByWeek } from "@/services/timesheet/weekTimesheet";
+import { getTimesheetForWorkorder } from "@/services/timesheet/workorderTimesheet";
 
 type WeeklyRow = {
+  isoDate?: string;
   date: string;
   day: string;
   regular?: number;
@@ -26,48 +34,8 @@ type WeeklySheet = {
   rows: WeeklyRow[];
 };
 
-const WEEKLY_TIMESHEETS: WeeklySheet[] = [
-  {
-    range: "Feb 01 - Feb 07, 2026",
-    weekLabel: "Week 5",
-    regular: 32,
-    overtime: 8,
-    total: 40,
-    current: true,
-    rows: [
-      { date: "February 01, 2026", day: "Sunday", regular: 4, overtime: 4, leave: "Sick Leave", total: 8 },
-      { date: "February 02, 2026", day: "Monday", regular: 8, overtime: 0, leave: "Sick Leave", total: 8 },
-      { date: "February 03, 2026", day: "Tuesday", regular: 8, overtime: 2, leave: "Sick Leave", total: 10 },
-      { date: "February 04, 2026", day: "Wednesday", regular: 8, overtime: 0, leave: "Sick Leave", total: 8 },
-      { date: "February 05, 2026", day: "Thursday", regular: 7, overtime: 0, leave: "Sick Leave", total: 7 },
-      { date: "February 06, 2026", day: "Friday", regular: 8, overtime: 0, leave: "Sick Leave", total: 8 },
-      { date: "February 07, 2026", day: "Saturday", regular: 0, overtime: 8, leave: "Sick Leave", total: 8 },
-    ],
-  },
-  {
-    range: "Feb 08 - Feb 15, 2026",
-    weekLabel: "Week 6",
-    regular: 0,
-    overtime: 0,
-    total: 0,
-    rows: [],
-  },
-  {
-    range: "Feb 16 - Feb 23, 2026",
-    weekLabel: "Week 7",
-    regular: 0,
-    overtime: 0,
-    total: 0,
-    rows: [],
-  },
-  {
-    range: "Feb 24 - Feb 28, 2026",
-    weekLabel: "Week 8",
-    regular: 0,
-    overtime: 0,
-    total: 0,
-    rows: [],
-  },
+const FALLBACK_WEEKS: WeeklySheet[] = [
+  { range: "—", weekLabel: "Week —", regular: 0, overtime: 0, total: 0, current: true, rows: [] },
 ];
 
 function getMonthYearLabelFromWeekRange(range: string): string {
@@ -84,11 +52,37 @@ function getMonthYearLabelFromWeekRange(range: string): string {
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-export default function TalentEngineTimesheet() {
-  const [activeWeek, setActiveWeek] = useState<string>(() => WEEKLY_TIMESHEETS.find((week) => week.current)?.range ?? WEEKLY_TIMESHEETS[0].range);
-  const [leaveSelections, setLeaveSelections] = useState<Record<string, boolean>>({});
+function formatIsoDateForDisplay(isoDate: string): string {
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
 
-  const [commentModal, setCommentModal] = useState<{ date: string; comment: string; triggerElement: HTMLElement | null } | null>(null);
+export default function TalentEngineTimesheet() {
+  const [workorderWeeks, setWorkorderWeeks] = useState<WeeklySheet[]>([]);
+  const [activeWeekNumber, setActiveWeekNumber] = useState<number>(0);
+  const [leaveSelections, setLeaveSelections] = useState<Record<string, boolean>>({});
+  const [dayRemarks, setDayRemarks] = useState<Record<string, string>>({});
+  const [weekRowsByNumber, setWeekRowsByNumber] = useState<Record<number, WeeklyRow[]>>({});
+  const [weekLoadStatus, setWeekLoadStatus] = useState<string>("");
+  const [profileId, setProfileId] = useState("");
+  const [weekStatusByNumber, setWeekStatusByNumber] = useState<Record<number, string>>({});
+  const [candidateId, setCandidateIdState] = useState("");
+  const [rrName, setRrName] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [submissionStatus, setSubmissionStatus] = useState<string>("");
+  const [submitBusy, setSubmitBusy] = useState(false);
+
+  const [commentModal, setCommentModal] = useState<{
+    date: string;
+    remarkKey: string;
+    comment: string;
+    triggerElement: HTMLElement | null;
+  } | null>(null);
   const [mobileTimesheetTab, setMobileTimesheetTab] = useState<TimesheetBottomTab>("overview");
 
   const toggleLeave = (date: string) => {
@@ -99,19 +93,357 @@ export default function TalentEngineTimesheet() {
   };
 
   const handleCommentSubmit = (comment: string) => {
-    console.log('Comment submitted:', {
-      date: commentModal?.date,
-      comment: comment
-    });
+    const remarkKey = commentModal?.remarkKey;
+    if (!remarkKey) return;
+    setDayRemarks((prev) => ({ ...prev, [remarkKey]: comment.trim() }));
+  };
 
-    // API call
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rrFromQuery = params.get("rr_name")?.trim() || "";
+    const projectFromQuery = params.get("project")?.trim() || "";
+    const candidateFromQuery = params.get("candidate_id")?.trim() || "";
+    if (rrFromQuery) setRrName(rrFromQuery);
+    if (projectFromQuery) setProjectName(projectFromQuery);
+    if (candidateFromQuery) {
+      if (/^PR-/i.test(candidateFromQuery)) {
+        setProfileId(candidateFromQuery);
+      } else {
+        setCandidateIdState(candidateFromQuery);
+      }
+      setCandidateId(candidateFromQuery);
+      return;
+    }
+
+    const fromSession = getCandidateId()?.trim() || "";
+    if (fromSession) {
+      if (/^PR-/i.test(fromSession)) {
+        setProfileId(fromSession);
+      } else {
+        setCandidateIdState(fromSession);
+      }
+    }
+  }, []);
+
+  const weeksForUi = useMemo(
+    () => (workorderWeeks.length > 0 ? workorderWeeks : FALLBACK_WEEKS),
+    [workorderWeeks]
+  );
+
+  const activeWeekData = useMemo(() => {
+    if (!activeWeekNumber) return weeksForUi[0];
+    return weeksForUi.find((w) => w.weekLabel === `Week ${activeWeekNumber}`) ?? weeksForUi[0];
+  }, [activeWeekNumber, weeksForUi]);
+
+  const activeWeekRows = useMemo(() => {
+    const weekNumber = activeWeekNumber || getWeekAndYear(activeWeekData).weekNumber;
+    return weekRowsByNumber[weekNumber] ?? activeWeekData.rows;
+  }, [activeWeekData, activeWeekNumber, weekRowsByNumber]);
+
+  function toIsoDate(value: string): string {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function getWeekAndYear(week: WeeklySheet): { weekNumber: number; year: number } {
+    const weekMatch = week.weekLabel.match(/\d+/);
+    const weekNumber = Number.parseInt(weekMatch?.[0] || "0", 10);
+    const yearMatch = week.range.match(/\b(\d{4})\b/);
+    const year = Number.parseInt(yearMatch?.[1] || "0", 10);
+    return { weekNumber, year };
+  }
+
+  function formatRangeFromIso(startIso?: string, endIso?: string): string {
+    if (!startIso || !endIso) return "—";
+    const start = new Date(`${startIso}T00:00:00`);
+    const end = new Date(`${endIso}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "—";
+    const startLabel = start.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+    const endLabel = end.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  useEffect(() => {
+    const rrCandidate = candidateId.trim();
+    const { year } = getWeekAndYear(activeWeekData);
+    if (!rrCandidate || /^PR-/i.test(rrCandidate) || !year) return;
+
+    let cancelled = false;
+    void getTimesheetForWorkorder(rrCandidate, year)
+      .then((response) => {
+        if (cancelled) return;
+        const nextWeeks: WeeklySheet[] = response.timesheets.map((ts) => ({
+          range: formatRangeFromIso(ts.week_start_date, ts.week_end_date),
+          weekLabel: `Week ${ts.week_number}`,
+          regular: ts.total_work_hours,
+          overtime: 0,
+          total: ts.total_work_hours,
+          current: false,
+          rows: [],
+        }));
+        setWorkorderWeeks(nextWeeks);
+        if (!activeWeekNumber && nextWeeks[0]) {
+          const n = Number.parseInt(nextWeeks[0].weekLabel.replace(/\D+/g, ""), 10);
+          if (Number.isFinite(n) && n > 0) setActiveWeekNumber(n);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWorkorderWeeks([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeekData, activeWeekNumber, candidateId]);
+
+  useEffect(() => {
+    const { weekNumber, year } = getWeekAndYear(activeWeekData);
+    if (!weekNumber || !year || weekRowsByNumber[weekNumber]) return;
+
+    let cancelled = false;
+    setWeekLoadStatus("");
+
+    void getDaysOfWeek(weekNumber, year)
+      .then((response) => {
+        if (cancelled) return;
+        const rows: WeeklyRow[] = response.days.map((isoDate) => {
+          const parsed = new Date(`${isoDate}T00:00:00`);
+          const day = Number.isNaN(parsed.getTime())
+            ? ""
+            : parsed.toLocaleDateString("en-US", { weekday: "long" });
+          return {
+            isoDate,
+            date: formatIsoDateForDisplay(isoDate),
+            day,
+            regular: 0,
+            overtime: 0,
+            total: 0,
+          };
+        });
+        setWeekRowsByNumber((prev) => ({ ...prev, [weekNumber]: rows }));
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setWeekLoadStatus(
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch week calendar days."
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeekData, weekRowsByNumber]);
+
+  useEffect(() => {
+    if (!profileId.trim()) return;
+    let cancelled = false;
+
+    void getProjectsForProfile(profileId)
+      .then((response) => {
+        if (cancelled) return;
+        const first = response.projects[0];
+        if (!first) return;
+        if (!projectName.trim()) setProjectName(first.project);
+        if (!rrName.trim()) setRrName(first.rr);
+        if (!candidateId.trim() || /^PR-/i.test(candidateId)) {
+          setCandidateIdState(first.rr_candidate);
+        }
+      })
+      .catch(() => {
+        // Leave manual entry as fallback.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId, profileId, projectName, rrName]);
+
+  useEffect(() => {
+    const rrCandidate = candidateId.trim();
+    const { year } = getWeekAndYear(activeWeekData);
+    if (!rrCandidate || /^PR-/i.test(rrCandidate) || !year) return;
+
+    let cancelled = false;
+    void getTimesheetForWorkorder(rrCandidate, year)
+      .then((response) => {
+        if (cancelled) return;
+        const map: Record<number, string> = {};
+        for (const item of response.timesheets) {
+          map[item.week_number] = item.consolidation_status;
+        }
+        setWeekStatusByNumber(map);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWeekStatusByNumber({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeekData, candidateId]);
+
+  useEffect(() => {
+    const rrCandidate = candidateId.trim();
+    const { weekNumber, year } = getWeekAndYear(activeWeekData);
+    if (!rrCandidate || /^PR-/i.test(rrCandidate) || !weekNumber || !year) return;
+    if (activeWeekRows.length === 0) return;
+
+    let cancelled = false;
+    void getTimesheetByWeek({
+      rr_candidate_id: rrCandidate,
+      week: weekNumber,
+      year,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setWeekRowsByNumber((prev) => {
+          const base = prev[weekNumber] ?? activeWeekRows;
+          const next = base.map((row) => {
+            const iso = row.isoDate ?? "";
+            const match = response.week_data.find((d) => d.week_date === iso);
+            if (!match) return row;
+            return {
+              ...row,
+              total: match.total_working_hours,
+              regular: match.total_working_hours,
+              overtime: 0,
+            };
+          });
+          return { ...prev, [weekNumber]: next };
+        });
+        const remarkPatch: Record<string, string> = {};
+        for (const day of response.week_data) {
+          if (!day.week_date || !day.remarks?.trim()) continue;
+          remarkPatch[day.week_date] = day.remarks;
+        }
+        if (Object.keys(remarkPatch).length > 0) {
+          setDayRemarks((prev) => ({ ...remarkPatch, ...prev }));
+        }
+      })
+      .catch(() => {
+        // Leave remarks user-entered/manual when no existing week data.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeekData, activeWeekRows, candidateId]);
+
+  async function saveTimesheet(status: "open" | "submit" | "re_submit") {
+    const candidate = candidateId.trim();
+    const rr = rrName.trim();
+    const project = projectName.trim();
+    if (!candidate || !rr || !project) {
+      setSubmissionStatus("Candidate ID, RR Name and Project are required.");
+      return;
+    }
+
+    const { weekNumber, year } = getWeekAndYear(activeWeekData);
+    if (!weekNumber || !year) {
+      setSubmissionStatus("Unable to determine week number/year from selected week.");
+      return;
+    }
+
+    const weekStatus = (weekStatusByNumber[weekNumber] || "").toLowerCase();
+    if (weekStatus.includes("approved")) {
+      setSubmissionStatus("Cannot edit. Status is Approved.");
+      return;
+    }
+    if (status === "re_submit" && weekStatus && !weekStatus.includes("reject")) {
+      setSubmissionStatus("Re-submit is allowed only after rejection.");
+      return;
+    }
+
+    let weekDates: string[] = [];
+    try {
+      const weekResponse = await getDaysOfWeek(weekNumber, year);
+      weekDates = weekResponse.days;
+    } catch {
+      weekDates = [];
+    }
+
+    const rowsByIsoDate = new Map<
+      string,
+      { total_working_hours: number; remarks: string }
+    >();
+    for (const row of activeWeekRows) {
+      const date = row.isoDate ?? toIsoDate(row.date);
+      if (!date) continue;
+      const total = Number(row.total ?? (row.regular ?? 0) + (row.overtime ?? 0));
+      rowsByIsoDate.set(date, {
+        total_working_hours: Number.isFinite(total) ? total : 0,
+        remarks: dayRemarks[row.isoDate ?? row.date] ?? "",
+      });
+    }
+
+    const projectHoursByDate = new Map<string, number>();
+    try {
+      const projectTimesheet = await getTimesheetForProject({
+        project,
+        week: weekNumber,
+        year,
+      });
+      for (const entry of projectTimesheet.entries) {
+        if (!entry.date) continue;
+        projectHoursByDate.set(entry.date, Number.isFinite(entry.total_work_hours) ? entry.total_work_hours : 0);
+      }
+    } catch {
+      // Fallback to only local rows if this fetch fails.
+    }
+
+    const timesheetData = (weekDates.length > 0 ? weekDates : Array.from(rowsByIsoDate.keys()))
+      .map((row) => {
+        if (!row) return null;
+        const fromRows = rowsByIsoDate.get(row);
+        return {
+          date: row,
+          total_working_hours:
+            fromRows?.total_working_hours ?? projectHoursByDate.get(row) ?? 0,
+          remarks: fromRows?.remarks ?? dayRemarks[row] ?? "",
+        };
+      })
+      .filter((entry): entry is { date: string; total_working_hours: number; remarks: string } => !!entry);
+
+    if (timesheetData.length === 0) {
+      setSubmissionStatus("No valid row dates found for the selected week.");
+      return;
+    }
+
+    setSubmitBusy(true);
+    setSubmissionStatus("");
+    try {
+      const response = await createEditCandidateTimesheet({
+        candidate_id: candidate,
+        rr_name: rr,
+        project,
+        week_number: weekNumber,
+        year,
+        status,
+        timesheet_data: timesheetData,
+      });
+      setSubmissionStatus(
+        `Saved successfully. Created: ${response.created ?? 0}, Updated: ${response.updated ?? 0}`
+      );
+    } catch (error) {
+      setSubmissionStatus(error instanceof Error ? error.message : "Failed to save timesheet.");
+    } finally {
+      setSubmitBusy(false);
+    }
   }
 
   const isCompact = useIs768AndBelow();
   const compactTimesheetView = isCompact && mobileTimesheetTab === "timesheet";
 
   const activeWeekRange =
-    WEEKLY_TIMESHEETS.find((w) => w.range === activeWeek)?.range ?? WEEKLY_TIMESHEETS[0].range;
+    activeWeekData.range;
   const monthNavLabel = getMonthYearLabelFromWeekRange(activeWeekRange);
 
   const overviewCards = (
@@ -127,7 +459,9 @@ export default function TalentEngineTimesheet() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Total Regular Hours</p>
-                  <p className="text-2xl font-semibold text-slate-900">320</p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {workorderWeeks.reduce((acc, w) => acc + (w.regular || 0), 0)}
+                  </p>
                 </div>
               </div>
 
@@ -139,7 +473,9 @@ export default function TalentEngineTimesheet() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Total Overtime Hours</p>
-                  <p className="text-2xl font-semibold text-slate-900">24</p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {workorderWeeks.reduce((acc, w) => acc + (w.overtime || 0), 0)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -180,7 +516,9 @@ export default function TalentEngineTimesheet() {
             <div className="mt-5 flex flex-col flex-wrap gap-3">
               <div className="flex justify-between py-1">
                 <span className="text-sm font-semibold text-emerald-700">This Month:</span>
-                <span className="rounded-full bg-emerald-50 px-4 py-1 text-sm text-emerald-700 font-semibold">64 hrs</span>
+                <span className="rounded-full bg-emerald-50 px-4 py-1 text-sm text-emerald-700 font-semibold">
+                  {workorderWeeks.reduce((acc, w) => acc + (w.total || 0), 0)} hrs
+                </span>
               </div>
               <hr />
               <div className="flex justify-between py-1">
@@ -288,9 +626,69 @@ export default function TalentEngineTimesheet() {
             </div>
           </header>
 
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-3">
+            <input
+              type="text"
+              value={candidateId}
+              onChange={(event) => setCandidateIdState(event.target.value)}
+              placeholder="RR Candidate ID (example: RRC-00001)"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              value={rrName}
+              onChange={(event) => setRrName(event.target.value)}
+              placeholder="RR Name (e.g. RR-25-00125)"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              placeholder="Project (e.g. PRJ-Ashok Leyland-000005)"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <div className="md:col-span-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={submitBusy}
+                onClick={() => void saveTimesheet("open")}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Save Draft
+              </button>
+              <button
+                type="button"
+                disabled={submitBusy}
+                onClick={() => void saveTimesheet("submit")}
+                className="rounded-xl bg-[#033CE5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Submit
+              </button>
+              <button
+                type="button"
+                disabled={submitBusy}
+                onClick={() => void saveTimesheet("re_submit")}
+                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Re-submit
+              </button>
+              {submissionStatus ? (
+                <p className="self-center text-sm text-slate-600">{submissionStatus}</p>
+              ) : null}
+              {weekLoadStatus ? (
+                <p className="self-center text-sm text-amber-700">{weekLoadStatus}</p>
+              ) : null}
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {WEEKLY_TIMESHEETS.map((week) => {
-              const isActive = week.range === activeWeek;
+            {weeksForUi.map((week) => {
+              const { weekNumber } = getWeekAndYear(week);
+              const activeWeekNo = activeWeekNumber || getWeekAndYear(activeWeekData).weekNumber;
+              const isActive = weekNumber === activeWeekNo;
+              const rows = isActive ? activeWeekRows : week.rows;
+              const consolidationStatus = weekStatusByNumber[weekNumber];
 
               return (
                 <div
@@ -299,7 +697,7 @@ export default function TalentEngineTimesheet() {
                 >
                   <button
                     type="button"
-                    onClick={() => setActiveWeek(week.range)}
+                    onClick={() => setActiveWeekNumber(weekNumber)}
                     className={`flex w-full items-center justify-between ${isCompact ? "gap-2" : ""}`}
                   >
                     <div className="min-w-0 text-left">
@@ -311,6 +709,11 @@ export default function TalentEngineTimesheet() {
                       <p className={`text-slate-500 ${isCompact ? "text-xs" : "text-sm"}`}>
                         {week.weekLabel}
                       </p>
+                      {consolidationStatus ? (
+                        <p className={`mt-1 text-xs font-semibold ${isCompact ? "" : "text-sm"} text-blue-700`}>
+                          Status: {consolidationStatus}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">Regular Hours: {week.regular}</span>
@@ -320,7 +723,7 @@ export default function TalentEngineTimesheet() {
                     </div>
                   </button>
 
-                  {isActive && week.rows.length > 0 && (
+                  {isActive && rows.length > 0 && (
                     <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <div className="hidden lg:block">
                         <div className="overflow-x-auto">
@@ -335,10 +738,11 @@ export default function TalentEngineTimesheet() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
-                              {week.rows.map((row) => {
-                                const leaveActive = !!leaveSelections[row.date];
+                              {rows.map((row) => {
+                                const rowKey = row.isoDate ?? row.date;
+                                const leaveActive = !!leaveSelections[rowKey];
                                 return (
-                                  <tr key={row.date} className={`transition-colors ${leaveActive ? "bg-amber-50/70" : "hover:bg-slate-50"}`}>
+                                  <tr key={rowKey} className={`transition-colors ${leaveActive ? "bg-amber-50/70" : "hover:bg-slate-50"}`}>
                                     <td className="px-6 py-4">
                                       <p className="font-semibold text-slate-900">{row.date}</p>
                                       <p className="text-xs text-slate-500">{row.day}</p>
@@ -353,7 +757,8 @@ export default function TalentEngineTimesheet() {
                                           onClick={(e) =>
                                             setCommentModal({
                                               date: row.date,
-                                              comment: "",
+                                              remarkKey: rowKey,
+                                              comment: dayRemarks[rowKey] ?? "",
                                               triggerElement: e.currentTarget,
                                             })
                                           }
@@ -375,7 +780,8 @@ export default function TalentEngineTimesheet() {
                                           onClick={(e) =>
                                             setCommentModal({
                                               date: row.date,
-                                              comment: "",
+                                              remarkKey: rowKey,
+                                              comment: dayRemarks[rowKey] ?? "",
                                               triggerElement: e.currentTarget,
                                             })
                                           }
@@ -390,7 +796,7 @@ export default function TalentEngineTimesheet() {
                                     <td className="px-6 py-4">
                                       <button
                                         type="button"
-                                        onClick={() => toggleLeave(row.date)}
+                                        onClick={() => toggleLeave(rowKey)}
                                         className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                                           leaveActive
                                             ? "border-amber-300 bg-amber-100 text-amber-800"
@@ -421,11 +827,12 @@ export default function TalentEngineTimesheet() {
                         </div>
                       </div>
                       <div className="space-y-4 px-4 py-4 lg:hidden">
-                        {week.rows.map((row) => {
-                          const leaveActive = !!leaveSelections[row.date];
+                        {rows.map((row) => {
+                          const rowKey = row.isoDate ?? row.date;
+                          const leaveActive = !!leaveSelections[rowKey];
                           return (
                             <div
-                              key={row.date}
+                              key={rowKey}
                               className={`space-y-3 rounded-2xl border px-4 py-4 shadow-sm transition ${leaveActive ? "border-amber-200 bg-amber-50/70" : "border-slate-200 bg-slate-50/80"}`}
                             >
                               <div className="flex items-center justify-between">
@@ -449,7 +856,8 @@ export default function TalentEngineTimesheet() {
                                       onClick={(e) =>
                                         setCommentModal({
                                           date: row.date,
-                                          comment: "",
+                                          remarkKey: rowKey,
+                                          comment: dayRemarks[rowKey] ?? "",
                                           triggerElement: e.currentTarget,
                                         })
                                       }
@@ -472,7 +880,8 @@ export default function TalentEngineTimesheet() {
                                       onClick={(e) =>
                                         setCommentModal({
                                           date: row.date,
-                                          comment: "",
+                                          remarkKey: rowKey,
+                                          comment: dayRemarks[rowKey] ?? "",
                                           triggerElement: e.currentTarget,
                                         })
                                       }
@@ -487,7 +896,7 @@ export default function TalentEngineTimesheet() {
                               </div>
                               <button
                                 type="button"
-                                onClick={() => toggleLeave(row.date)}
+                                onClick={() => toggleLeave(rowKey)}
                                 className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                                   leaveActive
                                     ? "border-amber-300 bg-amber-100 text-amber-800"

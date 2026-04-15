@@ -19,11 +19,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const upstreamUrl = new URL(`${backendBase}/api/method/te_frappe_6fe.api.masters.get_dropdown_details`);
-  upstreamUrl.searchParams.set("doctype", doctype);
-  upstreamUrl.searchParams.set("field_name", fieldName);
-  upstreamUrl.searchParams.set("page", page);
-  upstreamUrl.searchParams.set("limit", limit);
+  const upstreamCandidates = [
+    `${backendBase}/api/method/get_dropdown_details`,
+    `${backendBase}/api/method/te_frappe_6fe.api.masters.get_dropdown_details`,
+  ];
 
   const headers: HeadersInit = {};
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -31,17 +30,35 @@ export async function GET(request: Request) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.Cookie = cookie;
 
-  const upstream = await fetch(upstreamUrl.toString(), { method: "GET", headers });
-  const text = await upstream.text();
+  let upstreamStatus = 500;
+  let upstreamData: Record<string, unknown> = {};
+  let lastUrl = "";
 
-  let data: Record<string, unknown> = {};
-  try {
-    data = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    data = { raw: text };
+  for (const candidate of upstreamCandidates) {
+    const upstreamUrl = new URL(candidate);
+    upstreamUrl.searchParams.set("doctype", doctype);
+    upstreamUrl.searchParams.set("field_name", fieldName);
+    upstreamUrl.searchParams.set("page", page);
+    upstreamUrl.searchParams.set("limit", limit);
+    lastUrl = upstreamUrl.toString();
+
+    const upstream = await fetch(lastUrl, { method: "GET", headers });
+    const text = await upstream.text();
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      parsed = { raw: text };
+    }
+
+    upstreamStatus = upstream.status;
+    upstreamData = parsed;
+
+    if (upstream.ok) break;
   }
 
-  const res = NextResponse.json(data, { status: upstream.status });
-  res.headers.set("x-upstream-url", upstreamUrl.toString());
+  const res = NextResponse.json(upstreamData, { status: upstreamStatus });
+  res.headers.set("x-upstream-url", lastUrl);
   return res;
 }
