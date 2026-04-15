@@ -23,8 +23,6 @@ interface FilterDrawerProps {
   dropdownConfig?: {
     doctype?: string;
     skillsFieldName?: string;
-    employmentTypesFieldName?: string;
-    seniorityLevelsFieldName?: string;
     limit?: number;
   };
 }
@@ -59,8 +57,6 @@ export const DEFAULT_FILTERS: FilterState = {
 const DEFAULT_DROPDOWN_CONFIG = {
   doctype: "Resource Requirement",
   skillsFieldName: "key_skills",
-  employmentTypesFieldName: "employment_type",
-  seniorityLevelsFieldName: "seniority_level",
   limit: 1000,
 } as const;
 
@@ -280,34 +276,16 @@ export function FilterDrawer({
 
     let active = true;
     void (async () => {
-      const [skillsRes, employmentRes, seniorityRes] = await Promise.allSettled([
-        getDropdownDetailsOptions({
-          doctype: resolvedDropdownConfig.doctype,
-          fieldName: resolvedDropdownConfig.skillsFieldName,
-          limit: resolvedDropdownConfig.limit,
-        }),
-        getDropdownDetailsOptions({
-          doctype: resolvedDropdownConfig.doctype,
-          fieldName: resolvedDropdownConfig.employmentTypesFieldName,
-          limit: resolvedDropdownConfig.limit,
-        }),
-        getDropdownDetailsOptions({
-          doctype: resolvedDropdownConfig.doctype,
-          fieldName: resolvedDropdownConfig.seniorityLevelsFieldName,
-          limit: resolvedDropdownConfig.limit,
-        }),
-      ]);
+      const skillsRes = await getDropdownDetailsOptions({
+        doctype: resolvedDropdownConfig.doctype,
+        fieldName: resolvedDropdownConfig.skillsFieldName,
+        limit: resolvedDropdownConfig.limit,
+      }).catch(() => null);
 
       if (!active) return;
 
-      if (skillsRes.status === "fulfilled" && skillsRes.value.length > 0) {
-        setDynamicSkills(skillsRes.value);
-      }
-      if (employmentRes.status === "fulfilled" && employmentRes.value.length > 0) {
-        setDynamicEmploymentTypes(employmentRes.value);
-      }
-      if (seniorityRes.status === "fulfilled" && seniorityRes.value.length > 0) {
-        setDynamicSeniorityLevels(seniorityRes.value);
+      if (Array.isArray(skillsRes) && skillsRes.length > 0) {
+        setDynamicSkills(skillsRes);
       }
 
       setHasLoadedDynamicOptions(true);

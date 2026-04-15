@@ -205,15 +205,36 @@ type CandidateSourcingAcceptanceInput = {
   accept_terms: boolean;
 };
 
+function normalizeBillingFrequency(value?: string): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  const allowed: Record<string, string> = {
+    daily: "Daily",
+    weekly: "Weekly",
+    biweekly: "Biweekly",
+    monthly: "Monthly",
+    quarterly: "Quarterly",
+    hourly: "Hourly",
+  };
+
+  return allowed[normalized] ?? value.trim();
+}
+
 export async function postCandidateSourcingAcceptance(
   input: CandidateSourcingAcceptanceInput
 ): Promise<void> {
   const url = new URL("/api/method/post_candidate_sourcing_acceptance", window.location.origin);
+  const payload: CandidateSourcingAcceptanceInput = {
+    ...input,
+    billing_frequency: normalizeBillingFrequency(input.billing_frequency),
+  };
   const res = await fetch(url.toString(), {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: input }),
+    body: JSON.stringify({ data: payload }),
   });
   const data = await getJsonOrEmpty(res);
   if (!res.ok) {

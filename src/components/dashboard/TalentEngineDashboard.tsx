@@ -1167,7 +1167,7 @@ export default function TalentEngineDashboard() {
           await postCandidateSourcingAcceptance({
             rrcandidate_name: action.rrCandidateName.trim(),
             expected_salary: Number.isFinite(parsedSalary) ? parsedSalary : undefined,
-            billing_frequency: "hourly",
+            billing_frequency: "Hourly",
             billing_currency: "USD",
             availability_date: availabilityDate,
             accept_terms: extras?.acceptTerms === true,
