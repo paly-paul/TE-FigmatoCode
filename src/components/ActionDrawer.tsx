@@ -43,6 +43,7 @@ import {
   type RrGeneratedContentApi,
 } from "@/services/jobs/rrGeneratedContent";
 import { getRrDetails, type RrDetailsApi } from "@/services/jobs/rrDetails";
+import { getProposalData, type ProposalDataApi } from "@/services/jobs/getProposalData";
 import { getProfileName } from "@/lib/authSession";
 
 export interface ActionDrawerActionCard {
@@ -141,6 +142,9 @@ export default function ActionDrawer({
   const [jobDescriptionLoading, setJobDescriptionLoading] = useState(false);
   const [jobDescriptionError, setJobDescriptionError] = useState<string | null>(null);
   const [rrDetails, setRrDetails] = useState<RrDetailsApi | null>(null);
+  const [proposalData, setProposalData] = useState<ProposalDataApi | null>(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
@@ -160,6 +164,9 @@ export default function ActionDrawer({
       setJobDescriptionLoading(false);
       setJobDescriptionError(null);
       setRrDetails(null);
+      setProposalData(null);
+      setProposalLoading(false);
+      setProposalError(null);
       setIsSubmitting(false);
       setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
     }
@@ -374,6 +381,30 @@ export default function ActionDrawer({
       cancelled = true;
     };
   }, [open, action?.jobDocumentId]);
+
+  useEffect(() => {
+    const rrCandidate = action?.rrCandidateName?.trim();
+    if (!open || !isSalaryNegotiation || !rrCandidate) return;
+    let cancelled = false;
+    void (async () => {
+      setProposalLoading(true);
+      setProposalError(null);
+      try {
+        const data = await getProposalData(rrCandidate);
+        if (cancelled) return;
+        setProposalData(data);
+      } catch (e) {
+        if (cancelled) return;
+        setProposalData(null);
+        setProposalError(e instanceof Error ? e.message : "Could not load proposal details.");
+      } finally {
+        if (!cancelled) setProposalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isSalaryNegotiation, action?.rrCandidateName]);
 
   useEffect(() => {
     const rrName = action?.jobDocumentId?.trim();
@@ -605,18 +636,31 @@ export default function ActionDrawer({
       >
         <div>
           <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
-            {actionDrawerSalary.proposalTitle}
+            {proposalData?.proposal_version
+              ? `Proposal (${proposalData.proposal_version})`
+              : actionDrawerSalary.proposalTitle}
           </h3>
           <p className="mt-2 text-base font-semibold text-[#202939] sm:text-lg">
-            {actionDrawerSalary.rateDisplay}{" "}
+            {proposalData?.proposed_rate != null
+              ? `$ ${proposalData.proposed_rate}`
+              : actionDrawerSalary.rateDisplay}{" "}
             <span className="text-sm font-normal text-[#5E7397] sm:text-base">
-              {actionDrawerSalary.rateSuffix}
+              {proposalData?.billing_frequency
+                ? `/ ${proposalData.billing_frequency.toLowerCase()}`
+                : actionDrawerSalary.rateSuffix}
             </span>
           </p>
           <p className="mt-1.5 text-xs text-[#202939] sm:text-sm">
             {actionDrawerSalary.proposedJoiningPrefix}{" "}
-            <span className="font-semibold">{actionDrawerSalary.proposedJoiningDate}</span>
+            <span className="font-semibold">
+              {proposalData?.proposed_joining_date || actionDrawerSalary.proposedJoiningDate}
+            </span>
           </p>
+          {proposalLoading ? (
+            <p className="mt-2 text-xs text-[#5E7397]">Loading proposal…</p>
+          ) : proposalError ? (
+            <p className="mt-2 text-xs text-red-600">{proposalError}</p>
+          ) : null}
         </div>
         {isProposalExpanded ? (
           <ChevronUp className="mt-1 h-5 w-5 text-[#202939] sm:h-6 sm:w-6" />
@@ -638,7 +682,10 @@ export default function ActionDrawer({
                   {actionDrawerSalary.byCustomer}
                 </p>
                 <div className="mt-2 space-y-2 sm:mt-3 sm:space-y-2.5">
-                  {actionDrawerSalary.customerTerms.map((item) => (
+                  {(proposalData?.by_customer_terms && proposalData.by_customer_terms.length > 0
+                    ? proposalData.by_customer_terms
+                    : actionDrawerSalary.customerTerms
+                  ).map((item) => (
                     <div
                       key={item}
                       className="flex items-center gap-2.5 text-xs text-[#5E7397] sm:gap-3 sm:text-sm"
@@ -656,7 +703,9 @@ export default function ActionDrawer({
                     {actionDrawerSalary.byCandidate}
                   </p>
                   <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
-                    {actionDrawerSalary.byCandidatePlaceholder}
+                    {proposalData?.by_candidate_terms && proposalData.by_candidate_terms.length > 0
+                      ? proposalData.by_candidate_terms.join(", ")
+                      : actionDrawerSalary.byCandidatePlaceholder}
                   </p>
                 </div>
 
@@ -665,7 +714,10 @@ export default function ActionDrawer({
                     {actionDrawerSalary.notApplicableTitle}
                   </p>
                   <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
-                    {actionDrawerSalary.notApplicableBody}
+                    {proposalData?.not_applicable_terms &&
+                    proposalData.not_applicable_terms.length > 0
+                      ? proposalData.not_applicable_terms.join(", ")
+                      : actionDrawerSalary.notApplicableBody}
                   </p>
                 </div>
               </div>

@@ -74,19 +74,40 @@ function parseActionablesPayload(data: Record<string, unknown>): {
   const actions: CandidateActionableApi[] = [];
   for (const item of raw) {
     if (!isRecord(item)) continue;
-    const job_title = typeof item.job_title === "string" ? item.job_title : "";
-    const job_id = typeof item.job_id === "string" ? item.job_id : "";
-    const name = typeof item.name === "string" ? item.name : "";
-    if (!job_title || !job_id) continue;
+    const job_title =
+      firstString(item, ["job_title", "job_name", "title", "position", "rr_title"]) || "";
+    const job_id =
+      firstString(item, ["job_id", "rr", "job_opening", "job", "opening_id", "rr_id"]) || "";
+    // Different backends/environments may send the actionable doc id under different keys.
+    // This id is critical for proposal actions (proposal_name) and for interview slot submission.
+    const name =
+      firstString(item, [
+        "name",
+        "proposal_name",
+        "proposal",
+        "proposal_id",
+        "interview_id",
+        "interview",
+        "interview_name",
+        "id",
+      ]) || "";
+    // Some proposal actionables may omit job fields; keep them so the UI can still render a card.
+    // Use stable fallbacks so they can be grouped/deduped, but avoid breaking true job-based flows.
+    const rr_candidate = typeof item.rr_candidate === "string" ? item.rr_candidate : "";
+    const derivedJobId = job_id || rr_candidate || name;
+    const derivedJobTitle = job_title || (rr_candidate ? "Proposal update" : "");
+    if (!derivedJobId || !derivedJobTitle) continue;
     const infoRaw = isRecord(item.info) ? item.info : undefined;
     const info = normalizeActionableInfo(infoRaw);
     actions.push({
-      job_title,
-      job_id,
-      rr_candidate: typeof item.rr_candidate === "string" ? item.rr_candidate : "",
+      job_title: derivedJobTitle,
+      job_id: derivedJobId,
+      rr_candidate,
       stage: typeof item.stage === "string" ? item.stage : "",
       status: typeof item.status === "string" ? item.status : "",
-      name: name || `${job_id}-action`,
+      // Avoid fabricating ids when the backend didn't provide one; proposal endpoints require a real name.
+      // Keep a stable fallback only for UI list keys.
+      name: name || `${derivedJobId}-action`,
       info,
     });
   }

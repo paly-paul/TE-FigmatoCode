@@ -29,7 +29,7 @@ export function LocationDrawer({
   onClose,
   onApply,
   triggerRef,
-  initialSelected = ["bangor-us"],
+  initialSelected = [],
   options = DEFAULT_LOCATIONS,
 }: PreferredLocationDrawerProps) {
   const [search, setSearch] = useState("");
@@ -58,8 +58,30 @@ export function LocationDrawer({
       onClose={onClose}
       title="Preferred Location"
       triggerRef={triggerRef}
+      headerActions={
+        <button
+          type="button"
+          onClick={() => {
+            setSelected([]);
+            setSearch("");
+          }}
+          className="text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          Reset
+        </button>
+      }
       footer={
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setSelected([]);
+              setSearch("");
+            }}
+            className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
+          >
+            Reset
+          </button>
           <button
             type="button"
             onClick={() => {
