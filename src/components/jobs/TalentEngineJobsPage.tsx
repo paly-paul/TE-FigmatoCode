@@ -242,7 +242,7 @@ function JobsFilterPanel({
             value={searchSkills}
             onChange={(event) => onSearchSkillsChange(event.target.value)}
             placeholder="Search by name..."
-            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-sm text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-sm text-base focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
@@ -804,7 +804,7 @@ export default function TalentEngineJobsPage() {
           type="search"
           placeholder="Search by job name..."
           autoComplete="off"
-          className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
           <Search className="h-4 w-4 text-gray-500" aria-hidden />

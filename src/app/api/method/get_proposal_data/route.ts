@@ -8,12 +8,18 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const rrcandidate = searchParams.get("rrcandidate")?.trim();
+  const proposalName = searchParams.get("proposal_name")?.trim();
 
-  if (!rrcandidate) {
-    return NextResponse.json({ error: "rrcandidate is required." }, { status: 400 });
+  if (!rrcandidate && !proposalName) {
+    return NextResponse.json(
+      { error: "Either rrcandidate or proposal_name is required." },
+      { status: 400 }
+    );
   }
 
-  const qs = new URLSearchParams({ rrcandidate });
+  const qs = new URLSearchParams();
+  if (rrcandidate) qs.set("rrcandidate", rrcandidate);
+  if (proposalName) qs.set("proposal_name", proposalName);
   const url = `${backendBase}/api/method/get_proposal_data?${qs}`;
 
   const headers: HeadersInit = {};

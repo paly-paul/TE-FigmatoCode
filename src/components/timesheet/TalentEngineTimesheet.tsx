@@ -715,10 +715,16 @@ export default function TalentEngineTimesheet() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">Regular Hours: {week.regular}</span>
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">Overtime Hours: {week.overtime}</span>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-800">Total Hours: {week.total}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-sm font-semibold text-emerald-700">
+                        Regular Hours: {week.regular}
+                      </span>
+                      <span className="rounded-full bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-700">
+                        Overtime Hours: {week.overtime}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-800">
+                        Total Hours: {week.total}
+                      </span>
                       <ChevronDown className={`h-5 w-5 transition ${isActive ? "rotate-180 text-blue-600" : "text-slate-400"}`} />
                     </div>
                   </button>

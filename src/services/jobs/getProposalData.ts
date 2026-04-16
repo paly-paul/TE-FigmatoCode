@@ -179,9 +179,24 @@ async function getJsonOrEmpty(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export async function getProposalData(rrCandidateId: string): Promise<ProposalDataApi> {
+type GetProposalDataParams = {
+  rrCandidateId?: string;
+  proposalName?: string;
+};
+
+export async function getProposalData({
+  rrCandidateId,
+  proposalName,
+}: GetProposalDataParams): Promise<ProposalDataApi> {
+  const candidate = rrCandidateId?.trim();
+  const proposal = proposalName?.trim();
+  if (!candidate && !proposal) {
+    throw new Error("Either rrCandidateId or proposalName is required.");
+  }
+
   const url = new URL("/api/method/get_proposal_data", window.location.origin);
-  url.searchParams.set("rrcandidate", rrCandidateId.trim());
+  if (candidate) url.searchParams.set("rrcandidate", candidate);
+  if (proposal) url.searchParams.set("proposal_name", proposal);
 
   const res = await fetch(url.toString(), { credentials: "same-origin" });
   const data = await getJsonOrEmpty(res);

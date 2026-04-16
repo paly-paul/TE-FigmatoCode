@@ -561,7 +561,7 @@ export default function CreateProfilePage() {
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-200">
-                <h2 className="text-3xl font-semibold text-gray-900 leading-none">Upload Resume</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 leading-none">Upload Resume</h2>
               </div>
               <div className="p-3">
                 <MobileResumeUploadCard
@@ -682,7 +682,7 @@ function MobileUploadStepper() {
             {step}
           </div>
           {step === 1 ? (
-            <span className="text-2xl font-semibold text-gray-900">Upload Resume</span>
+            <span className="text-xl font-semibold text-gray-900">Upload Resume</span>
           ) : null}
           {idx < steps.length - 1 ? <span className="text-gray-400">|</span> : null}
         </div>
@@ -730,7 +730,7 @@ function MobileResumeUploadCard({
   return (
     <div className="rounded border border-[#CFD7E7] bg-[#EFF3FA] p-6 flex flex-col items-center text-center gap-3 min-h-[220px] justify-center">
       <UploadBoxIcon />
-      <p className="text-2xl font-medium text-gray-900 leading-none">
+      <p className="text-lg font-medium text-gray-900 leading-none">
         {uploadedFile ? uploadedFile.name : "No file selected"}
       </p>
       <p className="text-sm text-[#60708F]">Supports PDF, Docx files upto 5 MB</p>

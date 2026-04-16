@@ -11,6 +11,18 @@ function looksLikeFrappeMethodNotFound(payload: JsonRecord): boolean {
   return combined.includes("not found") || combined.includes("does not exist") || combined.includes("not permitted");
 }
 
+function looksLikeUnableToFetchAnyActionables(payload: JsonRecord): boolean {
+  const msg = payload.message;
+  if (!msg || typeof msg !== "object") return false;
+  const status = (msg as { status?: unknown }).status;
+  const message = (msg as { message?: unknown }).message;
+  return (
+    status === "Failed" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes("unable to fetch any actionables")
+  );
+}
+
 export async function GET(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -54,8 +66,14 @@ export async function GET(request: Request) {
 
   const primary = await tryFetch(primaryUrl);
   const shouldFallback =
-    (primary.upstream.status === 404 || primary.upstream.status === 403 || primary.upstream.status === 405) &&
-    looksLikeFrappeMethodNotFound(primary.data);
+    // Primary endpoint missing/blocked: try fallback.
+    ((primary.upstream.status === 404 ||
+      primary.upstream.status === 403 ||
+      primary.upstream.status === 405) &&
+      looksLikeFrappeMethodNotFound(primary.data)) ||
+    // Some environments return a generic "Unable to fetch any actionables" failure from
+    // the primary method even when the fallback works. Try fallback in that case too.
+    looksLikeUnableToFetchAnyActionables(primary.data);
 
   const result = shouldFallback ? await tryFetch(fallbackUrl) : primary;
 

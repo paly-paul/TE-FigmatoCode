@@ -42,6 +42,10 @@ export type CandidateActionableApi = {
   rr_candidate: string;
   stage: string;
   status: string;
+  /** Recruiter interest accepted timestamp (when available). */
+  accepted_at?: string;
+  /** Raw actionable received/created timestamp when returned by backend. */
+  received_at?: string;
   /** Doc name for this actionable row: Interview id (e.g. INT-00001) when stage is interview; proposal id when selection/proposal. */
   name: string;
   info?: CandidateActionableInfoApi;
