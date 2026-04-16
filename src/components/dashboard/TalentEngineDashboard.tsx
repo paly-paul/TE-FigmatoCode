@@ -195,6 +195,7 @@ const DASHBOARD_RECOMMENDED_JOBS_LIMIT = 6;
 const APPLIED_JOBS_STORAGE_PREFIX = "dashboard_applied_jobs_v1";
 const SOURCING_ACCEPTED_STORAGE_PREFIX = "dashboard_sourcing_accepted_v1";
 const LOCAL_ACTIONABLES_STORAGE_PREFIX = "dashboard_local_actionables_v1";
+const LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX = "dashboard_local_submitted_action_cards_v1";
 
 type LocalActionableSnapshot = {
   job_id: string;
@@ -202,6 +203,8 @@ type LocalActionableSnapshot = {
   rr_candidate?: string;
   accepted_at?: string;
 };
+
+type PersistedActionCard = ActionCard;
 
 const JOB_LISTINGS: JobListing[] = [
   {
@@ -300,17 +303,34 @@ function formatActionSubtitleForMobile(subtitle: string) {
   return subtitle.replace(/\s*-\s*/g, " | ");
 }
 
+type ActionableDisplayKind = "recruiter-interest" | "interview" | "salary-negotiation";
+
+function getActionableDisplayKind(actionable: Pick<CandidateActionableApi, "stage" | "status">): ActionableDisplayKind {
+  const stageText = actionable.stage.toLowerCase();
+  const statusText = actionable.status.toLowerCase();
+  const text = `${stageText} ${statusText}`;
+  if (
+    stageText.includes("selection") ||
+    text.includes("negotiation") ||
+    text.includes("proposal")
+  ) {
+    return "salary-negotiation";
+  }
+  if (text.includes("interview")) return "interview";
+  return "recruiter-interest";
+}
+
 function toActionTitle(actionable: CandidateActionableApi) {
-  const text = `${actionable.stage} ${actionable.status}`.toLowerCase();
-  if (text.includes("interview")) return "Interview Scheduled";
-  if (text.includes("negotiation") || text.includes("proposal")) return "Salary Negotiation";
+  const kind = getActionableDisplayKind(actionable);
+  if (kind === "salary-negotiation") return "Salary Negotiation";
+  if (kind === "interview") return "Interview Scheduled";
   return "Recruiter interest received";
 }
 
 function actionableStageRank(actionable: CandidateActionableApi): number {
-  const text = `${actionable.stage} ${actionable.status}`.toLowerCase();
-  if (text.includes("negotiation") || text.includes("proposal")) return 3;
-  if (text.includes("interview")) return 2;
+  const kind = getActionableDisplayKind(actionable);
+  if (kind === "salary-negotiation") return 3;
+  if (kind === "interview") return 2;
   return 1;
 }
 
@@ -449,6 +469,9 @@ export default function TalentEngineDashboard() {
   const [localAcceptedActionables, setLocalAcceptedActionables] = useState<
     LocalActionableSnapshot[]
   >([]);
+  const [localSubmittedActionCards, setLocalSubmittedActionCards] = useState<PersistedActionCard[]>(
+    []
+  );
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
@@ -456,6 +479,10 @@ export default function TalentEngineDashboard() {
   const lastStageByActionableNameRef = useRef<Map<string, string>>(new Map());
   const selectionSideEffectFiredRef = useRef<Set<string>>(new Set());
   const refreshInFlightRef = useRef(false);
+  const latestDashboardIdsRef = useRef<{ candidateId: string | null; profileName: string | null }>({
+    candidateId: null,
+    profileName: null,
+  });
   const actionCardsSignatureRef = useRef("");
   const generalCardsSignatureRef = useRef("");
   const recommendedJobsSignatureRef = useRef("");
@@ -560,7 +587,7 @@ export default function TalentEngineDashboard() {
         for (const item of actionablesRes.actions) {
           const actionableName = (item.name || "").trim();
           if (!actionableName) continue;
-          const stageText = `${item.stage} ${item.status}`.toLowerCase();
+          const stageText = item.stage.toLowerCase();
           const isSelection = stageText.includes("selection");
           const prevStageText = lastStageByActionableNameRef.current.get(actionableName) || "";
 
@@ -597,8 +624,7 @@ export default function TalentEngineDashboard() {
         }
 
         const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => {
-          const stageText = `${item.stage} ${item.status}`.toLowerCase();
-          const isInterviewActionable = stageText.includes("interview");
+          const isInterviewActionable = getActionableDisplayKind(item) === "interview";
           const stableIdSeed = item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
           return {
             id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
@@ -637,7 +663,7 @@ export default function TalentEngineDashboard() {
         }));
 
         const mergedByJob = new Map<string, ActionCard>();
-        for (const card of [...localAcceptedCards, ...nextActions]) {
+        for (const card of [...localSubmittedActionCards, ...localAcceptedCards, ...nextActions]) {
           const key = card.jobDocumentId?.trim();
           if (!key) continue;
           const existing = mergedByJob.get(key);
@@ -741,6 +767,10 @@ export default function TalentEngineDashboard() {
     const profileName = getProfileName();
     setCandidateId(currentCandidateId);
     setProfileId(profileName);
+    latestDashboardIdsRef.current = {
+      candidateId: currentCandidateId,
+      profileName,
+    };
     const storageKey = currentCandidateId
       ? `${APPLIED_JOBS_STORAGE_PREFIX}:${currentCandidateId}`
       : null;
@@ -749,6 +779,9 @@ export default function TalentEngineDashboard() {
       : null;
     const localActionablesKey = currentCandidateId
       ? `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${currentCandidateId}`
+      : null;
+    const localSubmittedCardsKey = currentCandidateId
+      ? `${LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX}:${currentCandidateId}`
       : null;
 
     if (storageKey && typeof window !== "undefined") {
@@ -811,7 +844,72 @@ export default function TalentEngineDashboard() {
       }
     }
 
+    if (localSubmittedCardsKey && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(localSubmittedCardsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            const cards = parsed.filter(
+              (row): row is PersistedActionCard =>
+                typeof row === "object" &&
+                row !== null &&
+                typeof (row as PersistedActionCard).id === "number" &&
+                typeof (row as PersistedActionCard).type === "string" &&
+                typeof (row as PersistedActionCard).title === "string" &&
+                typeof (row as PersistedActionCard).subtitle === "string" &&
+                typeof (row as PersistedActionCard).timestamp === "string"
+            );
+            setLocalSubmittedActionCards(cards);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     void refreshDashboardData({ candidateId: currentCandidateId, profileName });
+  }, []);
+
+  useEffect(() => {
+    latestDashboardIdsRef.current = {
+      candidateId,
+      profileName: profileId,
+    };
+    if (!candidateId && !profileId) return;
+    void refreshDashboardData({ candidateId, profileName: profileId });
+  }, [candidateId, profileId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const refreshFromLatestIds = () => {
+      const { candidateId: latestCandidateId, profileName: latestProfileName } =
+        latestDashboardIdsRef.current;
+      if (!latestCandidateId && !latestProfileName) return;
+      void refreshDashboardData({
+        candidateId: latestCandidateId,
+        profileName: latestProfileName,
+      });
+    };
+
+    const handleFocus = () => {
+      refreshFromLatestIds();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshFromLatestIds();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -846,6 +944,16 @@ export default function TalentEngineDashboard() {
       // ignore
     }
   }, [candidateId, localAcceptedActionables]);
+
+  useEffect(() => {
+    if (!candidateId || typeof window === "undefined") return;
+    const storageKey = `${LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX}:${candidateId}`;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(localSubmittedActionCards));
+    } catch {
+      // ignore
+    }
+  }, [candidateId, localSubmittedActionCards]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
     const byId = new Map<string, string>();
@@ -1159,8 +1267,28 @@ export default function TalentEngineDashboard() {
             return false;
           }
           await postInterviewSelectSlot(iid, extras.interviewSlotId.trim());
+          setLocalSubmittedActionCards((prev) => {
+            const jobId = action.jobDocumentId?.trim() || "";
+            const nextCard: PersistedActionCard = {
+              ...action,
+              timestamp: "Submitted",
+            };
+            const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
+            next.unshift(nextCard);
+            return next;
+          });
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
+          setLocalSubmittedActionCards((prev) => {
+            const jobId = action.jobDocumentId?.trim() || "";
+            const nextCard: PersistedActionCard = {
+              ...action,
+              timestamp: "Submitted",
+            };
+            const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
+            next.unshift(nextCard);
+            return next;
+          });
         } else if (action.rrCandidateName?.trim()) {
           const availabilityDate = extras?.availabilityDate?.trim() || undefined;
           const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
@@ -1200,6 +1328,11 @@ export default function TalentEngineDashboard() {
             });
             setApiActionCards((prev) => {
               const next = prev.filter((c) => c.jobDocumentId?.trim() !== jobId);
+              next.unshift(acceptedCard);
+              return next;
+            });
+            setLocalSubmittedActionCards((prev) => {
+              const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
               next.unshift(acceptedCard);
               return next;
             });
