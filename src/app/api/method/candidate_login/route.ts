@@ -62,8 +62,14 @@ export async function POST(request: Request) {
     if (!/;\s*Path=/i.test(next)) next = `${next}; Path=/`;
 
     // In local dev we often run over HTTP, but some backends mark cookies as `Secure`,
-    // which prevents the browser from storing them. For dev only, drop `Secure`.
+    // which prevents the browser from storing them. However, browsers reject
+    // `SameSite=None` cookies unless they are also `Secure`. For dev, rewrite
+    // `SameSite=None` to `SameSite=Lax` so the cookie can be stored without `Secure`.
     if (process.env.NODE_ENV !== "production") {
+      const hasSameSiteNone = /;\s*SameSite=None\b/i.test(next);
+      if (hasSameSiteNone) {
+        next = next.replace(/;\s*SameSite=None\b/i, "; SameSite=Lax");
+      }
       next = next.replace(/;\s*Secure\b/i, "");
     }
     return next;
