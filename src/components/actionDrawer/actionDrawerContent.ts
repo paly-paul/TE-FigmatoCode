@@ -45,7 +45,7 @@ export const actionDrawerRecruiterInterest = {
   currencySymbol: "$",
   salaryRateSuffix: "/ hourly",
   termsAgreement:
-    "I agree to the terms and agree to share my profile with Six Force Talent Engine.",
+    "I agree to the terms and agree to share my profile with SixFE.",
 } as const;
 
 export const actionDrawerInterview = {

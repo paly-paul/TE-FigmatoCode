@@ -19,7 +19,7 @@ export default function PasswordUpdatedPage() {
         </h1>
         <p className="text-sm text-gray-500 max-w-xs leading-relaxed mb-8">
           Your password has been successfully reset. You can now sign in to your
-          Talent Engine account.
+          SixFE account.
         </p>
 
         {/* CTA */}
