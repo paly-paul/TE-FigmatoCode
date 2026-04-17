@@ -754,9 +754,8 @@ export default function TalentEngineDashboard() {
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       } catch {
-        setApiActionCards([]);
-        setApiGeneralCards([]);
-        setApiRecommendedJobs([]);
+        // Keep previously rendered cards on transient refresh failures.
+        // This avoids an empty Action Center when one API intermittently fails.
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       }

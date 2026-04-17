@@ -13,8 +13,9 @@ import {
 } from "@/services/signup";
 
 export default function ConfirmationPage() {
+  const OTP_LENGTH = 5;
   const router = useRouter();
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [otpDigits, setOtpDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ""));
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -63,14 +64,14 @@ export default function ConfirmationPage() {
 
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
     e.preventDefault();
-    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6).split("");
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH).split("");
     if (digits.length === 0) return;
     setOtpDigits((prev) => {
       const next = [...prev];
-      for (let i = 0; i < 6; i += 1) next[i] = digits[i] ?? "";
+      for (let i = 0; i < OTP_LENGTH; i += 1) next[i] = digits[i] ?? "";
       return next;
     });
-    const focusIndex = Math.min(digits.length, 5);
+    const focusIndex = Math.min(digits.length, OTP_LENGTH - 1);
     inputRefs.current[focusIndex]?.focus();
   }
 
@@ -83,8 +84,8 @@ export default function ConfirmationPage() {
       router.replace("/signup");
       return;
     }
-    if (otpValue.length !== 6) {
-      setError("Please enter the 6-digit OTP.");
+    if (otpValue.length !== OTP_LENGTH) {
+      setError(`Please enter the ${OTP_LENGTH}-digit OTP.`);
       return;
     }
 
