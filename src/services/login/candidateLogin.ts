@@ -30,4 +30,3 @@ export async function candidateLogin(values: CandidateLoginValues): Promise<Reco
 
   return data;
 }
-
