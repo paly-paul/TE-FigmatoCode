@@ -4,7 +4,6 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
-  CircleCheck,
   Clock,
   Hourglass,
   MapPin,
@@ -62,6 +61,7 @@ export interface ActionDrawerActionCard {
   interviewMode?: string;
   interviewSlots?: (InterviewSlotOptionApi & { slot_timezone?: string; slot_status?: string })[];
   sourcingAcceptedAt?: string;
+  receivedAt?: string;
 }
 
 interface ActionDrawerProps {
@@ -83,7 +83,10 @@ interface ActionDrawerProps {
       acceptTerms?: boolean;
     }
   ) => void | Promise<boolean>;
-  onRequestClarification?: (action: ActionDrawerActionCard) => void;
+  onRequestClarification?: (
+    action: ActionDrawerActionCard,
+    remarks: string
+  ) => void | Promise<boolean>;
 }
 
 const metaIcons = {
@@ -105,6 +108,19 @@ function sanitizeDecimalInput(value: string): string {
   const firstDot = cleaned.indexOf(".");
   if (firstDot === -1) return cleaned;
   return `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, "")}`;
+}
+
+function formatTimelineDate(value?: string): string | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    // Keep raw only for date-like strings; ignore status labels such as "Submitted".
+    const looksDateLike =
+      /\d/.test(raw) && (raw.includes("-") || raw.includes("/") || raw.includes(","));
+    return looksDateLike ? raw : undefined;
+  }
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
 }
 
 /** `isSourcingAccepted` only means "submit already done" for recruiter-interest cards — not interview/salary stages. */
@@ -133,6 +149,10 @@ export default function ActionDrawer({
     actionDrawerFormDefaults.selectedInterviewSlotId
   );
   const [isProposalExpanded, setIsProposalExpanded] = useState(true);
+  const [isProjectInfoExpanded, setIsProjectInfoExpanded] = useState(true);
+  const [showClarificationBox, setShowClarificationBox] = useState(false);
+  const [clarificationRemark, setClarificationRemark] = useState("");
+  const [isClarificationSubmitting, setIsClarificationSubmitting] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true);
   const [interviewSlots, setInterviewSlots] = useState<InterviewSlotOptionApi[]>([]);
   const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
@@ -155,6 +175,10 @@ export default function ActionDrawer({
       setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
       setIsProposalExpanded(true);
+      setIsProjectInfoExpanded(true);
+      setShowClarificationBox(false);
+      setClarificationRemark("");
+      setIsClarificationSubmitting(false);
       setHasAcceptedTerms(true);
       setInterviewSlots([]);
       setInterviewSlotsLoading(false);
@@ -384,13 +408,17 @@ export default function ActionDrawer({
 
   useEffect(() => {
     const rrCandidate = action?.rrCandidateName?.trim();
-    if (!open || !isSalaryNegotiation || !rrCandidate) return;
+    const proposalName = action?.proposalName?.trim();
+    if (!open || !isSalaryNegotiation || (!rrCandidate && !proposalName)) return;
     let cancelled = false;
     void (async () => {
       setProposalLoading(true);
       setProposalError(null);
       try {
-        const data = await getProposalData(rrCandidate);
+        const data = await getProposalData({
+          rrCandidateId: rrCandidate,
+          proposalName,
+        });
         if (cancelled) return;
         setProposalData(data);
       } catch (e) {
@@ -404,7 +432,7 @@ export default function ActionDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, isSalaryNegotiation, action?.rrCandidateName]);
+  }, [open, isSalaryNegotiation, action?.rrCandidateName, action?.proposalName]);
 
   useEffect(() => {
     const rrName = action?.jobDocumentId?.trim();
@@ -447,6 +475,11 @@ export default function ActionDrawer({
     : actionDrawerJobSummary.matchPercentLabel;
   const resolvedPostedAgo = rrDetails?.posted_time || actionDrawerJobSummary.postedAgo;
   const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
+  const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
+  const recruiterAcceptedDateLabel = formatTimelineDate(action?.sourcingAcceptedAt);
+  const stageReceivedDateLabel =
+    formatTimelineDate(action?.receivedAt) || formatTimelineDate(action?.timestamp);
+  const proposalJoiningDateLabel = formatTimelineDate(proposalData?.proposed_joining_date);
   const resolvedMetaFields = [
     {
       label: "Project Est. Start Date",
@@ -486,7 +519,7 @@ export default function ActionDrawer({
         {actionDrawerRecruiterInterest.sectionTitle}
       </h3>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <div className="mt-4 grid items-start gap-3 lg:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-medium text-[#202939] sm:text-sm">
             {actionDrawerRecruiterInterest.availableDateLabel}
@@ -500,7 +533,7 @@ export default function ActionDrawer({
                 const next = event.target.value;
                 setAvailableDate(next && next < minAvailableDate ? minAvailableDate : next);
               }}
-              className="h-10 w-full rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
+              className="h-10 w-full appearance-none rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
             />
             <Calendar className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5E7397] sm:right-3.5 sm:h-4 sm:w-4" />
           </div>
@@ -628,100 +661,110 @@ export default function ActionDrawer({
   );
 
   const renderSalaryNegotiationAction = () => (
-    <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
-      <button
-        type="button"
-        onClick={() => setIsProposalExpanded((current) => !current)}
-        className="flex w-full items-start justify-between gap-3 text-left"
-      >
-        <div>
-          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
-            {proposalData?.proposal_version
-              ? `Proposal (${proposalData.proposal_version})`
-              : actionDrawerSalary.proposalTitle}
-          </h3>
-          <p className="mt-2 text-base font-semibold text-[#202939] sm:text-lg">
-            {proposalData?.proposed_rate != null
-              ? `$ ${proposalData.proposed_rate}`
-              : actionDrawerSalary.rateDisplay}{" "}
-            <span className="text-sm font-normal text-[#5E7397] sm:text-base">
-              {proposalData?.billing_frequency
-                ? `/ ${proposalData.billing_frequency.toLowerCase()}`
-                : actionDrawerSalary.rateSuffix}
-            </span>
-          </p>
-          <p className="mt-1.5 text-xs text-[#202939] sm:text-sm">
-            {actionDrawerSalary.proposedJoiningPrefix}{" "}
-            <span className="font-semibold">
-              {proposalData?.proposed_joining_date || actionDrawerSalary.proposedJoiningDate}
-            </span>
-          </p>
-          {proposalLoading ? (
-            <p className="mt-2 text-xs text-[#5E7397]">Loading proposal…</p>
-          ) : proposalError ? (
-            <p className="mt-2 text-xs text-red-600">{proposalError}</p>
-          ) : null}
-        </div>
-        {isProposalExpanded ? (
-          <ChevronUp className="mt-1 h-5 w-5 text-[#202939] sm:h-6 sm:w-6" />
-        ) : (
-          <ChevronDown className="mt-1 h-5 w-5 text-[#202939] sm:h-6 sm:w-6" />
-        )}
-      </button>
-
-      {isProposalExpanded ? (
-        <div className="mt-4 rounded-md bg-white p-4">
-          <h4 className="text-lg leading-none font-semibold text-[#202939] sm:text-xl">
-            {actionDrawerSalary.termsHeading}
-          </h4>
-
-          <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4">
-            <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-              <div className="border-b border-[#E6ECF6] pb-4 lg:border-b-0 lg:border-r lg:pr-5">
-                <p className="text-sm font-semibold text-[#202939] sm:text-base">
-                  {actionDrawerSalary.byCustomer}
-                </p>
-                <div className="mt-2 space-y-2 sm:mt-3 sm:space-y-2.5">
-                  {(proposalData?.by_customer_terms && proposalData.by_customer_terms.length > 0
-                    ? proposalData.by_customer_terms
-                    : actionDrawerSalary.customerTerms
-                  ).map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-2.5 text-xs text-[#5E7397] sm:gap-3 sm:text-sm"
-                    >
-                      <CircleCheck className="h-4.5 w-4.5 text-[#22C55E]" />
-                      <span>{item}</span>
-                    </div>
-                  ))}
-                </div>
+    <div className="space-y-3.5">
+      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+        <button
+          type="button"
+          onClick={() => setIsProjectInfoExpanded((current) => !current)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Project Info</h3>
+          {isProjectInfoExpanded ? (
+            <ChevronUp className="h-5 w-5 text-[#202939]" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-[#202939]" />
+          )}
+        </button>
+        {isProjectInfoExpanded ? (
+          <div className="border-t border-[#E6ECF6] px-4 py-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-xs sm:grid-cols-2 sm:text-sm">
+              <div>
+                <p className="text-[#5E7397]">Job Posting</p>
+                <p className="mt-0.5 font-semibold text-[#202939]">{resolvedReferenceId}</p>
               </div>
-
-              <div className="space-y-4">
-                <div className="border-b border-[#E6ECF6] pb-4">
-                  <p className="text-sm font-semibold text-[#202939] sm:text-base">
-                    {actionDrawerSalary.byCandidate}
-                  </p>
-                  <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
-                    {proposalData?.by_candidate_terms && proposalData.by_candidate_terms.length > 0
-                      ? proposalData.by_candidate_terms.join(", ")
-                      : actionDrawerSalary.byCandidatePlaceholder}
-                  </p>
+              <div>
+                <p className="text-[#5E7397]">Location</p>
+                <p className="mt-0.5 font-semibold text-[#202939]">
+                  {locationLabel} | {resolvedLocationSuffix}
+                </p>
+              </div>
+              {resolvedMetaFields.map((field) => (
+                <div key={field.label}>
+                  <p className="text-[#5E7397]">{field.label}</p>
+                  <p className="mt-0.5 font-semibold text-[#202939]">{field.value}</p>
                 </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
-                <div>
-                  <p className="text-sm font-semibold text-[#202939] sm:text-base">
-                    {actionDrawerSalary.notApplicableTitle}
-                  </p>
-                  <p className="mt-1.5 text-xs text-[#5E7397] sm:mt-2 sm:text-sm">
-                    {proposalData?.not_applicable_terms &&
-                    proposalData.not_applicable_terms.length > 0
-                      ? proposalData.not_applicable_terms.join(", ")
-                      : actionDrawerSalary.notApplicableBody}
-                  </p>
-                </div>
+      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+        <button
+          type="button"
+          onClick={() => setIsProposalExpanded((current) => !current)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Proposal</h3>
+          {isProposalExpanded ? (
+            <ChevronUp className="h-5 w-5 text-[#202939]" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-[#202939]" />
+          )}
+        </button>
+
+        {isProposalExpanded ? (
+          <div className="border-t border-[#E6ECF6] px-4 py-3">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#10B981] px-3 py-1 text-xs font-semibold text-white">
+                Awaiting Candidate Acceptance
+              </span>
+              <span className="text-sm font-medium text-[#1D4ED8]">
+                {proposalData?.proposal_version || "V1"}
+              </span>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-[#202939]">Base Salary</p>
+                <p className="text-xs text-[#5E7397]">All values are rounded off.</p>
+              </div>
+              <div className="text-right">
+                <p className="text-4xl font-bold leading-none text-[#1D4ED8]">
+                  {proposalData?.proposed_rate != null ? `$${proposalData.proposed_rate}` : "—"}
+                  <span className="ml-1 text-xl font-semibold">
+                    /{proposalData?.billing_frequency || "Hourly"}
+                  </span>
+                </p>
+                <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-[#5E7397]">
+                  Estimated Total
+                </p>
               </div>
             </div>
+            <p className="mt-3 text-sm text-[#202939]">
+              Proposed Joining Date{" "}
+              <span className="font-semibold">— {proposalData?.proposed_joining_date || "—"}</span>
+            </p>
+            {proposalLoading ? (
+              <p className="mt-2 text-xs text-[#5E7397]">Loading proposal…</p>
+            ) : proposalError ? (
+              <p className="mt-2 text-xs text-red-600">{proposalError}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {showClarificationBox ? (
+        <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+          <div className="border-b border-[#E6ECF6] px-4 py-3">
+            <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Candidate Remarks</h3>
+          </div>
+          <div className="px-4 py-3">
+            <textarea
+              value={clarificationRemark}
+              onChange={(event) => setClarificationRemark(event.target.value)}
+              placeholder="Enter your remark here..."
+              className="min-h-[130px] w-full resize-y rounded-md border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8]"
+            />
           </div>
         </div>
       ) : null}
@@ -740,44 +783,85 @@ export default function ActionDrawer({
     return renderRecruiterInterestAction();
   };
 
-  const renderTimelineContent = () => (
-    // Recruiter Interest: timeline should show the empty state.
-    isRecruiterInterestReceived ? (
-      <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-[#F8FAFD] px-6 py-10 sm:min-h-[220px] sm:py-12">
-        <Image
-          width={40}
-          height={40}
-          src={actionDrawerTimeline.emptyStateIconSrc}
-          alt=""
-        />
-        <p className="mt-4 max-w-[280px] text-center text-lg font-medium leading-relaxed text-black sm:text-base">
-          {actionDrawerTimeline.emptyStateMessage}
-        </p>
-      </div>
-    ) : (
+  const renderTimelineContent = () => {
+    const milestones: { title: string; date: string }[] = [];
+
+    if (isInterviewScheduled) {
+      if (recruiterAcceptedDateLabel) {
+        milestones.push({
+          title: "Recruiter Interest Accepted",
+          date: recruiterAcceptedDateLabel,
+        });
+      }
+      if (stageReceivedDateLabel && stageReceivedDateLabel !== recruiterAcceptedDateLabel) {
+        milestones.push({
+          title: "Interview Accepted",
+          date: stageReceivedDateLabel,
+        });
+      }
+    } else if (isSalaryNegotiation) {
+      if (recruiterAcceptedDateLabel) {
+        milestones.push({
+          title: "Recruiter Interest Accepted",
+          date: recruiterAcceptedDateLabel,
+        });
+      }
+      if (stageReceivedDateLabel) {
+        milestones.push({
+          title: "Interview Accepted",
+          date: stageReceivedDateLabel,
+        });
+      }
+      if (proposalJoiningDateLabel) {
+        milestones.push({
+          title: "Salary Proposal Received",
+          date: proposalJoiningDateLabel,
+        });
+      }
+    } else if (recruiterAcceptedDateLabel) {
+      milestones.push({
+        title: actionDrawerTimeline.milestoneTitles.default,
+        date: recruiterAcceptedDateLabel,
+      });
+    }
+
+    const hasMilestones = milestones.length > 0;
+    return (
       <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <div className="flex shrink-0 items-center justify-center" aria-hidden>
-            <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
+        {hasMilestones ? (
+          <div className="space-y-4">
+            {milestones.map((milestone) => (
+              <div key={`${milestone.title}|${milestone.date}`} className="flex items-center gap-3 sm:gap-4">
+                <div className="flex shrink-0 items-center justify-center" aria-hidden>
+                  <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
+                    {milestone.title}
+                  </h4>
+                  <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
+                    {milestone.date}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="min-w-0 flex-1">
-            <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
-              {isInterviewScheduled
-                ? "Recruiter Interest Accepted"
-                : isSalaryNegotiation
-                  ? actionDrawerTimeline.milestoneTitles.salary
-                  : actionDrawerTimeline.milestoneTitles.default}
-            </h4>
-            <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
-              {isInterviewScheduled
-                ? action?.sourcingAcceptedAt || actionDrawerTimeline.milestoneDate
-                : actionDrawerTimeline.milestoneDate}
+        ) : (
+          <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-white px-6 py-10 sm:min-h-[220px] sm:py-12">
+            <Image
+              width={40}
+              height={40}
+              src={actionDrawerTimeline.emptyStateIconSrc}
+              alt=""
+            />
+            <p className="mt-4 max-w-[280px] text-center text-lg font-medium leading-relaxed text-black sm:text-base">
+              {actionDrawerTimeline.emptyStateMessage}
             </p>
           </div>
-        </div>
+        )}
       </div>
-    )
-  );
+    );
+  };
 
   const renderJobDescriptionContent = (isMobile = false) => (
     <div
@@ -917,22 +1001,59 @@ export default function ActionDrawer({
   };
 
   const footerContent = isSalaryNegotiation ? (
-    <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
-      <button
-        type="button"
-        onClick={() => action && onRequestClarification?.(action)}
-        className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
-      >
-        {actionDrawerFooter.requestClarification}
-      </button>
-      <button
-        type="button"
-        onClick={runPrimaryAction}
-        className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6 sm:py-2.5"
-      >
-        {actionDrawerFooter.submit}
-      </button>
-    </div>
+    showClarificationBox ? (
+      <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+        <button
+          type="button"
+          onClick={() => {
+            setShowClarificationBox(false);
+            setClarificationRemark("");
+          }}
+          className="rounded-md border border-[#D6DCEA] px-5 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-6"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={isClarificationSubmitting || !clarificationRemark.trim() || !action}
+          onClick={() => {
+            if (!action || !clarificationRemark.trim() || isClarificationSubmitting) return;
+            void (async () => {
+              setIsClarificationSubmitting(true);
+              const ok = await Promise.resolve(
+                onRequestClarification?.(action, clarificationRemark.trim())
+              );
+              if (ok !== false) {
+                setShowClarificationBox(false);
+                setClarificationRemark("");
+                onClose();
+              }
+              setIsClarificationSubmitting(false);
+            })();
+          }}
+          className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50 sm:px-6"
+        >
+          Submit
+        </button>
+      </div>
+    ) : (
+      <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+        <button
+          type="button"
+          onClick={() => setShowClarificationBox(true)}
+          className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
+        >
+          {actionDrawerFooter.requestClarification}
+        </button>
+        <button
+          type="button"
+          onClick={runPrimaryAction}
+          className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6 sm:py-2.5"
+        >
+          Accept
+        </button>
+      </div>
+    )
   ) : (
     <div className="flex justify-end">
       <button

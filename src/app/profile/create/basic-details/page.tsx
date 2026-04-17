@@ -714,7 +714,7 @@ function BasicDetailsPageContent() {
     console.log("Data from session storage:", stored);
     if (!stored) return;
     applyProfileToForm(stored);
-  }, [searchParams]);
+  }, [searchParams.toString()]);
 
   useEffect(() => {
     let cancelled = false;
@@ -797,7 +797,7 @@ function BasicDetailsPageContent() {
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [isMobileViewport, searchParams]);
+  }, [isMobileViewport, searchParams.toString()]);
 
   useEffect(() => {
     const trimmedEducation = education

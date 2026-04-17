@@ -54,6 +54,8 @@ function normalizeActionableInfo(
 function parseActionablesPayload(data: Record<string, unknown>): {
   actions: CandidateActionableApi[];
   partialFailure: boolean;
+  backendStatus?: string;
+  backendErrorMessage?: string;
 } {
   // Backend can return either:
   // 1) { status, data: { actions }, partial_failure }
@@ -66,9 +68,11 @@ function parseActionablesPayload(data: Record<string, unknown>): {
   const dataNode = isRecord(root.data) ? root.data : root;
   const raw = dataNode.actions;
   const partialFailure = root.partial_failure === true || dataNode.partial_failure === true;
+  const backendStatus = typeof root.status === "string" ? root.status : undefined;
+  const backendErrorMessage = typeof root.message === "string" ? root.message : undefined;
 
   if (!Array.isArray(raw)) {
-    return { actions: [], partialFailure };
+    return { actions: [], partialFailure, backendStatus, backendErrorMessage };
   }
 
   const actions: CandidateActionableApi[] = [];
@@ -99,12 +103,27 @@ function parseActionablesPayload(data: Record<string, unknown>): {
     if (!derivedJobId || !derivedJobTitle) continue;
     const infoRaw = isRecord(item.info) ? item.info : undefined;
     const info = normalizeActionableInfo(infoRaw);
+    const stage = firstString(item, ["stage", "rr_candidate_stage", "candidate_stage"]) || "";
+    const status = firstString(item, ["status", "rr_candidate_status", "candidate_status"]) || "";
+    const accepted_at = firstString(item, ["accepted_at"]);
+    const received_at = firstString(item, [
+      "received_at",
+      "accepted_at",
+      "created_at",
+      "creation",
+      "date",
+      "timestamp",
+    ]);
     actions.push({
       job_title: derivedJobTitle,
       job_id: derivedJobId,
       rr_candidate,
-      stage: typeof item.stage === "string" ? item.stage : "",
-      status: typeof item.status === "string" ? item.status : "",
+      // Some backends/environments may emit stage/status under rr_candidate_* keys.
+      // Also helps when stage/status are accidentally swapped upstream.
+      stage,
+      status,
+      accepted_at,
+      received_at,
       // Avoid fabricating ids when the backend didn't provide one; proposal endpoints require a real name.
       // Keep a stable fallback only for UI list keys.
       name: name || `${derivedJobId}-action`,
@@ -112,12 +131,14 @@ function parseActionablesPayload(data: Record<string, unknown>): {
     });
   }
 
-  return { actions, partialFailure };
+  return { actions, partialFailure, backendStatus, backendErrorMessage };
 }
 
 export async function getCandidateActionables(profileId: string): Promise<{
   actions: CandidateActionableApi[];
   partialFailure: boolean;
+  backendStatus?: string;
+  backendErrorMessage?: string;
 }> {
   const url = new URL("/api/method/get_candidate_actionables", window.location.origin);
   url.searchParams.set("profile_id", profileId.trim());

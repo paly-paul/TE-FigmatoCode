@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
@@ -108,13 +109,8 @@ export default function CandidateAppShell({
             className="flex items-center gap-2 min-w-0"
             onClick={() => setMenuOpen(false)}
           >
-            <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-tl-xl rounded-br-xl bg-blue-600">
-              {/* <span className="absolute bottom-0 left-0 h-3 w-3 rounded-tr-[10px] bg-white" /> */}
-              <span className="text-xs font-bold text-white">TE</span>
-            </div>
-            <span className="truncate text-base font-semibold text-gray-900">
-              Talent Engine
-            </span>
+            <Image src="/icons/logo.jpeg" width={36} height={36} alt="SixFE Logo" />
+            <span className="truncate text-base font-semibold text-gray-900">SixFE</span>
           </Link>
 
           <div className="flex items-center gap-1">

@@ -84,6 +84,7 @@ interface ActionCard {
     slot_status?: string;
   }[];
   sourcingAcceptedAt?: string;
+  receivedAt?: string;
 }
 
 function mapActionableInterviewSlots(
@@ -309,11 +310,9 @@ function getActionableDisplayKind(actionable: Pick<CandidateActionableApi, "stag
   const stageText = actionable.stage.toLowerCase();
   const statusText = actionable.status.toLowerCase();
   const text = `${stageText} ${statusText}`;
-  if (
-    stageText.includes("selection") ||
-    text.includes("negotiation") ||
-    text.includes("proposal")
-  ) {
+  // Some environments may send selection information via `status` instead of `stage`.
+  // Treat "selection" as salary-negotiation when it exists in either field.
+  if (text.includes("selection") || text.includes("negotiation") || text.includes("proposal")) {
     return "salary-negotiation";
   }
   if (text.includes("interview")) return "interview";
@@ -360,6 +359,8 @@ function actionCardSignature(card: ActionCard): string {
     card.isSourcingAccepted ? "1" : "0",
     card.proposalName || "",
     card.interviewId || "",
+    card.sourcingAcceptedAt || "",
+    card.receivedAt || "",
   ].join("|");
 }
 
@@ -531,7 +532,11 @@ export default function TalentEngineDashboard() {
     profileName: string | null;
   }) => {
     const currentCandidateId = input.candidateId?.trim() || "";
+    // `profileName` is the backend `profile_id` used for actionables.
+    // In some session-missing flows we may have only `candidateId` populated.
+    // Prefer `profileName`, but fallback to `candidateId` to avoid hiding actionables.
     const profileName = input.profileName?.trim() || "";
+    const profileIdForActionables = profileName || currentCandidateId;
 
     // Avoid overlapping refreshes (interval + focus events).
     if (refreshInFlightRef.current) return;
@@ -559,7 +564,7 @@ export default function TalentEngineDashboard() {
         setHasAttemptedJobsLoad(true);
       }
 
-      if (!profileName) {
+      if (!profileIdForActionables) {
         setApiActionCards([]);
         setApiGeneralCards([]);
         setApiRecommendedJobs([]);
@@ -569,17 +574,31 @@ export default function TalentEngineDashboard() {
       }
 
       try {
-        const cachedRecommended = readRecommendedJobsCache(profileName);
-        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileName);
-        const [actionablesRes, recommendedJobsRes] = await Promise.all([
-          getCandidateActionables(profileName),
-          shouldRefreshRecommended
-            ? getRecommendedJobs(profileName)
-            : Promise.resolve(cachedRecommended?.jobs ?? []),
-        ]);
+        const cachedRecommended = readRecommendedJobsCache(profileIdForActionables);
+        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileIdForActionables);
+        let actionablesRes = await getCandidateActionables(profileIdForActionables);
+        const recommendedJobsRes = shouldRefreshRecommended
+          ? await getRecommendedJobs(profileIdForActionables)
+          : cachedRecommended?.jobs ?? [];
 
         if (shouldRefreshRecommended) {
-          writeRecommendedJobsCache(profileName, recommendedJobsRes);
+          writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
+        }
+
+        // If the backend can't find actionables for `profile_id`, retry using the other
+        // session identifier (`candidateId`).
+        const retryProfileId =
+          profileName && currentCandidateId && profileName !== currentCandidateId
+            ? currentCandidateId
+            : "";
+        if (
+          retryProfileId &&
+          actionablesRes.actions.length === 0 &&
+          actionablesRes.backendStatus === "Failed" &&
+          typeof actionablesRes.backendErrorMessage === "string" &&
+          actionablesRes.backendErrorMessage.toLowerCase().includes("unable to fetch any actionables")
+        ) {
+          actionablesRes = await getCandidateActionables(retryProfileId);
         }
 
         // Best-effort side effect: when an actionable transitions into "Selection",
@@ -645,7 +664,12 @@ export default function TalentEngineDashboard() {
             interviewType: item.info?.interview_type,
             interviewMode: item.info?.interview_mode,
             interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
-            sourcingAcceptedAt: localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            sourcingAcceptedAt:
+              item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            receivedAt:
+              item.received_at ||
+              item.accepted_at ||
+              localAcceptedAtByJob.get(item.job_id?.trim() || ""),
           };
         });
 
@@ -660,15 +684,33 @@ export default function TalentEngineDashboard() {
           jobDocumentId: row.job_id,
           rrCandidateName: row.rr_candidate,
           isSourcingAccepted: true,
+          sourcingAcceptedAt: row.accepted_at || undefined,
+          receivedAt: row.accepted_at || undefined,
         }));
 
         const mergedByJob = new Map<string, ActionCard>();
         for (const card of [...localSubmittedActionCards, ...localAcceptedCards, ...nextActions]) {
           const key = card.jobDocumentId?.trim();
           if (!key) continue;
+          const acceptedAtForJob = localAcceptedAtByJob.get(key) || "";
+          const cardWithTimelineBackfill: ActionCard = {
+            ...card,
+            sourcingAcceptedAt: card.sourcingAcceptedAt || acceptedAtForJob || undefined,
+            receivedAt: card.receivedAt || card.sourcingAcceptedAt || acceptedAtForJob || undefined,
+          };
           const existing = mergedByJob.get(key);
-          if (!existing || actionCardStageRank(card) >= actionCardStageRank(existing)) {
-            mergedByJob.set(key, card);
+          const nextRank = actionCardStageRank(cardWithTimelineBackfill);
+          const existingRank = existing ? actionCardStageRank(existing) : -1;
+          const hasRicherAcceptedTimelineDate =
+            !!cardWithTimelineBackfill.sourcingAcceptedAt &&
+            (!existing?.sourcingAcceptedAt ||
+              cardWithTimelineBackfill.sourcingAcceptedAt !== existing.sourcingAcceptedAt);
+          if (
+            !existing ||
+            nextRank > existingRank ||
+            (nextRank === existingRank && hasRicherAcceptedTimelineDate)
+          ) {
+            mergedByJob.set(key, cardWithTimelineBackfill);
           }
         }
 
@@ -1380,9 +1422,17 @@ export default function TalentEngineDashboard() {
     })();
   };
 
-  const handleDrawerClarification = (action: ActionCard) => {
-    if (!action.proposalName) return;
-    void postProposalCandidateNegotiation(action.proposalName, "");
+  const handleDrawerClarification = async (
+    action: ActionCard,
+    remarks: string
+  ): Promise<boolean> => {
+    if (!action.proposalName) return false;
+    try {
+      await postProposalCandidateNegotiation(action.proposalName, remarks);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handlePauseSave = (duration: string) => {
@@ -1653,7 +1703,7 @@ export default function TalentEngineDashboard() {
                 type="search"
                 placeholder="Search by job name..."
                 autoComplete="off"
-                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
                 <Search className="h-4 w-4 text-gray-500" aria-hidden />
@@ -1819,7 +1869,7 @@ export default function TalentEngineDashboard() {
                 type="search"
                 placeholder="Search by job name..."
                 autoComplete="off"
-                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-4 pr-14 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <div className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded border border-gray-200 bg-gray-50">
                 <Search className="h-4 w-4 text-gray-500" aria-hidden />
