@@ -3,7 +3,7 @@ import "./globals.css";
 import SessionInactivityGuard from "@/components/auth/SessionInactivityGuard";
 
 export const metadata: Metadata = {
-  title: "Talent Engine",
+  title: "SixFE",
   description: "Your intelligent job platform for candidates",
 };
 

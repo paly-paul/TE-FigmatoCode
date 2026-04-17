@@ -70,7 +70,7 @@ export default function LoginPageClient() {
     >
       <div className="mb-6">
         <h1 className="mb-1 text-2xl font-bold text-gray-900">
-          Welcome to Talent Engine
+          Welcome to SixFE
         </h1>
         <p className="text-sm text-gray-500">
           Continue with your Email ID &amp; Password

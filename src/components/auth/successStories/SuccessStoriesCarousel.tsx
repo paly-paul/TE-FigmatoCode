@@ -26,7 +26,7 @@ export const DEFAULT_SUCCESS_STORIES: SuccessStoryItem[] = [
   },
   {
     quote:
-      "The dashboard made tracking applications effortless. Highly recommend Talent Engine.",
+      "The dashboard made tracking applications effortless. Highly recommend SixFE.",
     name: "Sarah Chen",
     role: "Product Designer",
     company: "Northwind Labs",

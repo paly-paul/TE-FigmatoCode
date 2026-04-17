@@ -34,7 +34,7 @@ export function MobileNewPasswordScreen() {
         <div className="mb-6">
           <h1 className="mb-1 text-2xl font-bold text-gray-900">New Password</h1>
           <p className="text-sm text-gray-500">
-            Create a new password for your Talent Engine account
+            Create a new password for your SixFE account
           </p>
         </div>
 
