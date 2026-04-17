@@ -477,8 +477,6 @@ export default function TalentEngineDashboard() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
-  const lastStageByActionableNameRef = useRef<Map<string, string>>(new Map());
-  const selectionSideEffectFiredRef = useRef<Set<string>>(new Set());
   const refreshInFlightRef = useRef(false);
   const latestDashboardIdsRef = useRef<{ candidateId: string | null; profileName: string | null }>({
     candidateId: null,
@@ -599,30 +597,6 @@ export default function TalentEngineDashboard() {
           actionablesRes.backendErrorMessage.toLowerCase().includes("unable to fetch any actionables")
         ) {
           actionablesRes = await getCandidateActionables(retryProfileId);
-        }
-
-        // Best-effort side effect: when an actionable transitions into "Selection",
-        // trigger the proposal negotiation endpoint once.
-        for (const item of actionablesRes.actions) {
-          const actionableName = (item.name || "").trim();
-          if (!actionableName) continue;
-          const stageText = item.stage.toLowerCase();
-          const isSelection = stageText.includes("selection");
-          const prevStageText = lastStageByActionableNameRef.current.get(actionableName) || "";
-
-          if (
-            isSelection &&
-            !prevStageText.includes("selection") &&
-            !selectionSideEffectFiredRef.current.has(actionableName)
-          ) {
-            void postProposalCandidateNegotiation(
-              actionableName,
-              "Candidate moved to Selection stage."
-            );
-            selectionSideEffectFiredRef.current.add(actionableName);
-          }
-
-          lastStageByActionableNameRef.current.set(actionableName, stageText);
         }
 
         const localAcceptedAtByJob = new Map<string, string>();
