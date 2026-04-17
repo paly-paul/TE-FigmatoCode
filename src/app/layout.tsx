@@ -1,9 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import SessionInactivityGuard from "@/components/auth/SessionInactivityGuard";
 
 export const metadata: Metadata = {
   title: "Talent Engine",
   description: "Your intelligent job platform for candidates",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -13,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SessionInactivityGuard />
+        {children}
+      </body>
     </html>
   );
 }

@@ -143,6 +143,7 @@ function isProjectEmpty(e: ProjectEntry) {
 function SkillsProjectsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const [skills, setSkills] = useState<string[]>([]);
   const [suggestedSkills, setSuggestedSkills] = useState<string[]>([]);
   const [backendSkillsStatus, setBackendSkillsStatus] = useState("");
@@ -345,7 +346,7 @@ function SkillsProjectsPageContent() {
     } catch {
       // ignore invalid JSON
     }
-  }, [searchParams]);
+  }, [searchParamsKey]);
 
   useEffect(() => {
     const queryProfileName =
@@ -428,7 +429,7 @@ function SkillsProjectsPageContent() {
         });
       }
     }
-  }, [searchParams]);
+  }, [searchParamsKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -822,7 +823,7 @@ function SkillsProjectsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParamsKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

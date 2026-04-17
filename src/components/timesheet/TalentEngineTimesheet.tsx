@@ -715,7 +715,9 @@ export default function TalentEngineTimesheet() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div
+                      className={`flex flex-wrap items-center gap-2 ${isCompact ? "ml-auto max-w-[62%] justify-end text-right" : ""}`}
+                    >
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-sm font-semibold text-emerald-700">
                         Regular Hours: {week.regular}
                       </span>
