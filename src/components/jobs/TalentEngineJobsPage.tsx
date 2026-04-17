@@ -31,13 +31,17 @@ import {
   type LocationOption,
 } from "../ui/LocationDrawer";
 import { useIsBelowLg } from "@/lib/useResponsive";
-import { getProfileName, setProfileName } from "@/lib/authSession";
+import { getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
 import {
   isRecommendedJobsCacheStale,
   readRecommendedJobsCache,
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
-import { getRecommendedJobs } from "@/services/jobs/actionCenter";
+import {
+  getJobApplications,
+  getRecommendedJobs,
+  markInterestedInJob,
+} from "@/services/jobs/actionCenter";
 import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
 
 interface JobCard {
@@ -55,6 +59,7 @@ interface JobCard {
   skills: string[];
   employmentType: string;
   seniorityLevel: string;
+  jobDocumentId?: string;
 }
 
 interface ActionCard {
@@ -63,6 +68,7 @@ interface ActionCard {
   title: string;
   subtitle: string;
   timestamp: string;
+  jobDocumentId?: string;
 }
 
 const JOBS: JobCard[] = [
@@ -412,6 +418,7 @@ function getMatchColor(percentage: number) {
 function JobsCard({
   job,
   saved,
+  applied,
   onToggleSaved,
   onShare,
   onApply,
@@ -419,6 +426,7 @@ function JobsCard({
 }: {
   job: JobCard;
   saved: boolean;
+  applied: boolean;
   onToggleSaved: (jobId: number) => void;
   onShare: () => void;
   onApply: () => void;
@@ -526,12 +534,21 @@ function JobsCard({
           <button
             type="button"
             onClick={onApply}
-            className="relative border border-gray-300 rounded-lg px-6 sm:px-8 py-2 text-sm text-gray-800 bg-white transition-all flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600 flex-1 sm:flex-initial"
+            disabled={applied}
+            className={`relative border rounded-lg px-6 sm:px-8 py-2 text-sm transition-all flex items-center justify-center flex-1 sm:flex-initial ${
+              applied
+                ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500"
+                : "border-gray-300 text-gray-800 bg-white group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600"
+            }`}
           >
             <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
-              Apply
+              {applied ? "Applied" : "Apply"}
             </span>
-            <span className="absolute right-4 opacity-0 translate-x-1 text-white transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0">
+            <span
+              className={`absolute right-4 translate-x-1 text-white transition-all duration-150 ${
+                applied ? "opacity-0" : "opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
+              }`}
+            >
               <svg
                 width="14"
                 height="14"
@@ -567,6 +584,10 @@ export default function TalentEngineJobsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
+  const [candidateId, setCandidateIdState] = useState<string | null>(null);
+  const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [showReferModal, setShowReferModal] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -583,6 +604,30 @@ export default function TalentEngineJobsPage() {
   const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  const refreshJobApplications = async (currentCandidateId: string) => {
+    const applicationsRes = await getJobApplications(currentCandidateId);
+    const mappedIds = applicationsRes
+      .map((row) => row.job_id)
+      .filter((v): v is string => Boolean(v?.trim()));
+    setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...mappedIds]));
+  };
+
+  useEffect(() => {
+    // Candidate id is stored in sessionStorage on login.
+    setCandidateIdState(getCandidateId());
+  }, []);
+
+  useEffect(() => {
+    if (!candidateId?.trim()) return;
+    void (async () => {
+      try {
+        await refreshJobApplications(candidateId);
+      } catch {
+        // ignore; Apply will still work optimistically
+      }
+    })();
+  }, [candidateId]);
 
   useEffect(() => {
     let active = true;
@@ -775,6 +820,7 @@ export default function TalentEngineJobsPage() {
       title: job.title,
       subtitle: `${job.location} - ${job.locationFull}`,
       timestamp: job.postedTime,
+      jobDocumentId: job.jobDocumentId,
     };
 
     const isSameJobAlreadyOpen =
@@ -789,6 +835,24 @@ export default function TalentEngineJobsPage() {
 
     setSelectedAction(nextAction);
     setIsDrawerOpen(true);
+  };
+
+  const handleDrawerPrimaryAction = async (action: ActionCard): Promise<boolean> => {
+    const jobDocumentId = action.jobDocumentId?.trim() || "";
+    const cid = candidateId?.trim() || "";
+    if (!jobDocumentId || !cid) return false;
+    try {
+      await markInterestedInJob(cid, jobDocumentId);
+      setAppliedJobDocumentIds((prev) => {
+        const next = new Set(prev);
+        next.add(jobDocumentId);
+        return next;
+      });
+      setIsDrawerOpen(false);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const isCompactJobsLayout = useIsBelowLg();
@@ -877,6 +941,7 @@ export default function TalentEngineJobsPage() {
               key={job.id}
               job={job}
               saved={savedJobIds.has(job.id)}
+              applied={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
               onToggleSaved={toggleSavedJob}
               onShare={() => setShowReferModal(true)}
               onApply={() => handleJobApplyClick(job)}
@@ -990,6 +1055,7 @@ export default function TalentEngineJobsPage() {
                     key={job.id}
                     job={job}
                     saved={savedJobIds.has(job.id)}
+                    applied={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
                     onToggleSaved={toggleSavedJob}
                     onShare={() => setShowReferModal(true)}
                     onApply={() => handleJobApplyClick(job)}
@@ -1030,6 +1096,7 @@ export default function TalentEngineJobsPage() {
         open={isDrawerOpen}
         action={selectedAction}
         onClose={() => setIsDrawerOpen(false)}
+        onPrimaryAction={handleDrawerPrimaryAction}
       />
       <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
     </>
