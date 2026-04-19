@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { NotificationDrawer } from "@/components/ui/NotificationDrawer";
 import { clearAuthSession } from "@/lib/authSession";
-import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
+import { clearSessionLoginEmail, getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { useUserNotifications } from "@/services/notifications";
 import { clearResumeWizardSession } from "@/lib/profileSession";
 
 export type CandidateBottomTab = "action" | "jobs" | "insights";
@@ -64,7 +65,20 @@ export default function CandidateAppShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
+
+  const {
+    notifications,
+    unreadCount,
+    loading: notifLoading,
+    error: notifError,
+    refresh: refreshNotifications,
+    markAllRead,
+    markOneRead,
+    markingAll,
+    markingItemId,
+  } = useUserNotifications(sessionEmail);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -74,6 +88,14 @@ export default function CandidateAppShell({
       document.body.style.overflow = prev;
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    setSessionEmail(getSessionLoginEmail());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (notifOpen && sessionEmail) void refreshNotifications();
+  }, [notifOpen, sessionEmail, refreshNotifications]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -122,7 +144,12 @@ export default function CandidateAppShell({
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+              {sessionEmail && unreadCount > 0 ? (
+                <span
+                  className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"
+                  aria-hidden
+                />
+              ) : null}
             </button>
             <button
               type="button"
@@ -336,6 +363,13 @@ export default function CandidateAppShell({
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
         triggerRef={bellRef}
+        notifications={notifications}
+        loading={notifLoading}
+        error={notifError}
+        onMarkAllRead={sessionEmail ? markAllRead : undefined}
+        onMarkItemRead={sessionEmail ? markOneRead : undefined}
+        markingAll={markingAll}
+        markingItemId={markingItemId}
       />
     </div>
   );

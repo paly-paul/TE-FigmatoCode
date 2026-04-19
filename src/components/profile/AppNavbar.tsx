@@ -6,7 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { clearAuthSession, getProfileName } from "@/lib/authSession";
-import { clearSessionLoginEmail } from "@/lib/profileOnboarding";
+import { clearSessionLoginEmail, getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { useUserNotifications } from "@/services/notifications";
 import { clearResumeWizardSession } from "@/lib/profileSession";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import Image from "next/image";
@@ -23,6 +24,19 @@ export default function AppNavbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   // Keep the initial render deterministic (server + first client render must match).
   const [navDisplayName, setNavDisplayName] = useState("User");
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+
+  const {
+    notifications,
+    unreadCount,
+    loading: notifLoading,
+    error: notifError,
+    refresh: refreshNotifications,
+    markAllRead,
+    markOneRead,
+    markingAll,
+    markingItemId,
+  } = useUserNotifications(sessionEmail);
 
   const getProfileHref = () => {
     const profileName = getProfileName();
@@ -33,6 +47,14 @@ export default function AppNavbar() {
   useEffect(() => {
     setNavDisplayName(getResolvedNavDisplayName());
   }, [pathname]);
+
+  useEffect(() => {
+    setSessionEmail(getSessionLoginEmail());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (notifOpen && sessionEmail) void refreshNotifications();
+  }, [notifOpen, sessionEmail, refreshNotifications]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -124,7 +146,9 @@ export default function AppNavbar() {
               aria-label="Toggle notifications"
             >
               <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+              {sessionEmail && unreadCount > 0 ? (
+                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500" aria-hidden />
+              ) : null}
             </button>
 
             {/* Profile Section — hover dropdown */}
@@ -246,6 +270,13 @@ export default function AppNavbar() {
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
         triggerRef={bellRef}
+        notifications={notifications}
+        loading={notifLoading}
+        error={notifError}
+        onMarkAllRead={sessionEmail ? markAllRead : undefined}
+        onMarkItemRead={sessionEmail ? markOneRead : undefined}
+        markingAll={markingAll}
+        markingItemId={markingItemId}
       />
     </header>
   );

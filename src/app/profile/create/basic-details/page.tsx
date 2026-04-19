@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
@@ -506,6 +506,36 @@ function buildGeneratedSummaryFromProfile(
   );
 }
 
+function MobileAccordionCard({
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <span className="text-base font-semibold text-gray-900">{title}</span>
+        {expanded ? (
+          <ChevronUp className="h-5 w-5 text-gray-500" />
+        ) : (
+          <ChevronDown className="h-5 w-5 text-gray-500" />
+        )}
+      </button>
+      {expanded ? <div>{children}</div> : null}
+    </div>
+  );
+}
+
 function BasicDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -590,36 +620,6 @@ function BasicDetailsPageContent() {
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
-
-  function MobileAccordionCard({
-    title,
-    expanded,
-    onToggle,
-    children,
-  }: {
-    title: string;
-    expanded: boolean;
-    onToggle: () => void;
-    children: React.ReactNode;
-  }) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="w-full flex items-center justify-between px-4 py-3"
-        >
-          <span className="text-base font-semibold text-gray-900">{title}</span>
-          {expanded ? (
-            <ChevronUp className="h-5 w-5 text-gray-500" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-gray-500" />
-          )}
-        </button>
-        {expanded ? <div>{children}</div> : null}
-      </div>
-    );
-  }
 
   function applyProfileToForm(profile: ResumeProfileData) {
     const expYearsNorm = normalizeExperienceYears(profile.experienceYears);

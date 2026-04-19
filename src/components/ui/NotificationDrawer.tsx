@@ -1,63 +1,36 @@
 "use client";
 
-import { RefObject, useEffect, useState } from "react";
+import { RefObject, useEffect, useMemo, useState } from "react";
 import { BaseDrawer } from "./BaseDrawer";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 
-type NotificationVariant = "interview" | "shortlisted" | "availability" | "recruiter";
+export type NotificationVariant = "interview" | "shortlisted" | "availability" | "recruiter";
 
-interface Notification {
+export interface Notification {
   id: string;
   variant: NotificationVariant;
   title: string;
   subtitle?: string;
   body?: string;
-  actionLabel: string;
+  /** Shown on the action button when the item is unread and `onMarkItemRead` is set. */
+  actionLabel?: string;
   timestamp: string;
   read?: boolean;
 }
 
-interface NotificationDrawerProps {
+export interface NotificationDrawerProps {
   open: boolean;
   onClose: () => void;
+  /** Live notifications from the API; defaults to an empty list. */
   notifications?: Notification[];
   triggerRef?: RefObject<HTMLElement>;
+  loading?: boolean;
+  error?: string | null;
+  onMarkAllRead?: () => void | Promise<void>;
+  onMarkItemRead?: (notificationId: string) => void | Promise<void>;
+  markingAll?: boolean;
+  markingItemId?: string | null;
 }
-
-const DEFAULT_NOTIFICATIONS: Notification[] = [
-  {
-    id: "1",
-    variant: "interview",
-    title: "Interview request received",
-    subtitle: "Senior Engineer | Atlanta",
-    actionLabel: "Confirm",
-    timestamp: "1h",
-  },
-  {
-    id: "2",
-    variant: "shortlisted",
-    title: "You have been shortlisted!",
-    subtitle: "Senior Engineer | Atlanta",
-    actionLabel: "Respond Availability",
-    timestamp: "2h",
-  },
-  {
-    id: "3",
-    variant: "availability",
-    title: "Update availability to stay visible",
-    body: "Your availability status impacts profile visibility. Update it to stay in recruiter searches.",
-    actionLabel: "Take Action",
-    timestamp: "2h",
-  },
-  {
-    id: "4",
-    variant: "recruiter",
-    title: "Recruiters searched for your role today",
-    body: "Recruiters are looking for profiles like yours today. Stay active to get discovered.",
-    actionLabel: "See Recommended Jobs",
-    timestamp: "1 day",
-  },
-];
 
 function NotifIcon({ variant }: { variant: NotificationVariant }) {
   const base = "flex h-10 w-10 shrink-0 items-center justify-center rounded-sm";
@@ -99,11 +72,16 @@ function NotifIcon({ variant }: { variant: NotificationVariant }) {
 function NotificationCard({
   notification,
   mobile = false,
+  onMarkItemRead,
+  markingItemId,
 }: {
   notification: Notification;
   mobile?: boolean;
+  onMarkItemRead?: (id: string) => void | Promise<void>;
+  markingItemId?: string | null;
 }) {
-  const { variant, title, subtitle, body, actionLabel, timestamp } = notification;
+  const { variant, title, subtitle, body, timestamp, read } = notification;
+  const actionLabel = notification.actionLabel ?? "Mark as read";
   const containerClassName = mobile
     ? `flex gap-3 border-b border-[#E6ECF6] px-3 py-4 last:border-b-0 ${
         variant === "interview" ? "bg-[#EEF4FF]" : "bg-white"
@@ -122,8 +100,10 @@ function NotificationCard({
     ? "mb-3 max-w-[220px] text-sm leading-6 text-[#5E7397]"
     : "mb-2 text-[11px] leading-relaxed text-gray-500";
   const buttonClassName = mobile
-    ? "rounded-none border border-[#D6DCEA] bg-white px-4 py-2 text-[13px] font-medium text-[#202939] transition-colors hover:bg-gray-50"
-    : "rounded-md border border-gray-300 bg-white px-3 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-50 active:bg-gray-100";
+    ? "rounded-none border border-[#D6DCEA] bg-white px-4 py-2 text-[13px] font-medium text-[#202939] transition-colors hover:bg-gray-50 disabled:opacity-50"
+    : "rounded-md border border-gray-300 bg-white px-3 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50";
+
+  const showMarkButton = !read && typeof onMarkItemRead === "function";
 
   return (
     <div className={containerClassName}>
@@ -144,12 +124,18 @@ function NotificationCard({
           <p className={bodyClassName}>{body}</p>
         ) : null}
 
-        <button
-          type="button"
-          className={buttonClassName}
-        >
-          {actionLabel}
-        </button>
+        {showMarkButton ? (
+          <button
+            type="button"
+            className={buttonClassName}
+            disabled={markingItemId === notification.id}
+            onClick={() => void onMarkItemRead(notification.id)}
+          >
+            {markingItemId === notification.id ? "…" : actionLabel}
+          </button>
+        ) : read ? (
+          <span className={mobile ? "text-xs text-[#5E7397]" : "text-[10px] text-gray-400"}>Read</span>
+        ) : null}
       </div>
     </div>
   );
@@ -158,10 +144,21 @@ function NotificationCard({
 export function NotificationDrawer({
   open,
   onClose,
-  notifications = DEFAULT_NOTIFICATIONS,
+  notifications = [],
   triggerRef,
+  loading = false,
+  error = null,
+  onMarkAllRead,
+  onMarkItemRead,
+  markingAll = false,
+  markingItemId = null,
 }: NotificationDrawerProps) {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -171,6 +168,20 @@ export function NotificationDrawer({
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
+
+  const markAllControl =
+    onMarkAllRead && unreadCount > 0 ? (
+      <button
+        type="button"
+        disabled={markingAll || loading}
+        onClick={() => void onMarkAllRead()}
+        className={`font-medium text-[#1447E6] transition-colors hover:text-[#103CC1] focus:outline-none disabled:opacity-40 disabled:pointer-events-none ${
+          isMobileViewport ? "text-sm" : "text-sm"
+        }`}
+      >
+        {markingAll ? "…" : "Mark all as read"}
+      </button>
+    ) : null;
 
   return (
     <BaseDrawer
@@ -182,31 +193,34 @@ export function NotificationDrawer({
       panelClassName={isMobileViewport ? "h-[100svh] max-h-[100svh] rounded-t-none" : ""}
       widthClassName="sm:w-[360px]"
       bodyClassName={isMobileViewport ? "p-0" : "p-0"}
-      contentClassName="h-full"
-      headerActions={
-        <button
-          type="button"
-          className={`font-medium text-[#1447E6] transition-colors hover:text-[#103CC1] focus:outline-none ${
-            isMobileViewport ? "text-sm" : "text-sm"
-          }`}
-        >
-          Mark all as read
-        </button>
-      }
+      contentClassName="h-full flex flex-col"
+      headerActions={markAllControl}
     >
-      {notifications.length === 0 ? (
-        <div className="py-16 text-center text-sm text-gray-400">
-          No notifications yet
+      {loading && notifications.length === 0 ? (
+        <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+      ) : null}
+
+      {error ? (
+        <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
+
+      {!loading && !error && notifications.length === 0 ? (
+        <div className="py-16 text-center text-sm text-gray-400">No notifications yet</div>
+      ) : null}
+
+      {notifications.length > 0 ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {notifications.map((notification) => (
+            <NotificationCard
+              key={notification.id}
+              notification={notification}
+              mobile={isMobileViewport}
+              onMarkItemRead={onMarkItemRead}
+              markingItemId={markingItemId}
+            />
+          ))}
         </div>
-      ) : (
-        notifications.map((notification) => (
-          <NotificationCard
-            key={notification.id}
-            notification={notification}
-            mobile={isMobileViewport}
-          />
-        ))
-      )}
+      ) : null}
     </BaseDrawer>
   );
 }
