@@ -140,6 +140,36 @@ function isProjectEmpty(e: ProjectEntry) {
   );
 }
 
+function MobileAccordionCard({
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3"
+      >
+        <span className="text-base font-semibold text-gray-900">{title}</span>
+        {expanded ? (
+          <ChevronUp className="h-5 w-5 text-gray-500" />
+        ) : (
+          <ChevronDown className="h-5 w-5 text-gray-500" />
+        )}
+      </button>
+      {expanded ? <div>{children}</div> : null}
+    </div>
+  );
+}
+
 function SkillsProjectsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1374,36 +1404,6 @@ function SkillsProjectsPageContent() {
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
     router.push("/dashboard");
-  }
-
-  function MobileAccordionCard({
-    title,
-    expanded,
-    onToggle,
-    children,
-  }: {
-    title: string;
-    expanded: boolean;
-    onToggle: () => void;
-    children: ReactNode;
-  }) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="w-full flex items-center justify-between px-4 py-3"
-        >
-          <span className="text-base font-semibold text-gray-900">{title}</span>
-          {expanded ? (
-            <ChevronUp className="h-5 w-5 text-gray-500" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-gray-500" />
-          )}
-        </button>
-        {expanded ? <div>{children}</div> : null}
-      </div>
-    );
   }
 
   return (
