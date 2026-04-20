@@ -8,6 +8,7 @@ import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
+import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { readResumeProfile, upsertResumeProfile } from "@/lib/profileSession";
 import { getCandidateProfileData, saveProfile } from "@/services/profile";
@@ -1403,6 +1404,7 @@ function SkillsProjectsPageContent() {
 
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
+    setDashboardWelcomePending();
     router.push("/dashboard");
   }
 
