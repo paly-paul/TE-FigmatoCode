@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -28,7 +30,7 @@ export async function GET(request: Request) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.Cookie = cookie;
 
-  const upstream = await fetch(url, { method: "GET", headers });
+  const upstream = await fetch(url, { method: "GET", headers, cache: "no-store" });
   const text = await upstream.text();
   let data: Record<string, unknown>;
   try {

@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
 import { useCandidateLogin } from "@/services/login";
+import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 
 export function MobileLoginScreen() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export function MobileLoginScreen() {
     const ok = await submit({ email, password });
     if (!ok) return;
     setIsRedirecting(true);
+    prefetchDropdownDetailsAfterLogin();
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
     console.log("[mobile-login-page] final-decision", {

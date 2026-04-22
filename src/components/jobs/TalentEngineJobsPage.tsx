@@ -22,9 +22,11 @@ import {
   FilterDrawer,
   FilterState,
   SENIORITY_LEVELS,
-  SKILLS,
 } from "../ui/FilterDrawer";
-import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
+import {
+  getDropdownDetailsOptions,
+  prefetchDropdownDetailsAfterLogin,
+} from "@/services/jobs/dropdownDetails";
 import {
   DEFAULT_LOCATIONS,
   LocationDrawer,
@@ -33,12 +35,10 @@ import {
 import { useIsBelowLg } from "@/lib/useResponsive";
 import { getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
 import {
-  isRecommendedJobsCacheStale,
   readRecommendedJobsCache,
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
 import {
-  getJobApplications,
   getRecommendedJobs,
   markInterestedInJob,
 } from "@/services/jobs/actionCenter";
@@ -171,6 +171,7 @@ const JOBS: JobCard[] = [
 ];
 
 const SORT_OPTIONS = ["Most Relevant", "Newest", "Highest Match"];
+const SKILLS_PREVIEW_LIMIT = 8;
 const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
   salaryMax: 10000,
@@ -227,9 +228,19 @@ function JobsFilterPanel({
   employmentTypeOptions: string[];
   seniorityLevelOptions: string[];
 }) {
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const filteredSkills = skillsOptions.filter((skill) =>
     skill.toLowerCase().includes(searchSkills.toLowerCase())
   );
+  const visibleSkills =
+    showAllSkills || searchSkills.trim().length > 0
+      ? filteredSkills
+      : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
+  const canToggleSkillsView = searchSkills.trim().length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
+
+  useEffect(() => {
+    setShowAllSkills(false);
+  }, [searchSkills]);
 
   const setValue = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onFiltersChange({ ...filters, [key]: value });
@@ -254,10 +265,19 @@ function JobsFilterPanel({
 
         <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
         <FilterCheckboxGroup
-          options={filteredSkills}
+          options={visibleSkills}
           selected={filters.skills}
           onChange={(value) => setValue("skills", value)}
         />
+        {canToggleSkillsView ? (
+          <button
+            type="button"
+            onClick={() => setShowAllSkills((prev) => !prev)}
+            className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            {showAllSkills ? "Show less" : `See all (${filteredSkills.length})`}
+          </button>
+        ) : null}
       </div>
 
       <div className="border-t border-gray-100 pt-4">
@@ -418,7 +438,6 @@ function getMatchColor(percentage: number) {
 function JobsCard({
   job,
   saved,
-  applied,
   onToggleSaved,
   onShare,
   onApply,
@@ -426,7 +445,6 @@ function JobsCard({
 }: {
   job: JobCard;
   saved: boolean;
-  applied: boolean;
   onToggleSaved: (jobId: number) => void;
   onShare: () => void;
   onApply: () => void;
@@ -438,10 +456,19 @@ function JobsCard({
 
   return (
     <article
+      role="button"
+      tabIndex={0}
+      onClick={onApply}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onApply();
+        }
+      }}
       className={`group flex min-h-[240px] flex-col justify-between rounded-xl border border-gray-200 bg-white transition-all ${
         compact
           ? "border-b-4 border-b-blue-600 p-4 shadow-sm"
-          : "rounded-lg border-b-4 border-b-blue-600 p-4 hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
+          : "cursor-pointer rounded-lg border-b-4 border-b-blue-600 p-4 hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
       }`}
     >
       <div className="mb-3 flex justify-between sm:mb-4">
@@ -513,14 +540,20 @@ function JobsCard({
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <button
             type="button"
-            onClick={onShare}
+            onClick={(event) => {
+              event.stopPropagation();
+              onShare();
+            }}
             className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0"
           >
             <Share2 size={16} />
           </button>
           <button
             type="button"
-            onClick={() => onToggleSaved(job.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSaved(job.id);
+            }}
             aria-label={saved ? "Unsave job" : "Save job"}
             aria-pressed={saved}
             className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -530,49 +563,6 @@ function JobsCard({
             }`}
           >
             <Bookmark size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={applied}
-            className={`relative border rounded-lg px-6 sm:px-8 py-2 text-sm transition-all flex items-center justify-center flex-1 sm:flex-initial ${
-              applied
-                ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500"
-                : "border-gray-300 text-gray-800 bg-white group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600"
-            }`}
-          >
-            <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
-              {applied ? "Applied" : "Apply"}
-            </span>
-            <span
-              className={`absolute right-4 translate-x-1 text-white transition-all duration-150 ${
-                applied ? "opacity-0" : "opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
-              }`}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <path
-                  d="M2.91675 7H11.0834"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M7.58325 3.5L11.0833 7L7.58325 10.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
           </button>
         </div>
       </div>
@@ -585,9 +575,6 @@ export default function TalentEngineJobsPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
   const [candidateId, setCandidateIdState] = useState<string | null>(null);
-  const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(
-    () => new Set()
-  );
   const [showReferModal, setShowReferModal] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -599,35 +586,16 @@ export default function TalentEngineJobsPage() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
-  const [dynamicSkills, setDynamicSkills] = useState<string[]>(SKILLS);
+  const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
   const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
-  const refreshJobApplications = async (currentCandidateId: string) => {
-    const applicationsRes = await getJobApplications(currentCandidateId);
-    const mappedIds = applicationsRes
-      .map((row) => row.job_id)
-      .filter((v): v is string => Boolean(v?.trim()));
-    setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...mappedIds]));
-  };
-
   useEffect(() => {
     // Candidate id is stored in sessionStorage on login.
     setCandidateIdState(getCandidateId());
   }, []);
-
-  useEffect(() => {
-    if (!candidateId?.trim()) return;
-    void (async () => {
-      try {
-        await refreshJobApplications(candidateId);
-      } catch {
-        // ignore; Apply will still work optimistically
-      }
-    })();
-  }, [candidateId]);
 
   useEffect(() => {
     let active = true;
@@ -661,18 +629,20 @@ export default function TalentEngineJobsPage() {
 
       try {
         const cachedRecommended = readRecommendedJobsCache(profileName);
-        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileName);
-        const recommended = shouldRefreshRecommended
-          ? await getRecommendedJobs(profileName)
-          : (cachedRecommended?.jobs ?? []);
-        if (shouldRefreshRecommended) {
-          writeRecommendedJobsCache(profileName, recommended);
+        if (!active) return;
+        if (cachedRecommended?.jobs?.length) {
+          setApiRecommendedJobs(cachedRecommended.jobs.map((job) => mapRecommendedToJobsPageCard(job)));
         }
+        const recommended = await getRecommendedJobs(profileName);
+        writeRecommendedJobsCache(profileName, recommended);
         if (!active) return;
         setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
       } catch {
         if (!active) return;
-        setApiRecommendedJobs([]);
+        const cachedRecommended = readRecommendedJobsCache(profileName);
+        setApiRecommendedJobs(
+          (cachedRecommended?.jobs ?? []).map((job) => mapRecommendedToJobsPageCard(job))
+        );
       } finally {
         if (active) setHasAttemptedJobsLoad(true);
       }
@@ -683,18 +653,59 @@ export default function TalentEngineJobsPage() {
     };
   }, []);
 
+  const jobsSource = useMemo(
+    () => (hasAttemptedJobsLoad ? apiRecommendedJobs : JOBS),
+    [apiRecommendedJobs, hasAttemptedJobsLoad]
+  );
+
+  useEffect(() => {
+    const source = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
+
+    const skillsFromSource = Array.from(
+      new Set(source.flatMap((job) => job.skills.map((skill) => skill.trim()).filter(Boolean)))
+    );
+    const employmentFromSource = Array.from(
+      new Set(source.map((job) => job.employmentType.trim()).filter((v) => v && v !== "—"))
+    );
+    const seniorityFromSource = Array.from(
+      new Set(source.map((job) => job.seniorityLevel.trim()).filter((v) => v && v !== "—"))
+    );
+    if (skillsFromSource.length > 0) {
+      setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsFromSource])));
+    }
+
+    if (employmentFromSource.length > 0) {
+      setDynamicEmploymentTypes(employmentFromSource);
+    } else {
+      setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
+    }
+
+    if (seniorityFromSource.length > 0) {
+      setDynamicSeniorityLevels(seniorityFromSource);
+    } else {
+      setDynamicSeniorityLevels(SENIORITY_LEVELS);
+    }
+
+  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
+
+  useEffect(() => {
+    prefetchDropdownDetailsAfterLogin();
+  }, []);
+
   useEffect(() => {
     let active = true;
     void (async () => {
-      const skillsRes = await getDropdownDetailsOptions({
-        doctype: "Resource Requirement",
-        fieldName: "key_skills",
-        limit: 1000,
-      }).catch(() => null);
+      const [skillsRes] = await Promise.all([
+        getDropdownDetailsOptions({
+          doctype: "Resource Requirement",
+          fieldName: "key_skills",
+          limit: 1000,
+        }).catch(() => null),
+      ]);
 
       if (!active) return;
       if (Array.isArray(skillsRes) && skillsRes.length > 0) {
-        setDynamicSkills(skillsRes);
+        setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
       }
     })();
 
@@ -741,8 +752,6 @@ export default function TalentEngineJobsPage() {
 
   const filteredJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-
-    const jobsSource = hasAttemptedJobsLoad ? apiRecommendedJobs : JOBS;
 
     const results = jobsSource.filter((job) => {
       const matchesSearch =
@@ -791,9 +800,9 @@ export default function TalentEngineJobsPage() {
 
     return [...results].sort((a, b) => b.matchPercentage - a.matchPercentage);
   }, [
-    apiRecommendedJobs,
     filters,
     hasAttemptedJobsLoad,
+    jobsSource,
     searchQuery,
     selectedLocations,
     sortBy,
@@ -843,11 +852,6 @@ export default function TalentEngineJobsPage() {
     if (!jobDocumentId || !cid) return false;
     try {
       await markInterestedInJob(cid, jobDocumentId);
-      setAppliedJobDocumentIds((prev) => {
-        const next = new Set(prev);
-        next.add(jobDocumentId);
-        return next;
-      });
       setIsDrawerOpen(false);
       return true;
     } catch {
@@ -941,7 +945,6 @@ export default function TalentEngineJobsPage() {
               key={job.id}
               job={job}
               saved={savedJobIds.has(job.id)}
-              applied={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
               onToggleSaved={toggleSavedJob}
               onShare={() => setShowReferModal(true)}
               onApply={() => handleJobApplyClick(job)}
@@ -1027,25 +1030,25 @@ export default function TalentEngineJobsPage() {
               </div>
             </div>
 
-            <div className="text-xs text-gray-500">
-              {filteredJobs.length} results for{" "}
-              {selectedLocations.length > 0 ? primaryLocation : "all locations"}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
-                {selectedLocations.length > 0
-                  ? `${selectedLocations.length} location${selectedLocations.length > 1 ? "s" : ""}`
-                  : "All locations"}
-              </span>
-              {selectedLocations.slice(1).map((locationId) => (
-                <span
-                  key={locationId}
-                  className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700"
-                >
-                  {locationLabelMap[locationId] || locationId}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-700">
+                  {selectedLocations.length > 0
+                    ? `${selectedLocations.length} location${selectedLocations.length > 1 ? "s" : ""}`
+                    : "All locations"}
                 </span>
-              ))}
+                {selectedLocations.slice(1).map((locationId) => (
+                  <span
+                    key={locationId}
+                    className="px-3 py-1 rounded-full bg-blue-50 text-xs text-blue-700"
+                  >
+                    {locationLabelMap[locationId] || locationId}
+                  </span>
+                ))}
+              </div>
+              <div className="shrink-0 text-xs text-gray-500">
+                Total jobs: <span className="font-semibold text-gray-700">{filteredJobs.length}</span>
+              </div>
             </div>
 
             {filteredJobs.length > 0 ? (
@@ -1055,7 +1058,6 @@ export default function TalentEngineJobsPage() {
                     key={job.id}
                     job={job}
                     saved={savedJobIds.has(job.id)}
-                    applied={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
                     onToggleSaved={toggleSavedJob}
                     onShare={() => setShowReferModal(true)}
                     onApply={() => handleJobApplyClick(job)}
@@ -1091,6 +1093,9 @@ export default function TalentEngineJobsPage() {
         onApply={(next) => setFilters(next)}
         triggerRef={filterButtonRef}
         initialFilters={filters}
+        skillsOptions={dynamicSkills}
+        employmentTypeOptions={dynamicEmploymentTypes}
+        seniorityLevelOptions={dynamicSeniorityLevels}
       />
       <ActionDrawer
         open={isDrawerOpen}

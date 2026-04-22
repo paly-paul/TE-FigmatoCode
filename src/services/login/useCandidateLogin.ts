@@ -14,6 +14,7 @@ import {
 } from "@/lib/authSession";
 import { clearSessionLoginEmail, setSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
+import { prefetchDynamicKeySkills } from "@/services/profile/keySkills";
 
 export function useCandidateLogin() {
   const router = useRouter();
@@ -51,6 +52,8 @@ export function useCandidateLogin() {
       setProfileGenerated(isProfileGenerated);
       const displayName = extractDisplayNameFromLogin(data);
       if (displayName) setUserDisplayName(displayName);
+      const profileKeyForSkills = effectiveProfileId ?? profileName;
+      if (profileKeyForSkills) prefetchDynamicKeySkills(profileKeyForSkills);
       setSessionLoginEmail(values.email.trim().toLowerCase());
       console.log("[login] submit:derived-state", {
         candidateId: effectiveProfileId,

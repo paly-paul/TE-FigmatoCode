@@ -5,6 +5,48 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function asNumberOrZero(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function pickFirstString(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 function normalizeRecommendedJobs(payload: Record<string, unknown>): RecommendedJobApi[] {
   const candidates: unknown[] = [];
   if (Array.isArray(payload.data)) candidates.push(...payload.data);
@@ -27,21 +69,45 @@ function normalizeRecommendedJobs(payload: Record<string, unknown>): Recommended
     const job_title = typeof item.job_title === "string" ? item.job_title : "";
     const job_id = typeof item.job_id === "string" ? item.job_id : "";
     if (!job_title || !job_id) continue;
+    const skills = asStringArray(item.key_skills ?? item.skills);
+    const qualifications = asStringArray(item.qualification);
+    const languageRequirements = asStringArray(item.language_requirement);
+    const projects = asStringArray(item.project);
+    const visaRequirements = asStringArray(item.visa_requirements);
+    const nationalities = asStringArray(item.nationality);
+    const employmentType = pickFirstString(item, [
+      "employment_type",
+      "type_of_employment",
+      "job_type",
+      "employmentType",
+    ]);
+    const seniorityLevel = pickFirstString(item, [
+      "seniority_level",
+      "experience_level",
+      "seniority",
+      "level",
+    ]);
     output.push({
       job_title,
       job_id,
       location: typeof item.location === "string" ? item.location : "Unknown",
-      minimum_bill_rate:
-        typeof item.minimum_bill_rate === "number" ? item.minimum_bill_rate : null,
-      maximum_bill_rate:
-        typeof item.maximum_bill_rate === "number" ? item.maximum_bill_rate : null,
+      minimum_bill_rate: asNumberOrNull(item.minimum_bill_rate),
+      maximum_bill_rate: asNumberOrNull(item.maximum_bill_rate),
       billing_currency:
         typeof item.billing_currency === "string" ? item.billing_currency : undefined,
       billing_frequency:
         typeof item.billing_frequency === "string" ? item.billing_frequency : undefined,
+      key_skills: skills,
+      qualification: qualifications,
+      language_requirement: languageRequirements,
+      project: projects,
+      visa_requirements: visaRequirements,
+      nationality: nationalities,
+      employment_type: employmentType,
+      seniority_level: seniorityLevel,
       status: typeof item.status === "string" ? item.status : undefined,
       rotation: typeof item.rotation === "string" ? item.rotation : undefined,
-      match_score: typeof item.match_score === "number" ? item.match_score : 0,
+      match_score: asNumberOrZero(item.match_score),
       action: typeof item.action === "string" ? item.action : undefined,
     });
   }
@@ -61,7 +127,10 @@ export async function getRecommendedJobs(profileName: string): Promise<Recommend
   const url = new URL("/api/method/get_recommended_jobs", window.location.origin);
   url.searchParams.set("profile_name", profileName.trim());
 
-  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const res = await fetch(url.toString(), {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
   const data = await getJsonOrEmpty(res);
   if (!res.ok) {
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);

@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { BaseDrawer } from "./ui/BaseDrawer";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -62,6 +62,8 @@ export interface ActionDrawerActionCard {
   interviewSlots?: (InterviewSlotOptionApi & { slot_timezone?: string; slot_status?: string })[];
   sourcingAcceptedAt?: string;
   receivedAt?: string;
+  applicationStage?: string;
+  applicationAppliedDate?: string;
 }
 
 interface ActionDrawerProps {
@@ -132,6 +134,35 @@ function shouldPrefillSubmittedFromSourcing(action: ActionDrawerActionCard | nul
   return true;
 }
 
+function shouldUseFirstTimeJobTabs(action: ActionDrawerActionCard | null): boolean {
+  if (!action) return false;
+  if (isDirectJobApplyCard(action)) return true;
+  if (action.isSourcingAccepted) return false;
+  const title = action.title.toLowerCase();
+  return title.includes("interest");
+}
+
+function isDirectJobApplyCard(action: ActionDrawerActionCard | null): boolean {
+  if (!action) return false;
+  if (action.type !== "Job") return false;
+  const title = action.title.toLowerCase();
+  const isActionableStage =
+    title === actionDrawerTitleMatchers.recruiterInterest ||
+    title === actionDrawerTitleMatchers.interviewScheduled ||
+    title === actionDrawerTitleMatchers.salaryNegotiation ||
+    title.includes("interest") ||
+    title.includes("interview") ||
+    title.includes("negotiation") ||
+    title.includes("proposal") ||
+    title.includes("salary");
+  return !isActionableStage;
+}
+
+function isApplicationTimelineCard(action: ActionDrawerActionCard | null): boolean {
+  if (!action) return false;
+  return Boolean(action.applicationStage?.trim() || action.applicationAppliedDate?.trim());
+}
+
 export default function ActionDrawer({
   open,
   onClose,
@@ -167,10 +198,26 @@ export default function ActionDrawer({
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
+  const expectedSalaryFieldRef = useRef<HTMLDivElement | null>(null);
+  const termsFieldRef = useRef<HTMLLabelElement | null>(null);
+  const interviewSlotsSectionRef = useRef<HTMLDivElement | null>(null);
+  const clarificationBoxRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToMissingField = (target: HTMLElement | null) => {
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   useEffect(() => {
     if (open) {
-      setActiveTab("Job Action");
+      setActiveTab(
+        isApplicationTimelineCard(action)
+          ? "Job Description"
+          : shouldUseFirstTimeJobTabs(action)
+            ? "Job Description"
+            : "Job Action"
+      );
       setAvailableDate(minAvailableDate);
       setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
@@ -196,6 +243,12 @@ export default function ActionDrawer({
     }
   }, [open, action?.isSourcingAccepted, action?.title, minAvailableDate]);
 
+  const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
+    ? ["Job Description", "Timeline"]
+    : shouldUseFirstTimeJobTabs(action)
+      ? ["Job Description", "Job Action", "Timeline"]
+      : [...actionDrawerChrome.tabs];
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia(MOBILE_MQ);
@@ -218,6 +271,7 @@ export default function ActionDrawer({
     normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation ||
     normalizedTitle.includes("negotiation") ||
     normalizedTitle.includes("proposal");
+  const isDirectApply = isDirectJobApplyCard(action);
   const roleTitle =
     (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation
       ? action?.subtitle.split(" - ")[0]
@@ -465,10 +519,7 @@ export default function ActionDrawer({
   const recruiterSubmitDisabled =
     isRecruiterInterestReceived && (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms);
   const primarySubmitDisabled = Boolean(
-    isSubmitting ||
-      hasSubmitted ||
-      (isInterviewScheduled && interviewSubmitDisabled) ||
-      recruiterSubmitDisabled
+    isSubmitting || hasSubmitted
   );
   const resolvedMatchPercent = rrDetails?.match_score != null
     ? `${Math.round(rrDetails.match_score)}%`
@@ -513,14 +564,16 @@ export default function ActionDrawer({
     },
   ];
 
-  const renderRecruiterInterestAction = () => (
+  const renderRecruiterInterestAction = (
+    sectionTitle: string = actionDrawerRecruiterInterest.sectionTitle
+  ) => (
     <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
       <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
-        {actionDrawerRecruiterInterest.sectionTitle}
+        {sectionTitle}
       </h3>
 
       <div className="mt-4 grid items-start gap-3 lg:grid-cols-2">
-        <div>
+        <div ref={availableDateFieldRef}>
           <label className="mb-1.5 block text-xs font-medium text-[#202939] sm:text-sm">
             {actionDrawerRecruiterInterest.availableDateLabel}
           </label>
@@ -539,7 +592,7 @@ export default function ActionDrawer({
           </div>
         </div>
 
-        <div>
+        <div ref={expectedSalaryFieldRef}>
           <label className="mb-1.5 block text-xs font-medium text-[#202939] sm:text-sm">
             {actionDrawerRecruiterInterest.expectedSalaryLabel}
           </label>
@@ -560,7 +613,10 @@ export default function ActionDrawer({
         </div>
       </div>
 
-      <label className="mt-3 flex items-start gap-2.5 text-xs text-[#202939] sm:text-sm">
+      <label
+        ref={termsFieldRef}
+        className="mt-3 flex items-start gap-2.5 text-xs text-[#202939] sm:text-sm"
+      >
         <input
           type="checkbox"
           checked={hasAcceptedTerms}
@@ -573,7 +629,7 @@ export default function ActionDrawer({
   );
 
   const renderInterviewScheduledAction = () => (
-    <div className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
+    <div ref={interviewSlotsSectionRef} className="rounded-md border border-[#D8E3F8] bg-[#F5F8FF] p-3.5 sm:p-4">
       <h3 className="text-base font-semibold text-[#202939] sm:text-lg">
         {actionDrawerInterview.sectionTitle}
       </h3>
@@ -754,7 +810,7 @@ export default function ActionDrawer({
       </div>
 
       {showClarificationBox ? (
-        <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+        <div ref={clarificationBoxRef} className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
           <div className="border-b border-[#E6ECF6] px-4 py-3">
             <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Candidate Remarks</h3>
           </div>
@@ -772,6 +828,10 @@ export default function ActionDrawer({
   );
 
   const renderJobActionContent = () => {
+    if (isDirectApply) {
+      return renderRecruiterInterestAction("Send Interest to Recruiter");
+    }
+
     if (isInterviewScheduled) {
       return renderInterviewScheduledAction();
     }
@@ -816,6 +876,19 @@ export default function ActionDrawer({
         milestones.push({
           title: "Salary Proposal Received",
           date: proposalJoiningDateLabel,
+        });
+      }
+    } else if (isDirectApply) {
+      const applicationDate = formatTimelineDate(action?.applicationAppliedDate) || stageReceivedDateLabel;
+      const stageLabel = action?.applicationStage?.trim() || "Received";
+      if (applicationDate) {
+        milestones.push({
+          title: "Application Submitted",
+          date: applicationDate,
+        });
+        milestones.push({
+          title: `Current Stage: ${stageLabel}`,
+          date: applicationDate,
         });
       }
     } else if (recruiterAcceptedDateLabel) {
@@ -946,7 +1019,7 @@ export default function ActionDrawer({
         mobile ? "-mx-4 px-4" : ""
       }`}
     >
-      {actionDrawerChrome.tabs.map((tab) => (
+      {orderedTabs.map((tab) => (
         <button
           key={tab}
           type="button"
@@ -966,6 +1039,24 @@ export default function ActionDrawer({
   const runPrimaryAction = () => {
     if (!action) return;
     if (isSubmitting || hasSubmitted) return;
+    if (isInterviewScheduled && interviewSubmitDisabled) {
+      scrollToMissingField(interviewSlotsSectionRef.current);
+      return;
+    }
+    if (isRecruiterInterestReceived && recruiterSubmitDisabled) {
+      if (recruiterDateInvalid) {
+        scrollToMissingField(availableDateFieldRef.current);
+        return;
+      }
+      if (recruiterSalaryInvalid) {
+        scrollToMissingField(expectedSalaryFieldRef.current);
+        return;
+      }
+      if (!hasAcceptedTerms) {
+        scrollToMissingField(termsFieldRef.current);
+        return;
+      }
+    }
     void (async () => {
       setIsSubmitting(true);
       let ok = true;
@@ -1000,7 +1091,9 @@ export default function ActionDrawer({
     })();
   };
 
-  const footerContent = isSalaryNegotiation ? (
+  const footerContent = isApplicationTimelineCard(action)
+    ? undefined
+    : isSalaryNegotiation ? (
     showClarificationBox ? (
       <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
         <button
@@ -1015,9 +1108,12 @@ export default function ActionDrawer({
         </button>
         <button
           type="button"
-          disabled={isClarificationSubmitting || !clarificationRemark.trim() || !action}
           onClick={() => {
-            if (!action || !clarificationRemark.trim() || isClarificationSubmitting) return;
+            if (!action || isClarificationSubmitting) return;
+            if (!clarificationRemark.trim()) {
+              scrollToMissingField(clarificationBoxRef.current);
+              return;
+            }
             void (async () => {
               setIsClarificationSubmitting(true);
               const ok = await Promise.resolve(

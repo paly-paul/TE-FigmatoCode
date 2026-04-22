@@ -14,6 +14,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "error", message: "Email is required" }, { status: 400 });
   }
 
+  // Development/testing override: bypass real email delivery when forced.
+  // The client treats `otp_required !== 1` as dummy-OTP mode.
+  const forceSignupOtp =
+    typeof process.env.FORCE_SIGNUP_OTP === "string" &&
+    ["1", "true", "yes", "on"].includes(process.env.FORCE_SIGNUP_OTP.trim().toLowerCase());
+  if (forceSignupOtp) {
+    return NextResponse.json(
+      {
+        status: "success",
+        message: "FORCE_SIGNUP_OTP is enabled. Use OTP 12345.",
+        otp_required: 0,
+      },
+      { status: 200 }
+    );
+  }
+
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
     return NextResponse.json(

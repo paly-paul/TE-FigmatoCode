@@ -14,7 +14,6 @@ import {
   ChevronUp,
   Calendar,
   DollarSign,
-  EllipsisVertical,
   TrendingUp,
   User,
 } from "lucide-react";
@@ -29,7 +28,6 @@ import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import {
-  isRecommendedJobsCacheStale,
   readRecommendedJobsCache,
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
@@ -60,6 +58,7 @@ import {
   mapApplicationToDashboardJob,
   mapRecommendedToDashboardJob,
 } from "@/services/jobs/mapApiJobsToUi";
+import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 
 interface ActionCard {
   id: number;
@@ -85,6 +84,8 @@ interface ActionCard {
   }[];
   sourcingAcceptedAt?: string;
   receivedAt?: string;
+  applicationStage?: string;
+  applicationAppliedDate?: string;
 }
 
 function mapActionableInterviewSlots(
@@ -129,6 +130,7 @@ interface JobListing {
   employmentType: string;
   seniorityLevel: string;
   jobDocumentId?: string;
+  appliedDate?: string;
 }
 
 const ACTION_CARDS: ActionCard[] = [
@@ -403,6 +405,14 @@ function formatJobLocation(location: string, locationFull: string): string {
   return `${city} | ${full}`;
 }
 
+function formatAppliedDate(appliedDate?: string): string {
+  const raw = appliedDate?.trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+}
+
 function recencyScoreFromPostedTime(postedTime: string): number {
   const text = postedTime.trim().toLowerCase();
   if (!text) return Number.MAX_SAFE_INTEGER;
@@ -456,6 +466,11 @@ export default function TalentEngineDashboard() {
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
+
+  useEffect(() => {
+    // Warm dropdown options before the filter drawer opens.
+    prefetchDropdownDetailsAfterLogin();
+  }, []);
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
   const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
@@ -573,15 +588,15 @@ export default function TalentEngineDashboard() {
 
       try {
         const cachedRecommended = readRecommendedJobsCache(profileIdForActionables);
-        const shouldRefreshRecommended = isRecommendedJobsCacheStale(profileIdForActionables);
-        let actionablesRes = await getCandidateActionables(profileIdForActionables);
-        const recommendedJobsRes = shouldRefreshRecommended
-          ? await getRecommendedJobs(profileIdForActionables)
-          : cachedRecommended?.jobs ?? [];
-
-        if (shouldRefreshRecommended) {
-          writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
+        if (cachedRecommended?.jobs?.length) {
+          const cachedRecommendedJobs = cachedRecommended.jobs
+            .map((job) => mapRecommendedToDashboardJob(job))
+            .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)));
+          setApiRecommendedJobs(cachedRecommendedJobs);
         }
+        let actionablesRes = await getCandidateActionables(profileIdForActionables);
+        const recommendedJobsRes = await getRecommendedJobs(profileIdForActionables);
+        writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
 
         // If the backend can't find actionables for `profile_id`, retry using the other
         // session identifier (`candidateId`).
@@ -1025,6 +1040,19 @@ export default function TalentEngineDashboard() {
     };
   }, [resolvedActionCards]);
 
+  const orderedActionTabs = useMemo(() => {
+    const allTabs: ("Job" | "Profile" | "General")[] = ["Job", "Profile", "General"];
+
+    if (actionTabCounts.Job > 0) {
+      const nonJobTabs = allTabs
+        .filter((tab) => tab !== "Job")
+        .sort((a, b) => actionTabCounts[b] - actionTabCounts[a]);
+      return ["Job", ...nonJobTabs] as const;
+    }
+
+    return [...allTabs].sort((a, b) => actionTabCounts[b] - actionTabCounts[a]);
+  }, [actionTabCounts]);
+
   const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
   const applicationSourceJobs = useMemo(() => {
     const merged = [...apiApplicationJobs];
@@ -1123,6 +1151,21 @@ export default function TalentEngineDashboard() {
       return;
     }
 
+    setSelectedAction(nextAction);
+    setIsDrawerOpen(true);
+  };
+
+  const handleApplicationCardClick = (job: JobListing) => {
+    const nextAction: ActionCard = {
+      id: job.id,
+      type: "Job",
+      title: job.title,
+      subtitle: `${job.location} - ${job.locationFull}`,
+      timestamp: job.appliedDate || job.postedTime,
+      jobDocumentId: job.jobDocumentId,
+      applicationStage: job.stage,
+      applicationAppliedDate: job.appliedDate,
+    };
     setSelectedAction(nextAction);
     setIsDrawerOpen(true);
   };
@@ -1230,6 +1273,7 @@ export default function TalentEngineDashboard() {
     ...job,
     status: "New",
     stage: "Received",
+  appliedDate: new Date().toISOString(),
   });
 
   const refreshJobApplications = async (currentCandidateId: string) => {
@@ -1498,7 +1542,7 @@ export default function TalentEngineDashboard() {
   const actionTabsRow = (
     <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
       <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {(["Job", "Profile", "General"] as const).map((tab) => (
+        {orderedActionTabs.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1730,7 +1774,16 @@ export default function TalentEngineDashboard() {
                 {visibleRecommendedJobs.map((job) => (
                   <div
                     key={job.id}
-                    className="group flex min-h-[240px] flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleJobApplyClick(job)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleJobApplyClick(job);
+                      }
+                    }}
+                    className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
                   >
                     <div className="mb-3 flex justify-between">
                       <span className={`rounded-full px-3 py-1 text-xs ${getStatusColor(job.status)}`}>
@@ -1778,7 +1831,10 @@ export default function TalentEngineDashboard() {
                       <div className="flex w-full items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setShowReferModal(true)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setShowReferModal(true);
+                          }}
                           className="h-10 w-10 shrink-0 rounded-lg border border-gray-200"
                         >
                           <Share2 size={16} className="mx-auto" />
@@ -1787,25 +1843,16 @@ export default function TalentEngineDashboard() {
                           type="button"
                           aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
                           aria-pressed={savedJobIds.has(job.id)}
-                          onClick={() => handleToggleSavedJob(job.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleToggleSavedJob(job.id);
+                          }}
                           className={`h-10 w-10 shrink-0 rounded-lg border transition-colors ${savedJobIds.has(job.id)
                               ? "border-blue-600 bg-transparent text-blue-600"
                               : "border-gray-200 text-gray-700"
                             }`}
                         >
                           <Bookmark size={16} className="mx-auto" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleJobApplyClick(job)}
-                          disabled={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
-                          className={`flex-1 rounded-lg border px-6 py-2 text-sm transition-all ${
-                            job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
-                              ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500"
-                              : "border-gray-300 bg-white text-gray-800 hover:border-blue-600 hover:bg-blue-600 hover:text-white"
-                          }`}
-                        >
-                          {job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId) ? "Applied" : "Apply"}
                         </button>
                       </div>
                     </div>
@@ -1889,6 +1936,15 @@ export default function TalentEngineDashboard() {
                   .map((job) => (
                     <div
                       key={job.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleApplicationCardClick(job)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleApplicationCardClick(job);
+                        }
+                      }}
                       className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
                     >
                       <div className="mb-4">
@@ -1902,6 +1958,9 @@ export default function TalentEngineDashboard() {
                         <p className="mt-1 text-sm text-gray-700">{job.company}</p>
                         <p className="mt-1 text-sm text-[#60708F]">
                           {formatJobLocation(job.location, job.locationFull)}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Applied on {formatAppliedDate(job.appliedDate)}
                         </p>
                       </div>
 
@@ -1921,27 +1980,6 @@ export default function TalentEngineDashboard() {
                         <span className="text-sm font-semibold text-gray-900">{job.matchPercentage}%</span>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3">
-                        <button
-                          type="button"
-                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
-                        >
-                          <Clock3 className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleJobApplyClick(job)}
-                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
-                        >
-                          <Repeat className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex h-10 items-center justify-center rounded border border-gray-200 bg-white text-gray-700"
-                        >
-                          <EllipsisVertical className="h-4 w-4" />
-                        </button>
-                      </div>
                     </div>
                   ))}
               </div>
@@ -2286,7 +2324,16 @@ export default function TalentEngineDashboard() {
                     {visibleRecommendedJobs.map((job) => (
                       <div
                         key={job.id}
-                        className="group bg-white border border-gray-200 border-b-4 border-b-blue-600 rounded-lg p-4 sm:p-6 hover:shadow-md hover:border-blue-600 hover:border-b-blue-600 min-h-[240px] flex flex-col justify-between transition-all"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleJobApplyClick(job)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleJobApplyClick(job);
+                          }
+                        }}
+                        className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
                         <div className="flex justify-between mb-4">
                           <span className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(job.status)}`}>
@@ -2343,7 +2390,11 @@ export default function TalentEngineDashboard() {
 
                           <div className="flex items-center gap-2 w-full sm:w-auto">
                             <button
-                              onClick={() => setShowReferModal(true)}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setShowReferModal(true);
+                              }}
                               className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0"
                             >
                               <Share2 size={16} />
@@ -2352,55 +2403,16 @@ export default function TalentEngineDashboard() {
                               type="button"
                               aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
                               aria-pressed={savedJobIds.has(job.id)}
-                              onClick={() => handleToggleSavedJob(job.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleToggleSavedJob(job.id);
+                              }}
                               className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${savedJobIds.has(job.id)
                                 ? "border-blue-600 bg-transparent text-blue-600"
                                 : "border-gray-200 text-gray-700 hover:bg-gray-50"
                                 }`}
                             >
                               <Bookmark size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleJobApplyClick(job)}
-                              disabled={Boolean(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))}
-                              className={`relative rounded-lg px-6 sm:px-8 py-2 text-sm transition-all flex items-center justify-center flex-1 sm:flex-initial ${
-                                job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
-                                  ? "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-500"
-                                  : "border border-gray-300 text-gray-800 bg-white group-hover:bg-blue-600 group-hover:border-blue-600 hover:bg-blue-600 hover:border-blue-600"
-                              }`}
-                            >
-                              <span className="transition-all group-hover:text-white group-hover:-translate-x-1">
-                                {job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId) ? "Applied" : "Apply"}
-                              </span>
-                              <span className={`absolute right-4 translate-x-1 text-white transition-all duration-150 ${
-                                job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)
-                                  ? "opacity-0"
-                                  : "opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
-                              }`}>
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 14 14"
-                                  fill="none"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  aria-hidden="true"
-                                >
-                                  <path
-                                    d="M2.91675 7H11.0834"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                  <path
-                                    d="M7.58325 3.5L11.0833 7L7.58325 10.5"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                </svg>
-                              </span>
                             </button>
                           </div>
                         </div>
@@ -2413,18 +2425,27 @@ export default function TalentEngineDashboard() {
               ) : visibleApplicationJobs.length > 0 ? (
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <div className="hidden md:block">
-                    <div className="grid grid-cols-5 gap-4 px-6 py-3 text-sm font-medium text-gray-600 border-b">
+                    <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
                       <span>Job/Title / Location</span>
                       <span>Company</span>
                       <span className="text-center">Match Score %</span>
                       <span>Stage</span>
-                      <span></span>
+                      <span>Applied On</span>
                     </div>
 
                     {visibleApplicationJobs.map((job) => (
                       <div
                         key={job.id}
-                        className="grid grid-cols-5 gap-4 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleApplicationCardClick(job)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleApplicationCardClick(job);
+                          }
+                        }}
+                        className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
                       >
                         <div>
                           <p className="font-medium text-gray-900">{job.title}</p>
@@ -2439,18 +2460,26 @@ export default function TalentEngineDashboard() {
                         <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
                           {job.stage}
                         </span>
-                        <div className="flex gap-3 justify-end text-gray-500">
-                          <Share2 size={16} />
-                          <Bookmark size={16} />
-                          <ChevronDown size={16} />
-                        </div>
+                        <span className="text-sm text-gray-600">{formatAppliedDate(job.appliedDate)}</span>
                       </div>
                     ))}
                   </div>
 
                   <div className="md:hidden divide-y">
                     {visibleApplicationJobs.map((job) => (
-                      <div key={job.id} className="p-4 hover:bg-gray-50">
+                      <div
+                        key={job.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleApplicationCardClick(job)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleApplicationCardClick(job);
+                          }
+                        }}
+                        className="p-4 hover:bg-gray-50"
+                      >
                         <div className="flex justify-between items-start mb-3">
                           <div className="flex-1">
                             <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
@@ -2465,11 +2494,9 @@ export default function TalentEngineDashboard() {
                           <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
                             {job.stage}
                           </span>
-                          <div className="flex gap-3 text-gray-500">
-                            <Share2 size={16} />
-                            <Bookmark size={16} />
-                            <ChevronDown size={16} />
-                          </div>
+                          <span className="text-xs text-gray-500">
+                            Applied on {formatAppliedDate(job.appliedDate)}
+                          </span>
                         </div>
                       </div>
                     ))}
