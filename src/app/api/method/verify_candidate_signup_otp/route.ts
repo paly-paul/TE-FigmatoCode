@@ -16,6 +16,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "error", message: "Email and OTP are required" }, { status: 400 });
   }
 
+  const forceSignupOtp =
+    typeof process.env.FORCE_SIGNUP_OTP === "string" &&
+    ["1", "true", "yes", "on"].includes(process.env.FORCE_SIGNUP_OTP.trim().toLowerCase());
+  if (forceSignupOtp) {
+    if (otp === "12345") {
+      return NextResponse.json({
+        status: "success",
+        message: "OTP verified successfully (forced dev mode).",
+        verified: 1,
+      });
+    }
+    return NextResponse.json(
+      { status: "error", message: "Invalid OTP for forced dev mode." },
+      { status: 400 }
+    );
+  }
+
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
     return NextResponse.json(

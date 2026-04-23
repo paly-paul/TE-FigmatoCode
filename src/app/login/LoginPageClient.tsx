@@ -17,6 +17,7 @@ import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { useCandidateLogin } from "@/services/login";
+import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 
 export default function LoginPageClient() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function LoginPageClient() {
     const ok = await submit({ email, password });
     if (!ok) return;
     setIsRedirecting(true);
+    prefetchDropdownDetailsAfterLogin();
 
     const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
     console.log("[login-page] final-decision", {

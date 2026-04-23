@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
@@ -10,7 +10,7 @@ import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
-import { readResumeProfile, upsertResumeProfile } from "@/lib/profileSession";
+import { clearResumeWizardSession, readResumeProfile, upsertResumeProfile } from "@/lib/profileSession";
 import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -141,6 +141,20 @@ function isProjectEmpty(e: ProjectEntry) {
   );
 }
 
+function toBackendCurrentLocation(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("--")) return trimmed.replace(/\s*--\s*/g, " -- ").trim();
+  if (trimmed.includes(",")) {
+    const [city, ...rest] = trimmed.split(",");
+    const country = rest.join(",").trim();
+    if (city.trim() && country) {
+      return `${city.trim()} -- ${country}`;
+    }
+  }
+  return trimmed;
+}
+
 function MobileAccordionCard({
   title,
   expanded,
@@ -186,11 +200,33 @@ function SkillsProjectsPageContent() {
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
   const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const skillsSectionRef = useRef<HTMLElement | null>(null);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
     experiences: false,
     projects: false,
   });
+
+  function scrollToFirstValidationErrorField(nextErrors: FormErrors): void {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      if (nextErrors.skills && skillsSectionRef.current) {
+        skillsSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      const invalidInputs = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "input.border-red-400, select.border-red-400, textarea.border-red-400"
+        )
+      );
+      const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
+      if (!firstVisibleInvalid) return;
+      firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+      if ("focus" in firstVisibleInvalid) {
+        firstVisibleInvalid.focus({ preventScroll: true });
+      }
+    });
+  }
 
   // Backend-only options: suggestedSkills holds key skills returned from the API.
   // The dropdown offers those values, excluding ones already selected in `skills`.
@@ -1038,12 +1074,22 @@ function SkillsProjectsPageContent() {
     }
     if (Object.keys(projMap).length) nextErrors.projects = projMap;
 
+    if (isMobileViewport) {
+      setMobileAccordionOpen((prev) => ({
+        keySkills: prev.keySkills || Boolean(nextErrors.skills),
+        experiences: prev.experiences || Boolean(nextErrors.experiences),
+        projects: prev.projects || Boolean(nextErrors.projects),
+      }));
+    }
+
     setErrors(nextErrors);
-    return (
+    const isValid = (
       !nextErrors.skills &&
       !nextErrors.experiences &&
       !nextErrors.projects
     );
+    if (!isValid) scrollToFirstValidationErrorField(nextErrors);
+    return isValid;
   }
 
   async function handleFinish() {
@@ -1139,10 +1185,9 @@ function SkillsProjectsPageContent() {
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
 
-    const normalizedCurrentLocation = (storedProfile?.currentLocation || storedProfile?.preferredLocation || "")
-      .replace(/\s*--\s*/g, ", ")
-      .replace(/\s*,\s*/g, ", ")
-      .trim();
+    const normalizedCurrentLocation = toBackendCurrentLocation(
+      storedProfile?.currentLocation || storedProfile?.preferredLocation || ""
+    );
 
     const nextProfilePayload = {
       full_name: fullName,
@@ -1404,6 +1449,7 @@ function SkillsProjectsPageContent() {
 
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
+    clearResumeWizardSession();
     setDashboardWelcomePending();
     router.push("/dashboard");
   }
@@ -1447,7 +1493,12 @@ function SkillsProjectsPageContent() {
                   setMobileAccordionOpen((prev) => ({ ...prev, keySkills: !prev.keySkills }))
                 }
               >
-                <div className="p-4 space-y-4">
+                <div
+                  ref={(node) => {
+                    if (node) skillsSectionRef.current = node;
+                  }}
+                  className="p-4 space-y-4"
+                >
                   <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Skills <span className="text-red-500">*</span></span>
                     <select
@@ -1774,7 +1825,12 @@ function SkillsProjectsPageContent() {
 
           {!isMobileViewport ? (
             <div className="flex-1 min-w-0 space-y-4">
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section
+              ref={(node) => {
+                if (node) skillsSectionRef.current = node;
+              }}
+              className="bg-white border border-gray-200 rounded-xl overflow-hidden"
+            >
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Key Skills</h2>
               </div>

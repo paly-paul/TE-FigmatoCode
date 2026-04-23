@@ -25,13 +25,10 @@ interface FilterDrawerProps {
     skillsFieldName?: string;
     limit?: number;
   };
+  skillsOptions?: string[];
+  employmentTypeOptions?: string[];
+  seniorityLevelOptions?: string[];
 }
-
-export const SKILLS = [
-  "Microgrid System",
-  "Energy data analytics",
-  "Utility Operations",
-];
 
 export const EMPLOYMENT_TYPES = [
   "Full Time",
@@ -59,6 +56,7 @@ const DEFAULT_DROPDOWN_CONFIG = {
   skillsFieldName: "key_skills",
   limit: 1000,
 } as const;
+const SKILLS_PREVIEW_LIMIT = 8;
 
 function CollapsibleFilterSection({
   title,
@@ -238,19 +236,27 @@ export function FilterDrawer({
   triggerRef,
   initialFilters = {},
   dropdownConfig,
+  skillsOptions,
+  employmentTypeOptions,
+  seniorityLevelOptions,
 }: FilterDrawerProps) {
   const isCompactFilterUi = useIsBelowLg();
   const [resolvedPlacement, setResolvedPlacement] = useState<"bottom" | "right">(
     isCompactFilterUi ? "bottom" : "right"
   );
   const [skillSearch, setSkillSearch] = useState("");
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     ...DEFAULT_FILTERS,
     ...initialFilters,
   });
-  const [dynamicSkills, setDynamicSkills] = useState<string[]>(SKILLS);
-  const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
-  const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
+  const [dynamicSkills, setDynamicSkills] = useState<string[]>(skillsOptions?.length ? skillsOptions : []);
+  const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(
+    employmentTypeOptions?.length ? employmentTypeOptions : EMPLOYMENT_TYPES
+  );
+  const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(
+    seniorityLevelOptions?.length ? seniorityLevelOptions : SENIORITY_LEVELS
+  );
   const [hasLoadedDynamicOptions, setHasLoadedDynamicOptions] = useState(false);
 
   const resolvedDropdownConfig = {
@@ -268,11 +274,38 @@ export function FilterDrawer({
 
     setFilters({ ...DEFAULT_FILTERS, ...initialFilters });
     setSkillSearch("");
+    setShowAllSkills(false);
     setResolvedPlacement(isCompactFilterUi ? "bottom" : "right");
   }, [open, initialFilters]);
 
   useEffect(() => {
+    setShowAllSkills(false);
+  }, [skillSearch]);
+
+  useEffect(() => {
+    if (skillsOptions?.length) {
+      setDynamicSkills(skillsOptions);
+    }
+  }, [skillsOptions]);
+
+  useEffect(() => {
+    if (employmentTypeOptions?.length) {
+      setDynamicEmploymentTypes(employmentTypeOptions);
+    }
+  }, [employmentTypeOptions]);
+
+  useEffect(() => {
+    if (seniorityLevelOptions?.length) {
+      setDynamicSeniorityLevels(seniorityLevelOptions);
+    }
+  }, [seniorityLevelOptions]);
+
+  useEffect(() => {
     if (!open || hasLoadedDynamicOptions) return;
+    if (skillsOptions?.length) {
+      setHasLoadedDynamicOptions(true);
+      return;
+    }
 
     let active = true;
     void (async () => {
@@ -284,7 +317,7 @@ export function FilterDrawer({
 
       if (!active) return;
 
-      if (Array.isArray(skillsRes) && skillsRes.length > 0) {
+    if (Array.isArray(skillsRes)) {
         setDynamicSkills(skillsRes);
       }
 
@@ -294,11 +327,16 @@ export function FilterDrawer({
     return () => {
       active = false;
     };
-  }, [open, hasLoadedDynamicOptions, resolvedDropdownConfig]);
+  }, [open, hasLoadedDynamicOptions, resolvedDropdownConfig, skillsOptions]);
 
   const filteredSkills = dynamicSkills.filter((skill) =>
     skill.toLowerCase().includes(skillSearch.toLowerCase())
   );
+  const visibleSkills =
+    showAllSkills || skillSearch.trim().length > 0
+      ? filteredSkills
+      : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
+  const canToggleSkillsView = skillSearch.trim().length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
 
   const setValue = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -339,10 +377,19 @@ export function FilterDrawer({
       {skillsSearchInput}
       <p className="mb-3 text-sm font-medium text-gray-700">Popular Skills</p>
       <CheckboxGroup
-        options={filteredSkills}
+        options={visibleSkills}
         selected={filters.skills}
         onChange={(value) => setValue("skills", value)}
       />
+      {canToggleSkillsView ? (
+        <button
+          type="button"
+          onClick={() => setShowAllSkills((prev) => !prev)}
+          className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          {showAllSkills ? "Show less" : `See all (${filteredSkills.length})`}
+        </button>
+      ) : null}
     </>
   );
 

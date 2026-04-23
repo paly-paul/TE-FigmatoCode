@@ -6,6 +6,14 @@ export type RecommendedJobApi = {
   maximum_bill_rate: number | null;
   billing_currency?: string;
   billing_frequency?: string;
+  key_skills?: string[];
+  qualification?: string[];
+  language_requirement?: string[];
+  project?: string[];
+  visa_requirements?: string[];
+  nationality?: string[];
+  employment_type?: string;
+  seniority_level?: string;
   status?: string;
   rotation?: string;
   match_score: number;

@@ -1,6 +1,6 @@
 import { parseApiErrorMessage } from "./parseApiError";
 
-const DUMMY_OTP = "123456";
+const DUMMY_OTP = "12345";
 const OTP_DEV_MODE_KEY = "te_signup_otp_dev_mode";
 
 type SendOtpResponse = {
@@ -34,6 +34,12 @@ function readStringField(data: Record<string, unknown>, key: string): string {
   const root = normalizeRoot(data);
   const value = root[key];
   return typeof value === "string" ? value : "";
+}
+
+function readStatus(data: Record<string, unknown>): string {
+  const root = normalizeRoot(data);
+  const value = root.status;
+  return typeof value === "string" ? value.toLowerCase() : "";
 }
 
 function setOtpDevMode(email: string): void {
@@ -83,7 +89,7 @@ export async function sendCandidateSignupOtp(email: string): Promise<SendOtpResp
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
 
-  const status = typeof data.status === "string" ? data.status.toLowerCase() : "";
+  const status = readStatus(data);
   if (status === "error") {
     throw new Error(parseApiErrorMessage(data));
   }
@@ -94,7 +100,7 @@ export async function sendCandidateSignupOtp(email: string): Promise<SendOtpResp
     return {
       status: "success",
       otp_required: 1,
-      message: "Using temporary dummy OTP (123456) until backend OTP is enabled.",
+      message: "Using temporary dummy OTP (12345) until backend OTP is enabled.",
       isMock: true,
     };
   }
@@ -136,7 +142,7 @@ export async function verifyCandidateSignupOtp(email: string, otp: string): Prom
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
 
-  const status = typeof data.status === "string" ? data.status.toLowerCase() : "";
+  const status = readStatus(data);
   if (status === "error") {
     throw new Error(parseApiErrorMessage(data));
   }

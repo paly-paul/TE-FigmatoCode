@@ -19,6 +19,7 @@ export type DashboardJobListing = {
   employmentType: string;
   seniorityLevel: string;
   jobDocumentId?: string;
+  appliedDate?: string;
 };
 
 export type JobsPageCard = {
@@ -34,6 +35,11 @@ export type JobsPageCard = {
   startDate: string;
   matchPercentage: number;
   skills: string[];
+  qualifications: string[];
+  languages: string[];
+  projects: string[];
+  visaRequirements: string[];
+  nationalities: string[];
   employmentType: string;
   seniorityLevel: string;
   jobDocumentId?: string;
@@ -100,9 +106,9 @@ export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJob
     status: recommendedStatusFromScore(score),
     stage: "Received",
     postedTime: j.status || "—",
-    skills: [],
-    employmentType: j.billing_frequency || "—",
-    seniorityLevel: "—",
+    skills: j.key_skills ?? [],
+    employmentType: j.employment_type || j.billing_frequency || "—",
+    seniorityLevel: j.seniority_level || "—",
     jobDocumentId: j.job_id,
   };
 }
@@ -121,7 +127,12 @@ export function mapRecommendedToJobsPageCard(j: RecommendedJobApi): JobsPageCard
     compensationValue: dash.hourlyRate,
     startDate: dash.startDate,
     matchPercentage: dash.matchPercentage,
-    skills: [],
+    skills: j.key_skills ?? [],
+    qualifications: j.qualification ?? [],
+    languages: j.language_requirement ?? [],
+    projects: j.project ?? [],
+    visaRequirements: j.visa_requirements ?? [],
+    nationalities: j.nationality ?? [],
     employmentType: dash.employmentType,
     seniorityLevel: dash.seniorityLevel,
     jobDocumentId: j.job_id,
@@ -156,6 +167,7 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
     employmentType: "—",
     seniorityLevel: "—",
     jobDocumentId: row.job_id,
+    appliedDate: row.date || undefined,
   };
 }
 

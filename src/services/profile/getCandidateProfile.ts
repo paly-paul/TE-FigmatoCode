@@ -827,7 +827,21 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     currentLocation: normalizeLocation(
       pickString(profileRecord, "current_location", "currentLocation") ??
         pickString(profileVersion, "current_location", "currentLocation", "current_city", "location") ??
-        pickString(root, "current_location", "currentLocation", "current_city", "location")
+        pickString(root, "current_location", "currentLocation", "current_city", "location") ??
+        pickString(
+          profileVersion,
+          "preferred_location",
+          "preferredLocation",
+          "preferred_job_location",
+          "preferredLocationText"
+        ) ??
+        pickString(
+          profileRecord,
+          "preferred_location",
+          "preferredLocation",
+          "preferred_job_location",
+          "preferredLocationText"
+        )
     ),
     preferredLocation:
       pickString(

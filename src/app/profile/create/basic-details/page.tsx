@@ -266,6 +266,23 @@ function buildGeneratedSummary(
   return buildGeneratedSummaryFromProfile(form, prompt, profile);
 }
 
+function scrollToFirstValidationErrorField(): void {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const invalidInputs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "input.border-red-400, select.border-red-400, textarea.border-red-400"
+      )
+    );
+    const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
+    if (!firstVisibleInvalid) return;
+    firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+    if ("focus" in firstVisibleInvalid) {
+      firstVisibleInvalid.focus({ preventScroll: true });
+    }
+  });
+}
+
 function cleanPhrase(value: string | undefined | null) {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -750,11 +767,10 @@ function BasicDetailsPageContent() {
         const backendProfile = await getCandidateProfileData(profileName);
         if (cancelled) return;
 
-        const isEditMode = isLikelyDocId(profileName);
         const existingSessionProfile = readResumeProfile() ?? {};
-        const merged = isEditMode
-          ? backendProfile
-          : mergeProfilePreferringExisting(existingSessionProfile, backendProfile);
+        // Preserve in-session manual edits (draft behavior) while still hydrating
+        // latest backend data for any fields not yet edited locally.
+        const merged = mergeProfilePreferringExisting(existingSessionProfile, backendProfile);
         upsertResumeProfile(merged);
         applyProfileToForm(merged);
       } catch {
@@ -1021,7 +1037,9 @@ function BasicDetailsPageContent() {
     }
 
     setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    const isValid = Object.keys(nextErrors).length === 0;
+    if (!isValid) scrollToFirstValidationErrorField();
+    return isValid;
   }
   function updateEducationEntry(id: string, field: keyof Omit<EducationEntry, "id">, value: string) {
     setEducation((prev) =>
@@ -1408,9 +1426,9 @@ function BasicDetailsPageContent() {
                     <input
                       type="email"
                       value={form.email}
-                      onChange={(e) => setField("email", e.target.value)}
+                      readOnly
                       placeholder="Enter email"
-                      className={fieldClass(Boolean(errors.email))}
+                      className={`${fieldClass(Boolean(errors.email))} bg-gray-100 cursor-not-allowed`}
                     />
                     {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                   </label>
@@ -2534,9 +2552,9 @@ function BasicDetailsPageContent() {
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
+                    readOnly
                     placeholder="Enter email"
-                    className={fieldClass(Boolean(errors.email))}
+                    className={`${fieldClass(Boolean(errors.email))} bg-gray-100 cursor-not-allowed`}
                   />
                   {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                 </label>

@@ -6,13 +6,14 @@ import AppNavbar from "../profile/AppNavbar";
 import CandidateAppShell, { type TimesheetBottomTab } from "../mobile/CandidateAppShell";
 import { useIs768AndBelow } from "@/lib/useResponsive";
 import CommentModal from "../ui/CommentModal";
-import { getCandidateId, setCandidateId } from "@/lib/authSession";
+import { getCandidateId, getProfileName, setCandidateId } from "@/lib/authSession";
 import { createEditCandidateTimesheet } from "@/services/timesheet/candidateTimesheet";
 import { getProjectsForProfile } from "@/services/timesheet/profileProjects";
 import { getTimesheetForProject } from "@/services/timesheet/projectTimesheet";
 import { getDaysOfWeek } from "@/services/timesheet/weekCalendar";
 import { getTimesheetByWeek } from "@/services/timesheet/weekTimesheet";
 import { getTimesheetForWorkorder } from "@/services/timesheet/workorderTimesheet";
+import { useRouter } from "next/navigation";
 
 type WeeklyRow = {
   isoDate?: string;
@@ -63,6 +64,7 @@ function formatIsoDateForDisplay(isoDate: string): string {
 }
 
 export default function TalentEngineTimesheet() {
+  const router = useRouter();
   const [workorderWeeks, setWorkorderWeeks] = useState<WeeklySheet[]>([]);
   const [activeWeekNumber, setActiveWeekNumber] = useState<number>(0);
   const [leaveSelections, setLeaveSelections] = useState<Record<string, boolean>>({});
@@ -76,6 +78,9 @@ export default function TalentEngineTimesheet() {
   const [projectName, setProjectName] = useState("");
   const [submissionStatus, setSubmissionStatus] = useState<string>("");
   const [submitBusy, setSubmitBusy] = useState(false);
+  const [isCheckingAssignment, setIsCheckingAssignment] = useState(true);
+  const [hasProjectAssignment, setHasProjectAssignment] = useState(false);
+  const [assignmentMessage, setAssignmentMessage] = useState("");
 
   const [commentModal, setCommentModal] = useState<{
     date: string;
@@ -103,6 +108,7 @@ export default function TalentEngineTimesheet() {
     const rrFromQuery = params.get("rr_name")?.trim() || "";
     const projectFromQuery = params.get("project")?.trim() || "";
     const candidateFromQuery = params.get("candidate_id")?.trim() || "";
+    const profileFromSession = getProfileName()?.trim() || "";
     if (rrFromQuery) setRrName(rrFromQuery);
     if (projectFromQuery) setProjectName(projectFromQuery);
     if (candidateFromQuery) {
@@ -113,6 +119,10 @@ export default function TalentEngineTimesheet() {
       }
       setCandidateId(candidateFromQuery);
       return;
+    }
+
+    if (profileFromSession) {
+      setProfileId(profileFromSession);
     }
 
     const fromSession = getCandidateId()?.trim() || "";
@@ -242,12 +252,25 @@ export default function TalentEngineTimesheet() {
   }, [activeWeekData, weekRowsByNumber]);
 
   useEffect(() => {
-    if (!profileId.trim()) return;
+    const profile = profileId.trim();
+    if (!profile) {
+      setIsCheckingAssignment(false);
+      setHasProjectAssignment(false);
+      setAssignmentMessage("Profile information is missing. Complete your profile setup to access timesheet.");
+      return;
+    }
     let cancelled = false;
+    setIsCheckingAssignment(true);
+    setAssignmentMessage("");
 
-    void getProjectsForProfile(profileId)
+    void getProjectsForProfile(profile)
       .then((response) => {
         if (cancelled) return;
+        const hasAssignments = response.projects.length > 0;
+        setHasProjectAssignment(hasAssignments);
+        if (!hasAssignments) {
+          setAssignmentMessage("Timesheet will be enabled once you are allotted to a project.");
+        }
         const first = response.projects[0];
         if (!first) return;
         if (!projectName.trim()) setProjectName(first.project);
@@ -256,14 +279,34 @@ export default function TalentEngineTimesheet() {
           setCandidateIdState(first.rr_candidate);
         }
       })
-      .catch(() => {
-        // Leave manual entry as fallback.
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setHasProjectAssignment(false);
+        setAssignmentMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to verify project assignment right now."
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsCheckingAssignment(false);
       });
 
     return () => {
       cancelled = true;
     };
   }, [candidateId, profileId, projectName, rrName]);
+
+  useEffect(() => {
+    if (!profileId.trim()) return;
+    if (isCheckingAssignment) return;
+    if (hasProjectAssignment) return;
+    const t = window.setTimeout(() => {
+      router.replace("/dashboard/");
+    }, 2000);
+    return () => window.clearTimeout(t);
+  }, [hasProjectAssignment, isCheckingAssignment, profileId, router]);
 
   useEffect(() => {
     const rrCandidate = candidateId.trim();
@@ -441,6 +484,48 @@ export default function TalentEngineTimesheet() {
 
   const isCompact = useIs768AndBelow();
   const compactTimesheetView = isCompact && mobileTimesheetTab === "timesheet";
+
+  if (isCheckingAssignment) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        {!isCompact ? <AppNavbar /> : null}
+        <main className="mx-auto flex min-h-[60vh] w-full max-w-2xl items-center justify-center px-4 py-12">
+          <p className="text-sm font-medium text-slate-600">Checking your project assignment...</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!hasProjectAssignment) {
+    const blockedView = (
+      <main className="mx-auto flex min-h-[70vh] w-full max-w-2xl items-center justify-center px-4 py-12">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-900">Timesheet not available yet</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            {assignmentMessage || "Timesheet access is available only after project assignment."}
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/")}
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-[#033CE5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </main>
+    );
+
+    if (isCompact) {
+      return <CandidateAppShell>{blockedView}</CandidateAppShell>;
+    }
+
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        <AppNavbar />
+        {blockedView}
+      </div>
+    );
+  }
 
   const activeWeekRange =
     activeWeekData.range;
