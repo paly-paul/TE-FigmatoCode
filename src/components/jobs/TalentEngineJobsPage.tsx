@@ -172,6 +172,7 @@ const JOBS: JobCard[] = [
 
 const SORT_OPTIONS = ["Most Relevant", "Newest", "Highest Match"];
 const SKILLS_PREVIEW_LIMIT = 8;
+const SKILL_SEARCH_MIN_LENGTH = 3;
 const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
   salaryMax: 10000,
@@ -229,14 +230,19 @@ function JobsFilterPanel({
   seniorityLevelOptions: string[];
 }) {
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const trimmedSkillsSearch = searchSkills.trim();
+  const requiresMoreChars =
+    trimmedSkillsSearch.length > 0 && trimmedSkillsSearch.length < SKILL_SEARCH_MIN_LENGTH;
   const filteredSkills = skillsOptions.filter((skill) =>
     skill.toLowerCase().includes(searchSkills.toLowerCase())
   );
   const visibleSkills =
-    showAllSkills || searchSkills.trim().length > 0
+    requiresMoreChars
+      ? []
+      : showAllSkills || trimmedSkillsSearch.length > 0
       ? filteredSkills
       : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
-  const canToggleSkillsView = searchSkills.trim().length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
+  const canToggleSkillsView = trimmedSkillsSearch.length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
 
   useEffect(() => {
     setShowAllSkills(false);
@@ -264,6 +270,9 @@ function JobsFilterPanel({
         </div>
 
         <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
+        {requiresMoreChars ? (
+          <p className="mb-3 text-xs text-gray-500">Type at least 3 letters to search skills.</p>
+        ) : null}
         <FilterCheckboxGroup
           options={visibleSkills}
           selected={filters.skills}
@@ -693,26 +702,32 @@ export default function TalentEngineJobsPage() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      const [skillsRes] = await Promise.all([
-        getDropdownDetailsOptions({
-          doctype: "Resource Requirement",
-          fieldName: "key_skills",
-          limit: 1000,
-        }).catch(() => null),
-      ]);
+    const query = skillSearch.trim();
+    if (query.length < SKILL_SEARCH_MIN_LENGTH) return;
 
-      if (!active) return;
-      if (Array.isArray(skillsRes) && skillsRes.length > 0) {
-        setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
-      }
-    })();
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const skillsRes = await getDropdownDetailsOptions({
+          doctype: "Profile Version",
+          fieldName: "key_skills",
+          search: query,
+          page: 1,
+          limit: 50,
+        }).catch(() => null);
+
+        if (!active) return;
+        if (Array.isArray(skillsRes)) {
+          setDynamicSkills(skillsRes);
+        }
+      })();
+    }, 300);
 
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [skillSearch]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
     const sourceJobs = hasAttemptedJobsLoad && apiRecommendedJobs.length > 0 ? apiRecommendedJobs : JOBS;
@@ -863,7 +878,7 @@ export default function TalentEngineJobsPage() {
 
   const jobsMainMobile = (
     <main className="px-4 pt-4 pb-6">
-      <h1 className="mb-4 text-2xl font-bold tracking-tight text-gray-900">Jobs</h1>
+      <h1 className="mb-4 text-2xl font-bold tracking-tight text-gray-900">Jobs For You</h1>
 
       <div className="relative mb-3">
         <input
@@ -965,7 +980,7 @@ export default function TalentEngineJobsPage() {
 
   const jobsMainDesktop = (
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4">
-        <h1 className="text-lg font-semibold text-gray-900 mb-4">Jobs</h1>
+        <h1 className="text-lg font-semibold text-gray-900 mb-4">Jobs For You</h1>
 
         <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
           <JobsFilterPanel

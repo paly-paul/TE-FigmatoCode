@@ -196,6 +196,7 @@ export default function ActionDrawer({
   const [proposalData, setProposalData] = useState<ProposalDataApi | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
@@ -238,6 +239,7 @@ export default function ActionDrawer({
       setProposalData(null);
       setProposalLoading(false);
       setProposalError(null);
+      setValidationMessage(null);
       setIsSubmitting(false);
       setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
     }
@@ -516,6 +518,9 @@ export default function ActionDrawer({
   const parsedExpectedSalary = Number.parseFloat(expectedSalary);
   const recruiterDateInvalid = !availableDate || availableDate < minAvailableDate;
   const recruiterSalaryInvalid = !Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0;
+  const directApplyDateInvalid = isDirectApply && (!availableDate || availableDate < minAvailableDate);
+  const directApplySalaryInvalid =
+    isDirectApply && (!Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0);
   const recruiterSubmitDisabled =
     isRecruiterInterestReceived && (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms);
   const primarySubmitDisabled = Boolean(
@@ -625,6 +630,11 @@ export default function ActionDrawer({
         />
         <span>{actionDrawerRecruiterInterest.termsAgreement}</span>
       </label>
+      {isDirectApply && validationMessage ? (
+        <p className="mt-2 text-xs text-red-600">
+          {validationMessage}
+        </p>
+      ) : null}
     </div>
   );
 
@@ -1039,10 +1049,28 @@ export default function ActionDrawer({
   const runPrimaryAction = () => {
     if (!action) return;
     if (isSubmitting || hasSubmitted) return;
+    if (isDirectApply && activeTab !== "Job Action") {
+      setValidationMessage(null);
+      setActiveTab("Job Action");
+      return;
+    }
     if (isInterviewScheduled && interviewSubmitDisabled) {
+      setValidationMessage(null);
       scrollToMissingField(interviewSlotsSectionRef.current);
       return;
     }
+    if (isDirectApply && (directApplyDateInvalid || directApplySalaryInvalid)) {
+      setValidationMessage("Please enter a valid available date and expected salary to continue.");
+      if (directApplyDateInvalid) {
+        scrollToMissingField(availableDateFieldRef.current);
+        return;
+      }
+      if (directApplySalaryInvalid) {
+        scrollToMissingField(expectedSalaryFieldRef.current);
+        return;
+      }
+    }
+    setValidationMessage(null);
     if (isRecruiterInterestReceived && recruiterSubmitDisabled) {
       if (recruiterDateInvalid) {
         scrollToMissingField(availableDateFieldRef.current);
@@ -1079,6 +1107,14 @@ export default function ActionDrawer({
             availabilityDate: availableDate,
             expectedSalary,
             acceptTerms: hasAcceptedTerms,
+          })
+        );
+        ok = result !== false;
+      } else if (isDirectApply) {
+        const result = await Promise.resolve(
+          onPrimaryAction?.(action, {
+            availabilityDate: availableDate,
+            expectedSalary,
           })
         );
         ok = result !== false;
@@ -1151,7 +1187,7 @@ export default function ActionDrawer({
       </div>
     )
   ) : (
-    <div className="flex justify-end">
+    <div className="flex flex-col items-end gap-2">
       <button
         type="button"
         disabled={primarySubmitDisabled}
@@ -1160,7 +1196,7 @@ export default function ActionDrawer({
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
         }`}
       >
-        {actionDrawerFooter.submit}
+        {isDirectApply ? (activeTab === "Job Action" ? "Apply" : "Next") : actionDrawerFooter.submit}
       </button>
     </div>
   );

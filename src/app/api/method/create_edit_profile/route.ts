@@ -62,43 +62,6 @@ function isLogicalFailure(data: JsonRecord) {
   );
 }
 
-function extractServerMessagesText(data: JsonRecord): string {
-  // Backend often returns:
-  // { error: "...", _server_messages: "[\"{...}\", ...]" }
-  // where the first array entry is a JSON string containing { message: "..." }.
-  const raw = typeof data._server_messages === "string" ? data._server_messages : "";
-  if (!raw.trim()) return "";
-  try {
-    const arr = JSON.parse(raw) as unknown;
-    if (!Array.isArray(arr)) return "";
-    const messages = arr
-      .map((entry) => {
-        if (typeof entry !== "string") return "";
-        try {
-          const parsed = JSON.parse(entry) as { message?: unknown };
-          return typeof parsed.message === "string" ? parsed.message : entry;
-        } catch {
-          return entry;
-        }
-      })
-      .filter(Boolean);
-    return messages.join(" | ");
-  } catch {
-    return raw;
-  }
-}
-
-function withCurrentLocationRemoved(payload: JsonRecord): JsonRecord {
-  const next: JsonRecord = { ...payload };
-  if (next.profile && typeof next.profile === "object" && !Array.isArray(next.profile)) {
-    const profile = { ...(next.profile as JsonRecord) };
-    delete profile.current_location;
-    next.profile = profile;
-  }
-  delete next.current_location;
-  return next;
-}
-
 async function postJson(url: string, headers: HeadersInit, payload: JsonRecord) {
   const payloadMeta = {
     has_profile: Boolean(payload.profile && typeof payload.profile === "object"),
@@ -266,27 +229,6 @@ export async function POST(request: Request) {
       console.info("create_edit_profile retry", { reason: "missing profile/profile_version", retry: "nested" });
       const nestedPayload = toNestedPayload(payload);
       ({ upstream, data } = await postJson(url, headers, nestedPayload));
-    }
-  }
-
-  if (!upstream.ok || isLogicalFailure(data)) {
-    const message = parseApiErrorMessage(data).toLowerCase();
-    const serverMessagesText = extractServerMessagesText(data).toLowerCase();
-    if (message.includes("could not find current location")) {
-      console.info("create_edit_profile retry", {
-        reason: "invalid current_location",
-        retry: "remove current_location",
-      });
-      const withoutLocationPayload = withCurrentLocationRemoved(canonicalPayload);
-      ({ upstream, data } = await postJson(url, headers, withoutLocationPayload));
-    }
-    if (!message.includes("could not find current location") && serverMessagesText.includes("could not find current location")) {
-      console.info("create_edit_profile retry", {
-        reason: "invalid current_location (server_messages)",
-        retry: "remove current_location",
-      });
-      const withoutLocationPayload = withCurrentLocationRemoved(canonicalPayload);
-      ({ upstream, data } = await postJson(url, headers, withoutLocationPayload));
     }
   }
 

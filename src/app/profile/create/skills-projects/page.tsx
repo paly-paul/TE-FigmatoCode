@@ -144,15 +144,83 @@ function isProjectEmpty(e: ProjectEntry) {
 function toBackendCurrentLocation(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.includes("--")) return trimmed.replace(/\s*--\s*/g, " -- ").trim();
+  if (trimmed.includes("--")) return trimmed.replace(/\s*--\s*/g, "--").trim();
   if (trimmed.includes(",")) {
     const [city, ...rest] = trimmed.split(",");
     const country = rest.join(",").trim();
     if (city.trim() && country) {
-      return `${city.trim()} -- ${country}`;
+      return `${city.trim()}--${country}`;
     }
   }
   return trimmed;
+}
+
+async function resolveBackendCurrentLocation(
+  value: string,
+  opts?: { countryHint?: string; enforceCountryMatch?: boolean }
+): Promise<string> {
+  const formatted = toBackendCurrentLocation(value);
+  if (!formatted) return "";
+
+  const [cityRaw, countryRaw] = formatted.split("--");
+  const city = (cityRaw ?? "").trim();
+  const country = (countryRaw ?? "").trim();
+  if (!city) return formatted;
+  const enforceCountryMatch = opts?.enforceCountryMatch ?? Boolean(country);
+  const countryHint = (opts?.countryHint ?? "").trim();
+
+  try {
+    const url = new URL("/api/method/get_location_details", window.location.origin);
+    url.searchParams.set("page", "1");
+    url.searchParams.set("limit", "25");
+    url.searchParams.set("name", city);
+    const res = await fetch(url.toString(), { method: "GET", credentials: "same-origin", cache: "no-store" });
+    if (!res.ok) return formatted;
+    const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+    const rows = Array.isArray(json.data) ? json.data : [];
+
+    const cityLower = city.toLowerCase();
+    const countryLower = country.toLowerCase();
+    const hintLower = countryHint.toLowerCase();
+
+    const matchByCityAndCountry =
+      countryLower
+        ? rows.find(
+            (r) =>
+              (r.label ?? "").toLowerCase().includes(cityLower) &&
+              (r.label ?? "").toLowerCase().includes(countryLower)
+          ) ?? null
+        : null;
+
+    const matchByCityAndHint =
+      !countryLower && hintLower
+        ? rows.find(
+            (r) =>
+              (r.label ?? "").toLowerCase().includes(cityLower) &&
+              (r.label ?? "").toLowerCase().includes(hintLower)
+          ) ?? null
+        : null;
+
+    const matchByCityOnly = rows.find((r) => (r.label ?? "").toLowerCase().includes(cityLower)) ?? null;
+
+    // Never guess country. If we can't confidently match, return original formatted value.
+    const match =
+      matchByCityAndCountry ??
+      matchByCityAndHint ??
+      (enforceCountryMatch ? null : matchByCityOnly);
+    if (!match) return formatted;
+
+    const label = (match?.label ?? "").trim();
+    if (!label) return formatted;
+
+    const parts = label.split(",").map((p) => p.trim()).filter(Boolean);
+    const resolvedCity = parts[0] ?? "";
+    const resolvedCountry = parts.length ? parts[parts.length - 1] : "";
+    if (resolvedCity && resolvedCountry) return `${resolvedCity}--${resolvedCountry}`;
+    return formatted;
+  } catch {
+    return formatted;
+  }
 }
 
 function MobileAccordionCard({
@@ -1185,9 +1253,10 @@ function SkillsProjectsPageContent() {
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
 
-    const normalizedCurrentLocation = toBackendCurrentLocation(
-      storedProfile?.currentLocation || storedProfile?.preferredLocation || ""
-    );
+    const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
+    const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
+      countryHint: storedProfile?.nationality?.trim() || "India",
+    });
 
     const nextProfilePayload = {
       full_name: fullName,

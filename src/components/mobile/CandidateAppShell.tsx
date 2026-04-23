@@ -327,7 +327,7 @@ export default function CandidateAppShell({
                   activeBottomTab === "jobs" ? "text-blue-600" : "text-gray-500"
                 }
               >
-                Jobs
+                Jobs For You
               </span>
             </button>
 
