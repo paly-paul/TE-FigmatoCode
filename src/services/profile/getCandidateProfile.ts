@@ -72,9 +72,22 @@ function splitFullName(fullName: string | undefined) {
 
 function normalizeLocation(value: string | undefined) {
   if (!value) return undefined;
-  return value
+  const sanitized = value.trim();
+  if (!sanitized) return undefined;
+  const lower = sanitized.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "na" || lower === "n/a" || lower === "-") {
+    return undefined;
+  }
+  const normalized = sanitized
     .replace(/\s*--\s*/g, ", ")
     .replace(/\s*,\s*/g, ", ")
+    .trim();
+
+  // Backend location master may contain diacritics (e.g. Hyderābād). Keep UI ASCII-friendly.
+  // Submission uses backend resolution to canonical values, so stripping here is safe for display.
+  return normalized
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim();
 }
 
@@ -825,25 +838,11 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
       pickString(profileVersion, "nationality", "country") ??
       pickString(profileRecord, "nationality", "country"),
     currentLocation: normalizeLocation(
-      pickString(profileRecord, "current_location", "currentLocation") ??
+      pickString(profileRecord, "current_location", "currentLocation", "current_city", "location") ??
         pickString(profileVersion, "current_location", "currentLocation", "current_city", "location") ??
-        pickString(root, "current_location", "currentLocation", "current_city", "location") ??
-        pickString(
-          profileVersion,
-          "preferred_location",
-          "preferredLocation",
-          "preferred_job_location",
-          "preferredLocationText"
-        ) ??
-        pickString(
-          profileRecord,
-          "preferred_location",
-          "preferredLocation",
-          "preferred_job_location",
-          "preferredLocationText"
-        )
+        pickString(root, "current_location", "currentLocation", "current_city", "location")
     ),
-    preferredLocation:
+    preferredLocation: normalizeLocation(
       pickString(
         profileVersion,
         "preferred_location",
@@ -857,7 +856,8 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
         "preferredLocation",
         "preferred_job_location",
         "preferredLocationText"
-      ),
+      )
+    ),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
     tools,
     education: educationFromQualifications ?? educationFromDetails,

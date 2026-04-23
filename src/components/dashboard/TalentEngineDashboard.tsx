@@ -1691,7 +1691,7 @@ export default function TalentEngineDashboard() {
     const mobileJobs = (
       <main className="px-4 pt-4 pb-6">
         <div className="mb-5 flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Jobs</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Jobs For You</h1>
           {jobSearchToggle}
         </div>
 

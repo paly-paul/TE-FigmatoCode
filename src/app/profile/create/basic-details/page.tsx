@@ -12,11 +12,13 @@ import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { getCandidateProfileData } from "@/services/profile";
+import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
+import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const nationalityOptions = [
+const fallbackNationalityOptions = [
   "United States",
   "India",
   "United Kingdom",
@@ -24,6 +26,7 @@ const nationalityOptions = [
   "Australia",
   "Others",
 ];
+const fallbackCurrencyOptions = ["USD", "INR", "EUR"];
 const languageRatings = [
   "Native / Bilingual",
   "Fluent",
@@ -578,6 +581,8 @@ function BasicDetailsPageContent() {
     externalLinks: false,
     languages: false,
   });
+  const [nationalityOptions, setNationalityOptions] = useState<string[]>(fallbackNationalityOptions);
+  const [currencyOptions, setCurrencyOptions] = useState<string[]>(fallbackCurrencyOptions);
 
   const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
 
@@ -589,6 +594,40 @@ function BasicDetailsPageContent() {
     } catch {
       // ignore storage errors
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [nationalityList, currencyList] = await Promise.all([
+          getDropdownDetailsOptions({
+            doctype: "Profile Version",
+            fieldName: "nationality",
+            page: 1,
+            limit: 1000,
+          }),
+          getCurrencyListOptions(),
+        ]);
+
+        if (cancelled) return;
+
+        if (nationalityList.length > 0) {
+          setNationalityOptions(nationalityList);
+        }
+
+        if (currencyList.length > 0) {
+          setCurrencyOptions(currencyList);
+        }
+      } catch {
+        // keep fallback static options on API failure
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function handlePickProfilePic() {
@@ -1576,9 +1615,11 @@ function BasicDetailsPageContent() {
                           className={`${fieldClass(Boolean(errors.salaryCurrency))} bg-white`}
                         >
                           <option value="">Select currency</option>
-                          <option>USD</option>
-                          <option>INR</option>
-                          <option>EUR</option>
+                          {withCurrentOption(currencyOptions, form.salaryCurrency).map((currency) => (
+                            <option key={currency} value={currency}>
+                              {currency}
+                            </option>
+                          ))}
                         </select>
                         {errors.salaryCurrency && (
                           <p className="text-xs text-red-500">{errors.salaryCurrency}</p>
@@ -2084,9 +2125,11 @@ function BasicDetailsPageContent() {
                         className={`${fieldClass(Boolean(errors.salaryCurrency))} bg-white`}
                       >
                         <option value="">Select currency</option>
-                        <option>USD</option>
-                        <option>INR</option>
-                        <option>EUR</option>
+                        {withCurrentOption(currencyOptions, form.salaryCurrency).map((currency) => (
+                          <option key={currency} value={currency}>
+                            {currency}
+                          </option>
+                        ))}
                       </select>
                       {errors.salaryCurrency && <p className="text-xs text-red-500">{errors.salaryCurrency}</p>}
                     </label>

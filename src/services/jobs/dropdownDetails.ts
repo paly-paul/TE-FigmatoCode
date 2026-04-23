@@ -16,12 +16,14 @@ function getCacheKey(input: {
   fieldName: string;
   page?: number;
   limit?: number;
+  search?: string;
 }): string {
   return JSON.stringify({
     doctype: input.doctype.trim(),
     fieldName: input.fieldName.trim(),
     page: input.page ?? 1,
     limit: input.limit ?? 1000,
+    search: input.search?.trim().toLowerCase() ?? "",
   });
 }
 
@@ -70,6 +72,7 @@ export async function getDropdownDetailsOptions(input: {
   fieldName: string;
   page?: number;
   limit?: number;
+  search?: string;
 }): Promise<string[]> {
   const cacheKey = getCacheKey(input);
   const memoryHit = dropdownMemoryCache.get(cacheKey);
@@ -92,6 +95,9 @@ export async function getDropdownDetailsOptions(input: {
     url.searchParams.set("field_name", input.fieldName.trim());
     url.searchParams.set("page", String(input.page ?? 1));
     url.searchParams.set("limit", String(input.limit ?? 1000));
+    if (input.search?.trim()) {
+      url.searchParams.set("search", input.search.trim());
+    }
 
     const res = await fetch(url.toString(), { credentials: "same-origin" });
     let payload: Record<string, unknown> = {};
