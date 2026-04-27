@@ -97,6 +97,18 @@ export default function CandidateAppShell({
     if (notifOpen && sessionEmail) void refreshNotifications();
   }, [notifOpen, sessionEmail, refreshNotifications]);
 
+  const navigateTo = (href: string) => {
+    if (!href) return;
+    const current = (pathname || "/").replace(/\/$/, "") || "/";
+    const next = href.replace(/\/$/, "") || "/";
+    if (current === next) {
+      setMenuOpen(false);
+      return;
+    }
+    setMenuOpen(false);
+    router.push(href);
+  };
+
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
@@ -163,13 +175,15 @@ export default function CandidateAppShell({
         </div>
       </header>
 
-      {menuOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex flex-col bg-white"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Main menu"
-        >
+      <div
+        className={`fixed inset-0 z-50 flex flex-col bg-white transition-all duration-250 ${
+          menuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 translate-x-2"
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Main menu"
+        aria-hidden={!menuOpen}
+      >
           <div className="flex justify-end p-4">
             <button
               type="button"
@@ -219,8 +233,7 @@ export default function CandidateAppShell({
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+      </div>
 
       <div
         className={`flex-1 min-h-0 overflow-y-auto ${
@@ -290,7 +303,7 @@ export default function CandidateAppShell({
           <div className="mx-auto grid h-[4.5rem] max-w-lg grid-cols-3">
             <button
               type="button"
-              onClick={onActionCenterClick ?? (() => router.push("/dashboard/"))}
+              onClick={onActionCenterClick ?? (() => navigateTo("/dashboard/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <span
@@ -313,7 +326,7 @@ export default function CandidateAppShell({
 
             <button
               type="button"
-              onClick={onJobsClick ?? (() => router.push("/jobs/"))}
+              onClick={onJobsClick ?? (() => navigateTo("/jobs/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <BriefcaseBusiness
@@ -333,7 +346,7 @@ export default function CandidateAppShell({
 
             <button
               type="button"
-              onClick={onInsightsClick ?? (() => router.push("/dashboard/visibility-score/"))}
+              onClick={onInsightsClick ?? (() => navigateTo("/dashboard/visibility-score/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
               <BarChart3

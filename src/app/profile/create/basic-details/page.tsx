@@ -70,6 +70,11 @@ interface LanguageEntry {
   speak: string;
 }
 
+interface LocationSuggestion {
+  id: string;
+  label: string;
+}
+
 function createEntryId(prefix = "entry") {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -269,20 +274,24 @@ function buildGeneratedSummary(
   return buildGeneratedSummaryFromProfile(form, prompt, profile);
 }
 
-function scrollToFirstValidationErrorField(): void {
+function scrollToFirstValidationErrorField(prepare?: () => void): void {
   if (typeof window === "undefined") return;
+  prepare?.();
+  // Wait for accordion sections to open before searching for invalid elements.
   window.requestAnimationFrame(() => {
-    const invalidInputs = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        "input.border-red-400, select.border-red-400, textarea.border-red-400"
-      )
-    );
-    const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
-    if (!firstVisibleInvalid) return;
-    firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
-    if ("focus" in firstVisibleInvalid) {
-      firstVisibleInvalid.focus({ preventScroll: true });
-    }
+    window.requestAnimationFrame(() => {
+      const invalidInputs = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "input.border-red-400, select.border-red-400, textarea.border-red-400"
+        )
+      );
+      const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
+      if (!firstVisibleInvalid) return;
+      firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+      if ("focus" in firstVisibleInvalid) {
+        firstVisibleInvalid.focus({ preventScroll: true });
+      }
+    });
   });
 }
 
@@ -538,7 +547,7 @@ function MobileAccordionCard({
   children: ReactNode;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-xl overflow-visible">
       <button
         type="button"
         onClick={onToggle}
@@ -583,6 +592,11 @@ function BasicDetailsPageContent() {
   });
   const [nationalityOptions, setNationalityOptions] = useState<string[]>(fallbackNationalityOptions);
   const [currencyOptions, setCurrencyOptions] = useState<string[]>(fallbackCurrencyOptions);
+  const [currentLocationSuggestions, setCurrentLocationSuggestions] = useState<LocationSuggestion[]>([]);
+  const [preferredLocationSuggestions, setPreferredLocationSuggestions] = useState<LocationSuggestion[]>([]);
+  const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
+  const [isPreferredLocationLoading, setIsPreferredLocationLoading] = useState(false);
+  const [activeLocationField, setActiveLocationField] = useState<"currentLocation" | "preferredLocation" | null>(null);
 
   const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
 
@@ -595,6 +609,98 @@ function BasicDetailsPageContent() {
       // ignore storage errors
     }
   }, []);
+
+  useEffect(() => {
+    const query = form.currentLocation.trim();
+    if (query.length < 2) {
+      setCurrentLocationSuggestions([]);
+      setIsCurrentLocationLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsCurrentLocationLoading(true);
+        const url = new URL("/api/method/get_location_details", window.location.origin);
+        url.searchParams.set("page", "1");
+        url.searchParams.set("limit", "10");
+        url.searchParams.set("name", query);
+        const res = await fetch(url.toString(), {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Failed to fetch current location suggestions.");
+        const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+        const rows = Array.isArray(json.data) ? json.data : [];
+        const normalized = rows
+          .map((row) => ({
+            id: (row.id ?? row.label ?? "").trim(),
+            label: (row.label ?? "").trim(),
+          }))
+          .filter((row) => row.id && row.label);
+        setCurrentLocationSuggestions(normalized);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setCurrentLocationSuggestions([]);
+      } finally {
+        setIsCurrentLocationLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [form.currentLocation]);
+
+  useEffect(() => {
+    const query = form.preferredLocation.trim();
+    if (query.length < 2) {
+      setPreferredLocationSuggestions([]);
+      setIsPreferredLocationLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsPreferredLocationLoading(true);
+        const url = new URL("/api/method/get_location_details", window.location.origin);
+        url.searchParams.set("page", "1");
+        url.searchParams.set("limit", "10");
+        url.searchParams.set("name", query);
+        const res = await fetch(url.toString(), {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Failed to fetch preferred location suggestions.");
+        const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+        const rows = Array.isArray(json.data) ? json.data : [];
+        const normalized = rows
+          .map((row) => ({
+            id: (row.id ?? row.label ?? "").trim(),
+            label: (row.label ?? "").trim(),
+          }))
+          .filter((row) => row.id && row.label);
+        setPreferredLocationSuggestions(normalized);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreferredLocationSuggestions([]);
+      } finally {
+        setIsPreferredLocationLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [form.preferredLocation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1032,6 +1138,21 @@ function BasicDetailsPageContent() {
     }
   }
 
+  function handleLocationSuggestionPick(field: "currentLocation" | "preferredLocation", value: string) {
+    setField(field, value);
+    if (field === "currentLocation") {
+      setCurrentLocationSuggestions([]);
+    } else {
+      setPreferredLocationSuggestions([]);
+    }
+    setActiveLocationField(null);
+  }
+
+  function handleLocationInputChange(field: "currentLocation" | "preferredLocation", value: string) {
+    setActiveLocationField(field);
+    setField(field, value);
+  }
+
   function validate(): boolean {
     const nextErrors: FormErrors = {};
 
@@ -1077,7 +1198,37 @@ function BasicDetailsPageContent() {
 
     setErrors(nextErrors);
     const isValid = Object.keys(nextErrors).length === 0;
-    if (!isValid) scrollToFirstValidationErrorField();
+    if (!isValid) {
+      scrollToFirstValidationErrorField(() => {
+        if (!isMobileViewport) return;
+        setMobileAccordionOpen((prev) => ({
+          ...prev,
+          personal:
+            prev.personal ||
+            Boolean(
+              nextErrors.firstName ||
+                nextErrors.lastName ||
+                nextErrors.dob ||
+                nextErrors.gender ||
+                nextErrors.countryCode ||
+                nextErrors.contact ||
+                nextErrors.email ||
+                nextErrors.nationality ||
+                nextErrors.currentLocation
+            ),
+          basicDetails:
+            prev.basicDetails ||
+            Boolean(
+              nextErrors.professionalTitle ||
+                nextErrors.expYears ||
+                nextErrors.expMonths ||
+                nextErrors.salary ||
+                nextErrors.salaryCurrency ||
+                nextErrors.summary
+            ),
+        }));
+      });
+    }
     return isValid;
   }
   function updateEducationEntry(id: string, field: keyof Omit<EducationEntry, "id">, value: string) {
@@ -1508,11 +1659,36 @@ function BasicDetailsPageContent() {
                       <input
                         type="text"
                         value={form.currentLocation}
-                        onChange={(e) => setField("currentLocation", e.target.value)}
+                        onChange={(e) => handleLocationInputChange("currentLocation", e.target.value)}
+                        onFocus={() => setActiveLocationField("currentLocation")}
                         placeholder="City, Country"
                         className={`${fieldClass(Boolean(errors.currentLocation))} pr-10`}
+                        autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 2 && (
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                          {isCurrentLocationLoading ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                          ) : currentLocationSuggestions.length > 0 ? (
+                            currentLocationSuggestions.map((option) => (
+                              <button
+                                key={`${option.id}-${option.label}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                {option.label}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-gray-500">No matches found.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {errors.currentLocation && (
                       <p className="text-xs text-red-500">{errors.currentLocation}</p>
@@ -1525,11 +1701,36 @@ function BasicDetailsPageContent() {
                       <input
                         type="text"
                         value={form.preferredLocation}
-                        onChange={(e) => setField("preferredLocation", e.target.value)}
+                        onChange={(e) => handleLocationInputChange("preferredLocation", e.target.value)}
+                        onFocus={() => setActiveLocationField("preferredLocation")}
                         placeholder="Where would you like to work?"
                         className={`${fieldClass(false)} pr-10`}
+                        autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 2 && (
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                          {isPreferredLocationLoading ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                          ) : preferredLocationSuggestions.length > 0 ? (
+                            preferredLocationSuggestions.map((option) => (
+                              <button
+                                key={`${option.id}-${option.label}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("preferredLocation", option.label);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                {option.label}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-gray-500">No matches found.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </label>
                 </div>
@@ -2633,26 +2834,80 @@ function BasicDetailsPageContent() {
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Current Location <span className="text-red-500">*</span></span>
-                    <input
-                      type="text"
-                      value={form.currentLocation}
-                      onChange={(e) => setField("currentLocation", e.target.value)}
-                      placeholder="City, Country"
-                      className={fieldClass(Boolean(errors.currentLocation))}
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={form.currentLocation}
+                        onChange={(e) => handleLocationInputChange("currentLocation", e.target.value)}
+                        onFocus={() => setActiveLocationField("currentLocation")}
+                        placeholder="City, Country"
+                        className={fieldClass(Boolean(errors.currentLocation))}
+                        autoComplete="off"
+                      />
+                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 2 && (
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                          {isCurrentLocationLoading ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                          ) : currentLocationSuggestions.length > 0 ? (
+                            currentLocationSuggestions.map((option) => (
+                              <button
+                                key={`${option.id}-${option.label}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                {option.label}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-gray-500">No matches found.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {errors.currentLocation && <p className="text-xs text-red-500">{errors.currentLocation}</p>}
                   </label>
                 </div>
 
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-gray-800">Preferred Location</span>
-                  <input
-                    type="text"
-                    value={form.preferredLocation}
-                    onChange={(e) => setField("preferredLocation", e.target.value)}
-                    placeholder="Where would you like to work?"
-                    className={fieldClass(false)}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.preferredLocation}
+                      onChange={(e) => handleLocationInputChange("preferredLocation", e.target.value)}
+                      onFocus={() => setActiveLocationField("preferredLocation")}
+                      placeholder="Where would you like to work?"
+                      className={fieldClass(false)}
+                      autoComplete="off"
+                    />
+                    {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 2 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                        {isPreferredLocationLoading ? (
+                          <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                        ) : preferredLocationSuggestions.length > 0 ? (
+                          preferredLocationSuggestions.map((option) => (
+                            <button
+                              key={`${option.id}-${option.label}`}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleLocationSuggestionPick("preferredLocation", option.label);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              {option.label}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-gray-500">No matches found.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </label>
 
                 <label className="flex flex-col gap-2">

@@ -37,6 +37,21 @@
 }
 
 @layer utilities {
+  .page-transition {
+    animation: page-fade-in 140ms ease-out;
+  }
+
+  @keyframes page-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .bg-grid-pattern {
     background-image: linear-gradient(
         rgba(203, 213, 225, 0.4) 1px,

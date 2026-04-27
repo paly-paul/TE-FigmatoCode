@@ -79,6 +79,7 @@ export default function TalentEngineTimesheet() {
   const [submissionStatus, setSubmissionStatus] = useState<string>("");
   const [submitBusy, setSubmitBusy] = useState(false);
   const [isCheckingAssignment, setIsCheckingAssignment] = useState(true);
+  const [isIdentityResolved, setIsIdentityResolved] = useState(false);
   const [hasProjectAssignment, setHasProjectAssignment] = useState(false);
   const [assignmentMessage, setAssignmentMessage] = useState("");
 
@@ -133,6 +134,7 @@ export default function TalentEngineTimesheet() {
         setCandidateIdState(fromSession);
       }
     }
+    setIsIdentityResolved(true);
   }, []);
 
   const weeksForUi = useMemo(
@@ -252,6 +254,7 @@ export default function TalentEngineTimesheet() {
   }, [activeWeekData, weekRowsByNumber]);
 
   useEffect(() => {
+    if (!isIdentityResolved) return;
     const profile = profileId.trim();
     if (!profile) {
       setIsCheckingAssignment(false);
@@ -296,17 +299,7 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [candidateId, profileId, projectName, rrName]);
-
-  useEffect(() => {
-    if (!profileId.trim()) return;
-    if (isCheckingAssignment) return;
-    if (hasProjectAssignment) return;
-    const t = window.setTimeout(() => {
-      router.replace("/dashboard/");
-    }, 2000);
-    return () => window.clearTimeout(t);
-  }, [hasProjectAssignment, isCheckingAssignment, profileId, router]);
+  }, [candidateId, isIdentityResolved, profileId, projectName, rrName]);
 
   useEffect(() => {
     const rrCandidate = candidateId.trim();
