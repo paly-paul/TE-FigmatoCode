@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SessionInactivityGuard from "@/components/auth/SessionInactivityGuard";
+import PageTransition from "@/components/ui/PageTransition";
 
 export const metadata: Metadata = {
   title: "SixFE",
@@ -22,7 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <SessionInactivityGuard />
-        {children}
+        <PageTransition>{children}</PageTransition>
       </body>
     </html>
   );

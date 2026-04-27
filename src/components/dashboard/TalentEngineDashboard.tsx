@@ -1692,7 +1692,6 @@ export default function TalentEngineDashboard() {
       <main className="px-4 pt-4 pb-6">
         <div className="mb-5 flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">Jobs For You</h1>
-          {jobSearchToggle}
         </div>
 
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

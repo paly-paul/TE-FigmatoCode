@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { clearAuthSession, getProfileName } from "@/lib/authSession";
@@ -56,6 +57,13 @@ export default function AppNavbar() {
     if (notifOpen && sessionEmail) void refreshNotifications();
   }, [notifOpen, sessionEmail, refreshNotifications]);
 
+  const navigateTo = (href: string) => {
+    if (!href || href === pathname) return;
+    setMobileMenuOpen(false);
+    setProfileOpen(false);
+    router.push(href);
+  };
+
   const handleLogout = async () => {
     if (isLoggingOut) return;
 
@@ -95,9 +103,8 @@ export default function AppNavbar() {
         <div className="flex items-center justify-between h-16">
 
           {/* Logo */}
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard")}
+          <Link
+            href="/dashboard"
             className="flex items-center gap-2 sm:gap-3"
           >
             {/* <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-tl-xl rounded-br-xl flex items-center justify-center">
@@ -113,16 +120,15 @@ export default function AppNavbar() {
             <span className="text-base sm:text-lg font-semibold text-gray-900">
               SixFE
             </span>
-          </button>
+          </Link>
 
           {/* Desktop Navigation */}
           {!hideNavLinks ? (
             <nav className="hidden lg:flex items-center gap-4">
               {navItems.map((item) => (
-                <button
+                <Link
                   key={item.href}
-                  type="button"
-                  onClick={() => router.push(item.href)}
+                  href={item.href}
                   className={`px-4 py-2 rounded-md font-medium transition-colors ${
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
@@ -130,7 +136,7 @@ export default function AppNavbar() {
                   }`}
                 >
                   {item.label}
-                </button>
+                </Link>
               ))}
             </nav>
           ) : null}
@@ -183,7 +189,7 @@ export default function AppNavbar() {
                 <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden py-1">
                   <button
                     type="button"
-                    onClick={() => router.push(getProfileHref())}
+                    onClick={() => navigateTo(getProfileHref())}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <User className="w-4 h-4 text-gray-500" />
@@ -222,11 +228,10 @@ export default function AppNavbar() {
             <nav className="flex flex-col gap-2">
               {!hideNavLinks
                 ? navItems.map((item) => (
-                  <button
+                  <Link
                     key={item.href}
-                    type="button"
+                    href={item.href}
                     onClick={() => {
-                      router.push(item.href);
                       setMobileMenuOpen(false);
                     }}
                     className={`px-4 py-2 rounded-md font-medium text-left transition-colors ${
@@ -236,7 +241,7 @@ export default function AppNavbar() {
                     }`}
                   >
                     {item.label}
-                  </button>
+                  </Link>
                 ))
                 : null}
 
@@ -244,7 +249,7 @@ export default function AppNavbar() {
               <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
                 <button
                   type="button"
-                  onClick={() => router.push(getProfileHref())}
+                  onClick={() => navigateTo(getProfileHref())}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100 text-left text-sm"
                 >
                   <User className="w-4 h-4 text-gray-500" />

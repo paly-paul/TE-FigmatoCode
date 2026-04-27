@@ -277,22 +277,32 @@ function SkillsProjectsPageContent() {
 
   function scrollToFirstValidationErrorField(nextErrors: FormErrors): void {
     if (typeof window === "undefined") return;
+    if (isMobileViewport) {
+      setMobileAccordionOpen((prev) => ({
+        keySkills: prev.keySkills || Boolean(nextErrors.skills),
+        experiences: prev.experiences || Boolean(nextErrors.experiences),
+        projects: prev.projects || Boolean(nextErrors.projects),
+      }));
+    }
     window.requestAnimationFrame(() => {
-      if (nextErrors.skills && skillsSectionRef.current) {
-        skillsSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-      const invalidInputs = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          "input.border-red-400, select.border-red-400, textarea.border-red-400"
-        )
-      );
-      const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
-      if (!firstVisibleInvalid) return;
-      firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
-      if ("focus" in firstVisibleInvalid) {
-        firstVisibleInvalid.focus({ preventScroll: true });
-      }
+      // Wait one more frame so accordion open-state is reflected in the DOM.
+      window.requestAnimationFrame(() => {
+        if (nextErrors.skills && skillsSectionRef.current) {
+          skillsSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const invalidInputs = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            "input.border-red-400, select.border-red-400, textarea.border-red-400"
+          )
+        );
+        const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
+        if (!firstVisibleInvalid) return;
+        firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+        if ("focus" in firstVisibleInvalid) {
+          firstVisibleInvalid.focus({ preventScroll: true });
+        }
+      });
     });
   }
 

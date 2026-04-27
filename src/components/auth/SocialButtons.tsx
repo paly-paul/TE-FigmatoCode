@@ -13,11 +13,23 @@ export function SocialLoginDivider() {
 }
 
 export function SocialLoginButtons() {
+  async function handleGoogleClick() {
+    try {
+      const res = await fetch("/api/auth/google/start", { method: "GET" });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) return;
+      window.location.href = data.url;
+    } catch {
+      // noop: we keep the UI simple here; login page already shows primary login errors
+    }
+  }
+
   return (
     <div className="grid grid-cols-2 gap-3">
       <button
         type="button"
         className="flex items-center justify-center gap-2 border border-gray-300 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+        onClick={handleGoogleClick}
       >
         <GoogleIcon />
         Google
