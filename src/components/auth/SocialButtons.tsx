@@ -17,10 +17,20 @@ export function SocialLoginButtons() {
     try {
       const res = await fetch("/api/auth/google/start", { method: "GET" });
       const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) return;
+      console.log("[google-login] /api/auth/google/start response", {
+        ok: res.ok,
+        status: res.status,
+        data,
+      });
+      if (!res.ok || !data.url) {
+        alert(`Google login start failed. status=${res.status} error=${data.error ?? "unknown"}`);
+        return;
+      }
+      console.log("[google-login] redirecting to", data.url);
       window.location.href = data.url;
-    } catch {
-      // noop: we keep the UI simple here; login page already shows primary login errors
+    } catch (err) {
+      console.error("[google-login] unexpected error", err);
+      alert("Google login start failed due to unexpected error. Check console logs.");
     }
   }
 

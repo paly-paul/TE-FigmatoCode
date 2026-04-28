@@ -13,6 +13,18 @@ function stripHtml(input: string) {
   return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function normalizeCookieForThisApp(cookie: string) {
+  let next = cookie.replace(/;\s*Domain=[^;]+/i, "");
+  next = next.replace(/;\s*Path=[^;]+/i, "; Path=/");
+  if (!/;\s*Path=/i.test(next)) next = `${next}; Path=/`;
+  if (process.env.NODE_ENV !== "production") {
+    const hasSameSiteNone = /;\s*SameSite=None\b/i.test(next);
+    if (hasSameSiteNone) next = next.replace(/;\s*SameSite=None\b/i, "; SameSite=Lax");
+    next = next.replace(/;\s*Secure\b/i, "");
+  }
+  return next;
+}
+
 
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -58,6 +70,14 @@ export async function POST(request: Request) {
         password,
       }),
     });
+    const upstreamSetCookies: string[] = (() => {
+      const anyHeaders = upstream.headers as any;
+      if (typeof anyHeaders.getSetCookie === "function") {
+        return anyHeaders.getSetCookie() as string[];
+      }
+      const single = upstream.headers.get("set-cookie");
+      return single ? [single] : [];
+    })();
 
     const text = await upstream.text();
     let data: Record<string, unknown>;
@@ -69,6 +89,9 @@ export async function POST(request: Request) {
 
     const withUpstreamUrl = (payload: unknown, status: number) => {
       const res = NextResponse.json(payload, { status });
+      for (const cookie of upstreamSetCookies) {
+        res.headers.append("set-cookie", normalizeCookieForThisApp(cookie));
+      }
       res.headers.set("x-upstream-url", url);
       return res;
     };
