@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
   const backendBase =
     process.env.BACKEND_URL?.replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_API_FRAPPE_URL?.replace(/\/$/, "");
@@ -16,7 +16,22 @@ export async function GET() {
     return NextResponse.json({ error: "Google client id is not set." }, { status: 503 });
   }
 
-  const successRedirect = process.env.NEXT_PUBLIC_AUTH_SUCCESS_REDIRECT?.trim() || "/auth-callback";
+  const requestedSuccessRedirect = process.env.NEXT_PUBLIC_AUTH_SUCCESS_REDIRECT?.trim() || "";
+  const requestOrigin = new URL(request.url).origin;
+  const defaultSuccessRedirect = `${requestOrigin}/auth-callback`;
+
+  const successRedirect = (() => {
+    if (!requestedSuccessRedirect) return defaultSuccessRedirect;
+    try {
+      const parsed = new URL(requestedSuccessRedirect);
+      const isCallbackPath = parsed.pathname === "/auth-callback" || parsed.pathname.startsWith("/auth/google/callback");
+      return isCallbackPath ? parsed.toString() : defaultSuccessRedirect;
+    } catch {
+      const normalized = requestedSuccessRedirect.startsWith("/") ? requestedSuccessRedirect : `/${requestedSuccessRedirect}`;
+      const isCallbackPath = normalized === "/auth-callback" || normalized.startsWith("/auth/google/callback");
+      return isCallbackPath ? `${requestOrigin}${normalized}` : defaultSuccessRedirect;
+    }
+  })();
 
   const state = Buffer.from(successRedirect, "utf8").toString("base64");
   const configuredRedirectUri =
