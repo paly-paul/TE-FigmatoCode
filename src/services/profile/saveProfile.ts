@@ -49,8 +49,54 @@ function normalizeContactFields(record: Record<string, unknown>): Record<string,
   };
 }
 
+function sanitizeProfileImageField(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const fileUrl = typeof record.file_url === "string" ? record.file_url.trim() : "";
+  const altUrl = typeof record.url === "string" ? record.url.trim() : "";
+  const resolved = fileUrl || altUrl;
+  return resolved ? resolved : undefined;
+}
+
+function sanitizePayloadObject(input: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+
+  for (const [key, rawValue] of Object.entries(input)) {
+    if (rawValue === undefined || rawValue === null) continue;
+    if (typeof rawValue === "string" && rawValue.trim() === "" && key !== "alternative_email") continue;
+
+    if (key === "profile_image") {
+      const sanitizedImage = sanitizeProfileImageField(rawValue);
+      if (sanitizedImage !== undefined) {
+        output[key] = sanitizedImage;
+      }
+      continue;
+    }
+
+    if (Array.isArray(rawValue)) {
+      output[key] = rawValue;
+      continue;
+    }
+
+    if (typeof rawValue === "object") {
+      const nested = sanitizePayloadObject(rawValue as Record<string, unknown>);
+      if (Object.keys(nested).length > 0) {
+        output[key] = nested;
+      }
+      continue;
+    }
+
+    output[key] = rawValue;
+  }
+
+  return output;
+}
+
 export async function saveProfile(payload: SaveProfilePayload): Promise<Record<string, unknown>> {
-  const normalizedPayload = {
+  const normalizedPayload = sanitizePayloadObject({
     ...normalizeContactFields(payload),
     profile:
       payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile)
@@ -60,7 +106,7 @@ export async function saveProfile(payload: SaveProfilePayload): Promise<Record<s
       payload.profile_doc && typeof payload.profile_doc === "object" && !Array.isArray(payload.profile_doc)
         ? normalizeContactFields(payload.profile_doc)
         : payload.profile_doc,
-  };
+  });
 
   const res = await fetch("/api/method/create_edit_profile/", {
     method: "POST",

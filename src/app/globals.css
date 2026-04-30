@@ -34,6 +34,44 @@
   .mobile-success-stories-swiper .swiper-pagination-bullet-active {
     @apply bg-primary-600;
   }
+
+  .dual-range-input {
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+
+  .dual-range-input::-webkit-slider-runnable-track {
+    height: 100%;
+    background: transparent;
+  }
+
+  .dual-range-input::-moz-range-track {
+    height: 100%;
+    background: transparent;
+  }
+
+  .dual-range-input::-webkit-slider-thumb {
+    pointer-events: auto;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .dual-range-input::-moz-range-thumb {
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    cursor: pointer;
+  }
 }
 
 @layer utilities {

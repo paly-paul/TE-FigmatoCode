@@ -33,6 +33,81 @@ function pickString(obj: UnknownRecord, ...keys: string[]) {
   return undefined;
 }
 
+function pickNumber(obj: UnknownRecord, ...keys: string[]) {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number.parseFloat(value.trim());
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function clampPercent(value: number | undefined): number | undefined {
+  if (!Number.isFinite(value as number)) return undefined;
+  return Math.max(0, Math.min(100, Math.round(value as number)));
+}
+
+function parseNumberLike(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function findNumberByKeyMatcher(
+  input: unknown,
+  matcher: (key: string) => boolean,
+  depth = 0
+): number | undefined {
+  if (depth > 5 || input == null) return undefined;
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = findNumberByKeyMatcher(item, matcher, depth + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (typeof input !== "object") return undefined;
+
+  const record = input as UnknownRecord;
+  for (const [key, value] of Object.entries(record)) {
+    if (matcher(key)) {
+      const parsed = parseNumberLike(value);
+      if (parsed !== undefined) return parsed;
+    }
+    const found = findNumberByKeyMatcher(value, matcher, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function pickNestedImageUrl(obj: UnknownRecord, ...keys: string[]) {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) return value.trim();
+    if (!value || typeof value !== "object") continue;
+    const record = value as UnknownRecord;
+    const nested =
+      pickString(record, "file_url", "fileUrl", "url", "image_url", "imageUrl", "src", "href") ??
+      pickString(
+        record,
+        "profile_image",
+        "profileImage",
+        "profile_image_url",
+        "profileImageUrl",
+        "profile_photo",
+        "profilePhoto"
+      );
+    if (nested && /^https?:\/\//i.test(nested)) return nested;
+  }
+  return undefined;
+}
+
 function pickDisplayString(obj: UnknownRecord, ...keys: string[]) {
   for (const key of keys) {
     const value = pickString(obj, key);
@@ -786,7 +861,23 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     pickString(root, "experience_months", "experienceMonths") ??
     parsedMonthsFromTotal;
 
+  const profileStrengthFallback = findNumberByKeyMatcher(
+    root,
+    (key) =>
+      /(profile[_\s-]*strength|strength[_\s-]*profile|profile[_\s-]*completion|completion[_\s-]*percent|profile[_\s-]*percent)/i.test(
+        key
+      )
+  );
+  const visibilityScoreFallback = findNumberByKeyMatcher(
+    root,
+    (key) => /(visibility[_\s-]*score|visibility[_\s-]*percent|profile[_\s-]*visibility)/i.test(key)
+  );
+
   return {
+    profileStatus:
+      pickString(profileRecord, "profile_status", "status") ??
+      pickString(profileVersion, "profile_status", "status") ??
+      pickString(root, "profile_status", "status"),
     professionalTitle: pickString(profileVersion, "professional_title", "professionalTitle", "designation"),
     experienceYears: experienceYearsValue,
     experienceMonths: experienceMonthsValue,
@@ -858,6 +949,110 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
         "preferredLocationText"
       )
     ),
+    profileImageUrl:
+      pickNestedImageUrl(
+        profileRecord,
+        "profile_image",
+        "profile_pic",
+        "profile_photo",
+        "profile_image_url",
+        "profile_photo_url",
+        "profileImage",
+        "profileImageUrl",
+        "image",
+        "photo",
+        "avatar"
+      ) ??
+      pickNestedImageUrl(
+        profileVersion,
+        "profile_image",
+        "profile_pic",
+        "profile_photo",
+        "profile_image_url",
+        "profile_photo_url",
+        "profileImage",
+        "profileImageUrl",
+        "image",
+        "photo",
+        "avatar"
+      ) ??
+      pickNestedImageUrl(
+        root,
+        "profile_image",
+        "profile_pic",
+        "profile_photo",
+        "profile_image_url",
+        "profile_photo_url",
+        "profileImage",
+        "profileImageUrl",
+        "image",
+        "photo",
+        "avatar"
+      ),
+    profileStrength:
+      clampPercent(
+        pickNumber(
+          profileVersion,
+          "profile_strength",
+          "profileStrength",
+          "profile_completion",
+          "completion_percentage",
+          "completionPercent",
+          "profile_percent"
+        )
+      ) ??
+      clampPercent(
+        pickNumber(
+          profileRecord,
+          "profile_strength",
+          "profileStrength",
+          "profile_completion",
+          "completion_percentage",
+          "completionPercent",
+          "profile_percent"
+        )
+      ) ??
+      clampPercent(
+        pickNumber(
+          root,
+          "profile_strength",
+          "profileStrength",
+          "profile_completion",
+          "completion_percentage",
+          "completionPercent",
+          "profile_percent"
+        )
+      ) ??
+      clampPercent(profileStrengthFallback),
+    visibilityScore:
+      clampPercent(
+        pickNumber(
+          profileVersion,
+          "visibility_score",
+          "visibilityScore",
+          "visibility_percent",
+          "visibility_percentage"
+        )
+      ) ??
+      clampPercent(
+        pickNumber(
+          profileRecord,
+          "visibility_score",
+          "visibilityScore",
+          "visibility_percent",
+          "visibility_percentage"
+        )
+      ) ??
+      clampPercent(
+        pickNumber(
+          root,
+          "visibility_score",
+          "visibilityScore",
+          "visibility_percent",
+          "visibility_percentage"
+        )
+      ) ??
+      clampPercent(visibilityScoreFallback),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
     tools,
     education: educationFromQualifications ?? educationFromDetails,

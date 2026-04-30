@@ -163,6 +163,16 @@ function isApplicationTimelineCard(action: ActionDrawerActionCard | null): boole
   return Boolean(action.applicationStage?.trim() || action.applicationAppliedDate?.trim());
 }
 
+function isSalaryNegotiationCard(action: ActionDrawerActionCard | null): boolean {
+  const title = action?.title.toLowerCase() ?? "";
+  return (
+    title === actionDrawerTitleMatchers.salaryNegotiation ||
+    title.includes("negotiation") ||
+    title.includes("proposal") ||
+    title.includes("salary")
+  );
+}
+
 export default function ActionDrawer({
   open,
   onClose,
@@ -181,6 +191,7 @@ export default function ActionDrawer({
   );
   const [isProposalExpanded, setIsProposalExpanded] = useState(true);
   const [isProjectInfoExpanded, setIsProjectInfoExpanded] = useState(true);
+  const [isSalaryNegotiationExpanded, setIsSalaryNegotiationExpanded] = useState(true);
   const [showClarificationBox, setShowClarificationBox] = useState(false);
   const [clarificationRemark, setClarificationRemark] = useState("");
   const [isClarificationSubmitting, setIsClarificationSubmitting] = useState(false);
@@ -222,9 +233,11 @@ export default function ActionDrawer({
       setAvailableDate(minAvailableDate);
       setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
-      setIsProposalExpanded(true);
-      setIsProjectInfoExpanded(true);
-      setShowClarificationBox(false);
+      const startWithSalaryNegotiationOpen = isSalaryNegotiationCard(action);
+      setIsProposalExpanded(!startWithSalaryNegotiationOpen);
+      setIsProjectInfoExpanded(!startWithSalaryNegotiationOpen);
+      setIsSalaryNegotiationExpanded(startWithSalaryNegotiationOpen);
+      setShowClarificationBox(isSalaryNegotiationCard(action));
       setClarificationRemark("");
       setIsClarificationSubmitting(false);
       setHasAcceptedTerms(true);
@@ -532,19 +545,23 @@ export default function ActionDrawer({
   const resolvedPostedAgo = rrDetails?.posted_time || actionDrawerJobSummary.postedAgo;
   const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
+  const resolvedRotationCycle =
+    rrDetails?.rotation_cycle?.trim() === "0"
+      ? "No Rotation"
+      : rrDetails?.rotation_cycle || actionDrawerJobSummary.metaFields[3].value;
   const recruiterAcceptedDateLabel = formatTimelineDate(action?.sourcingAcceptedAt);
   const stageReceivedDateLabel =
     formatTimelineDate(action?.receivedAt) || formatTimelineDate(action?.timestamp);
   const proposalJoiningDateLabel = formatTimelineDate(proposalData?.proposed_joining_date);
   const resolvedMetaFields = [
     {
-      label: "Project Est. Start Date",
-      value: rrDetails?.start_date || actionDrawerJobSummary.metaFields[0].value,
+      label: "Position Est. Start Date",
+      value: rrDetails?.position_start_date || "0",
       icon: "calendar" as const,
     },
     {
-      label: "Project Est. End Date",
-      value: rrDetails?.end_date || actionDrawerJobSummary.metaFields[1].value,
+      label: "Position Est. End Date",
+      value: rrDetails?.position_est_end_date || "0",
       icon: "calendar" as const,
     },
     {
@@ -554,7 +571,7 @@ export default function ActionDrawer({
     },
     {
       label: "Rotation Cycle",
-      value: rrDetails?.rotation_cycle || actionDrawerJobSummary.metaFields[3].value,
+      value: resolvedRotationCycle,
       icon: "refresh" as const,
     },
     {
@@ -731,7 +748,15 @@ export default function ActionDrawer({
       <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
         <button
           type="button"
-          onClick={() => setIsProjectInfoExpanded((current) => !current)}
+          onClick={() =>
+            setIsProjectInfoExpanded((current) => {
+              const next = !current;
+              if (next) {
+                setIsSalaryNegotiationExpanded(false);
+              }
+              return next;
+            })
+          }
           className="flex w-full items-center justify-between px-4 py-3 text-left"
         >
           <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Project Info</h3>
@@ -768,7 +793,15 @@ export default function ActionDrawer({
       <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
         <button
           type="button"
-          onClick={() => setIsProposalExpanded((current) => !current)}
+          onClick={() =>
+            setIsProposalExpanded((current) => {
+              const next = !current;
+              if (next) {
+                setIsSalaryNegotiationExpanded(false);
+              }
+              return next;
+            })
+          }
           className="flex w-full items-center justify-between px-4 py-3 text-left"
         >
           <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Proposal</h3>
@@ -819,21 +852,49 @@ export default function ActionDrawer({
         ) : null}
       </div>
 
-      {showClarificationBox ? (
-        <div ref={clarificationBoxRef} className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
-          <div className="border-b border-[#E6ECF6] px-4 py-3">
-            <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Candidate Remarks</h3>
+      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+        <button
+          type="button"
+          onClick={() =>
+            setIsSalaryNegotiationExpanded((current) => {
+              const next = !current;
+              if (next) {
+                setIsProjectInfoExpanded(false);
+                setIsProposalExpanded(false);
+              }
+              return next;
+            })
+          }
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Salary Negotiation</h3>
+          {isSalaryNegotiationExpanded ? (
+            <ChevronUp className="h-5 w-5 text-[#202939]" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-[#202939]" />
+          )}
+        </button>
+        {isSalaryNegotiationExpanded ? (
+          <div className="border-t border-[#E6ECF6] px-4 py-3">
+            {showClarificationBox ? (
+              <div ref={clarificationBoxRef}>
+                <h4 className="mb-2 text-sm font-medium text-[#202939]">Candidate Remarks</h4>
+                <textarea
+                  value={clarificationRemark}
+                  onChange={(event) => setClarificationRemark(event.target.value)}
+                  placeholder="Enter your remark here..."
+                  className="min-h-[130px] w-full resize-y rounded-md border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8]"
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-[#5E7397]">
+                Use "Request Clarification" to share remarks for negotiation.
+              </p>
+            )}
           </div>
-          <div className="px-4 py-3">
-            <textarea
-              value={clarificationRemark}
-              onChange={(event) => setClarificationRemark(event.target.value)}
-              placeholder="Enter your remark here..."
-              className="min-h-[130px] w-full resize-y rounded-md border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8]"
-            />
-          </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
+
     </div>
   );
 
@@ -1172,7 +1233,12 @@ export default function ActionDrawer({
       <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
         <button
           type="button"
-          onClick={() => setShowClarificationBox(true)}
+          onClick={() => {
+            setShowClarificationBox(true);
+            setIsSalaryNegotiationExpanded(true);
+            setIsProjectInfoExpanded(false);
+            setIsProposalExpanded(false);
+          }}
           className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
         >
           {actionDrawerFooter.requestClarification}

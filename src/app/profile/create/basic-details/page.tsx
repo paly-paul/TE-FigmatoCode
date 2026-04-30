@@ -11,7 +11,7 @@ import { SmallUploadIcon, TrashIcon } from "@/components/icons";
 import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { getCandidateProfileData } from "@/services/profile";
+import { getCandidateProfileData, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
@@ -34,8 +34,177 @@ const languageRatings = [
   "Intermediate",
   "Basic",
 ];
-const languageOptions = ["English", "Spanish", "French", "Hindi", "Portuguese", "Other"];
-const supportedCountryCodes = ["+1", "+91", "+44"];
+const countryDialCodes = [
+  { country_code: "AF", dial_code: "+93" },
+  { country_code: "AL", dial_code: "+355" },
+  { country_code: "DZ", dial_code: "+213" },
+  { country_code: "AS", dial_code: "+1-684" },
+  { country_code: "AD", dial_code: "+376" },
+  { country_code: "AO", dial_code: "+244" },
+  { country_code: "AI", dial_code: "+1-264" },
+  { country_code: "AQ", dial_code: "+672" },
+  { country_code: "AG", dial_code: "+1-268" },
+  { country_code: "AR", dial_code: "+54" },
+  { country_code: "AM", dial_code: "+374" },
+  { country_code: "AW", dial_code: "+297" },
+  { country_code: "AU", dial_code: "+61" },
+  { country_code: "AT", dial_code: "+43" },
+  { country_code: "AZ", dial_code: "+994" },
+  { country_code: "BS", dial_code: "+1-242" },
+  { country_code: "BH", dial_code: "+973" },
+  { country_code: "BD", dial_code: "+880" },
+  { country_code: "BB", dial_code: "+1-246" },
+  { country_code: "BY", dial_code: "+375" },
+  { country_code: "BE", dial_code: "+32" },
+  { country_code: "BZ", dial_code: "+501" },
+  { country_code: "BJ", dial_code: "+229" },
+  { country_code: "BM", dial_code: "+1-441" },
+  { country_code: "BT", dial_code: "+975" },
+  { country_code: "BO", dial_code: "+591" },
+  { country_code: "BA", dial_code: "+387" },
+  { country_code: "BW", dial_code: "+267" },
+  { country_code: "BR", dial_code: "+55" },
+  { country_code: "BN", dial_code: "+673" },
+  { country_code: "BG", dial_code: "+359" },
+  { country_code: "BF", dial_code: "+226" },
+  { country_code: "BI", dial_code: "+257" },
+  { country_code: "KH", dial_code: "+855" },
+  { country_code: "CM", dial_code: "+237" },
+  { country_code: "CA", dial_code: "+1" },
+  { country_code: "CV", dial_code: "+238" },
+  { country_code: "KY", dial_code: "+1-345" },
+  { country_code: "CF", dial_code: "+236" },
+  { country_code: "TD", dial_code: "+235" },
+  { country_code: "CL", dial_code: "+56" },
+  { country_code: "CN", dial_code: "+86" },
+  { country_code: "CO", dial_code: "+57" },
+  { country_code: "KM", dial_code: "+269" },
+  { country_code: "CG", dial_code: "+242" },
+  { country_code: "CR", dial_code: "+506" },
+  { country_code: "CI", dial_code: "+225" },
+  { country_code: "HR", dial_code: "+385" },
+  { country_code: "CU", dial_code: "+53" },
+  { country_code: "CY", dial_code: "+357" },
+  { country_code: "CZ", dial_code: "+420" },
+  { country_code: "DK", dial_code: "+45" },
+  { country_code: "DJ", dial_code: "+253" },
+  { country_code: "DM", dial_code: "+1-767" },
+  { country_code: "DO", dial_code: "+1-809" },
+  { country_code: "EC", dial_code: "+593" },
+  { country_code: "EG", dial_code: "+20" },
+  { country_code: "SV", dial_code: "+503" },
+  { country_code: "GQ", dial_code: "+240" },
+  { country_code: "ER", dial_code: "+291" },
+  { country_code: "EE", dial_code: "+372" },
+  { country_code: "ET", dial_code: "+251" },
+  { country_code: "FI", dial_code: "+358" },
+  { country_code: "FR", dial_code: "+33" },
+  { country_code: "GA", dial_code: "+241" },
+  { country_code: "GM", dial_code: "+220" },
+  { country_code: "GE", dial_code: "+995" },
+  { country_code: "DE", dial_code: "+49" },
+  { country_code: "GH", dial_code: "+233" },
+  { country_code: "GI", dial_code: "+350" },
+  { country_code: "GR", dial_code: "+30" },
+  { country_code: "GL", dial_code: "+299" },
+  { country_code: "GD", dial_code: "+1-473" },
+  { country_code: "GT", dial_code: "+502" },
+  { country_code: "GN", dial_code: "+224" },
+  { country_code: "GY", dial_code: "+592" },
+  { country_code: "HT", dial_code: "+509" },
+  { country_code: "HN", dial_code: "+504" },
+  { country_code: "HK", dial_code: "+852" },
+  { country_code: "HU", dial_code: "+36" },
+  { country_code: "IS", dial_code: "+354" },
+  { country_code: "IN", dial_code: "+91" },
+  { country_code: "ID", dial_code: "+62" },
+  { country_code: "IR", dial_code: "+98" },
+  { country_code: "IQ", dial_code: "+964" },
+  { country_code: "IE", dial_code: "+353" },
+  { country_code: "IL", dial_code: "+972" },
+  { country_code: "IT", dial_code: "+39" },
+  { country_code: "JP", dial_code: "+81" },
+  { country_code: "JO", dial_code: "+962" },
+  { country_code: "KZ", dial_code: "+7" },
+  { country_code: "KE", dial_code: "+254" },
+  { country_code: "KW", dial_code: "+965" },
+  { country_code: "KG", dial_code: "+996" },
+  { country_code: "LA", dial_code: "+856" },
+  { country_code: "LV", dial_code: "+371" },
+  { country_code: "LB", dial_code: "+961" },
+  { country_code: "LS", dial_code: "+266" },
+  { country_code: "LR", dial_code: "+231" },
+  { country_code: "LY", dial_code: "+218" },
+  { country_code: "LT", dial_code: "+370" },
+  { country_code: "LU", dial_code: "+352" },
+  { country_code: "MO", dial_code: "+853" },
+  { country_code: "MK", dial_code: "+389" },
+  { country_code: "MG", dial_code: "+261" },
+  { country_code: "MY", dial_code: "+60" },
+  { country_code: "MV", dial_code: "+960" },
+  { country_code: "ML", dial_code: "+223" },
+  { country_code: "MT", dial_code: "+356" },
+  { country_code: "MX", dial_code: "+52" },
+  { country_code: "MD", dial_code: "+373" },
+  { country_code: "MN", dial_code: "+976" },
+  { country_code: "ME", dial_code: "+382" },
+  { country_code: "MA", dial_code: "+212" },
+  { country_code: "MZ", dial_code: "+258" },
+  { country_code: "NA", dial_code: "+264" },
+  { country_code: "NP", dial_code: "+977" },
+  { country_code: "NL", dial_code: "+31" },
+  { country_code: "NZ", dial_code: "+64" },
+  { country_code: "NG", dial_code: "+234" },
+  { country_code: "NO", dial_code: "+47" },
+  { country_code: "OM", dial_code: "+968" },
+  { country_code: "PK", dial_code: "+92" },
+  { country_code: "PA", dial_code: "+507" },
+  { country_code: "PE", dial_code: "+51" },
+  { country_code: "PH", dial_code: "+63" },
+  { country_code: "PL", dial_code: "+48" },
+  { country_code: "PT", dial_code: "+351" },
+  { country_code: "PR", dial_code: "+1-787" },
+  { country_code: "QA", dial_code: "+974" },
+  { country_code: "RO", dial_code: "+40" },
+  { country_code: "RU", dial_code: "+7" },
+  { country_code: "SA", dial_code: "+966" },
+  { country_code: "SG", dial_code: "+65" },
+  { country_code: "ZA", dial_code: "+27" },
+  { country_code: "KR", dial_code: "+82" },
+  { country_code: "ES", dial_code: "+34" },
+  { country_code: "LK", dial_code: "+94" },
+  { country_code: "SE", dial_code: "+46" },
+  { country_code: "CH", dial_code: "+41" },
+  { country_code: "TW", dial_code: "+886" },
+  { country_code: "TH", dial_code: "+66" },
+  { country_code: "TR", dial_code: "+90" },
+  { country_code: "TZ", dial_code: "+255" },
+  { country_code: "UA", dial_code: "+380" },
+  { country_code: "AE", dial_code: "+971" },
+  { country_code: "GB", dial_code: "+44" },
+  { country_code: "US", dial_code: "+1" },
+  { country_code: "UY", dial_code: "+598" },
+  { country_code: "UZ", dial_code: "+998" },
+  { country_code: "VN", dial_code: "+84" },
+  { country_code: "YE", dial_code: "+967" },
+  { country_code: "ZM", dial_code: "+260" },
+  { country_code: "ZW", dial_code: "+263" },
+];
+const defaultCountryCodeOptions = Array.from(new Set(countryDialCodes.map((item) => item.country_code)));
+const PHONE_MAX_LENGTH = 15;
+
+function sanitizePhoneInput(value: string): string {
+  return value.replace(/\D/g, "").slice(0, PHONE_MAX_LENGTH);
+}
+
+function sanitizeSalaryInput(value: string): string {
+  const sanitized = value.replace(/[^\d.]/g, "");
+  const dotIndex = sanitized.indexOf(".");
+  if (dotIndex === -1) return sanitized;
+  const integerPart = sanitized.slice(0, dotIndex);
+  const decimalPart = sanitized.slice(dotIndex + 1).replace(/\./g, "");
+  return `${integerPart}.${decimalPart}`;
+}
 
 interface EducationEntry {
   id: string;
@@ -73,6 +242,10 @@ interface LanguageEntry {
 interface LocationSuggestion {
   id: string;
   label: string;
+}
+
+interface LocationSuggestionsResponse {
+  data?: Array<{ id?: string; label?: string }>;
 }
 
 function createEntryId(prefix = "entry") {
@@ -129,6 +302,27 @@ function createLanguageEntry(
   };
 }
 
+function normalizeLanguageValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function toLanguageDisplayName(value: string): string {
+  return value.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function sanitizeLanguageOptions(options: string[]): string[] {
+  const seen = new Set<string>();
+  const sanitized: string[] = [];
+  for (const option of options) {
+    const displayName = toLanguageDisplayName(option);
+    const normalized = normalizeLanguageValue(displayName);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    sanitized.push(displayName);
+  }
+  return sanitized;
+}
+
 interface BasicDetailsForm {
   professionalTitle: string;
   expYears: string;
@@ -149,7 +343,7 @@ interface BasicDetailsForm {
   preferredLocation: string;
 }
 
-type FormErrors = Partial<Record<keyof BasicDetailsForm, string>>;
+type FormErrors = Partial<Record<keyof BasicDetailsForm | "certifications", string>>;
 
 function normalizeExperienceYears(value: string | undefined): string {
   if (value == null || value === "") return "";
@@ -177,8 +371,54 @@ function normalizeGender(value: string | undefined): string {
 function normalizeCountryCode(value: string | undefined): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return "";
-  const match = trimmed.match(/^\+\d{1,4}/);
-  return match?.[0] ?? trimmed;
+  if (/^[A-Za-z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
+  if (/^\+[\d-]{1,12}$/.test(trimmed)) return normalizeDialCode(trimmed);
+  return "";
+}
+
+function normalizeDialCode(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  const digits = trimmed.replace(/\D/g, "");
+  return digits ? `+${digits}` : "";
+}
+
+function inferCountryCodeFromContact(contact: string): string | undefined {
+  const normalizedContact = (contact ?? "").trim();
+  if (!normalizedContact.startsWith("+")) return undefined;
+  const normalizedPhone = normalizeDialCode(normalizedContact);
+  const sorted = [...countryDialCodes].sort(
+    (a, b) => normalizeDialCode(b.dial_code).length - normalizeDialCode(a.dial_code).length
+  );
+  return sorted.find((item) => normalizedPhone.startsWith(normalizeDialCode(item.dial_code)))?.country_code;
+}
+
+function getDialCode(countryCode: string | undefined): string {
+  const normalized = normalizeCountryCode(countryCode);
+  if (!normalized) return "";
+  if (normalized.startsWith("+")) return normalizeDialCode(normalized);
+  return countryDialCodes.find((item) => item.country_code === normalized)?.dial_code ?? "";
+}
+
+function getLocalPhoneNumber(phone: string | undefined): string {
+  const normalizedPhone = (phone ?? "").trim();
+  if (!normalizedPhone) return "";
+  const normalizedContact = normalizeDialCode(normalizedPhone);
+  const sorted = [...countryDialCodes].sort(
+    (a, b) => normalizeDialCode(b.dial_code).length - normalizeDialCode(a.dial_code).length
+  );
+  const matched = sorted.find((item) => normalizedContact.startsWith(normalizeDialCode(item.dial_code)));
+  if (!matched) return normalizedPhone;
+  const localNumber = normalizedContact.slice(normalizeDialCode(matched.dial_code).length);
+  return localNumber.trim();
+}
+
+function formatCountryOptionLabel(value: string): string {
+  const normalized = normalizeCountryCode(value);
+  if (!normalized) return value;
+  if (normalized.startsWith("+")) return normalized;
+  const dialCode = getDialCode(normalized);
+  return dialCode ? `${normalized} (${dialCode})` : normalized;
 }
 
 function normalizeDateForInput(value: string | undefined): string {
@@ -343,15 +583,23 @@ function trimToSentenceBoundary(value: string, maxLength: number) {
 }
 
 function extractPromptFocus(prompt: string) {
-  const cleaned = cleanPhrase(prompt)
-    .replace(/^generate\s+(me\s+)?/i, "")
-    .replace(/^create\s+(me\s+)?/i, "")
-    .replace(/^write\s+(me\s+)?/i, "")
-    .replace(/^a\s+professional\s+summary\s+/i, "")
-    .replace(/^professional\s+summary\s+/i, "")
-    .replace(/^summary\s+/i, "")
-    .replace(/^for\s+/i, "")
-    .replace(/^an?\s+/i, "");
+  let cleaned = cleanPhrase(prompt);
+
+  // Normalize common user phrasing:
+  // - "Generate a summary for a senior engineer"
+  // - "Create professional summary for frontend"
+  cleaned = cleaned
+    .replace(/^(generate|create|write)\s+(me\s+)?/i, "")
+    .replace(/^((a|an)\s+)?(professional\s+)?summary\s+/i, "")
+    .replace(/^for\s+/i, "");
+
+  // If the user included "... for <focus>", keep only "<focus>".
+  // This is intentionally permissive since users may type the prompt in many formats.
+  const forMatch = cleaned.match(/\bfor\s+(.+)$/i);
+  if (forMatch?.[1]) cleaned = forMatch[1];
+
+  // Drop leading articles after extraction ("a senior engineer" -> "senior engineer").
+  cleaned = cleaned.replace(/^an?\s+/i, "");
 
   return stripTrailingPeriod(cleaned);
 }
@@ -535,6 +783,29 @@ function buildGeneratedSummaryFromProfile(
   );
 }
 
+function extractUploadedFileRef(uploadResponse: Record<string, unknown> | null): string {
+  if (!uploadResponse) return "";
+  const roots: Array<Record<string, unknown>> = [
+    uploadResponse,
+    uploadResponse.message && typeof uploadResponse.message === "object"
+      ? (uploadResponse.message as Record<string, unknown>)
+      : {},
+    uploadResponse.data && typeof uploadResponse.data === "object"
+      ? (uploadResponse.data as Record<string, unknown>)
+      : {},
+  ];
+  const candidateKeys = ["file_url", "fileUrl", "url", "name", "file_name", "fileName"];
+  for (const root of roots) {
+    for (const key of candidateKeys) {
+      const value = root[key];
+      if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) {
+        return value.trim();
+      }
+    }
+  }
+  return "";
+}
+
 function MobileAccordionCard({
   title,
   expanded,
@@ -582,6 +853,7 @@ function BasicDetailsPageContent() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [profilePicPreview, setProfilePicPreview] = useState<string | null>(null);
+  const [isUploadingProfilePic, setIsUploadingProfilePic] = useState(false);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     personal: true,
     basicDetails: false,
@@ -590,8 +862,16 @@ function BasicDetailsPageContent() {
     externalLinks: false,
     languages: false,
   });
+  const [countryCodeOptions, setCountryCodeOptions] = useState<string[]>(defaultCountryCodeOptions);
+  const [openCountryCodeDropdown, setOpenCountryCodeDropdown] = useState(false);
+  const [countryCodeSearch, setCountryCodeSearch] = useState("");
   const [nationalityOptions, setNationalityOptions] = useState<string[]>(fallbackNationalityOptions);
   const [currencyOptions, setCurrencyOptions] = useState<string[]>(fallbackCurrencyOptions);
+  const [languageOptions, setLanguageOptions] = useState<string[]>([]);
+  const [isLanguageOptionsLoading, setIsLanguageOptionsLoading] = useState(true);
+  const [languageOptionsError, setLanguageOptionsError] = useState("");
+  const [openLanguageDropdownId, setOpenLanguageDropdownId] = useState<string | null>(null);
+  const [languageSearchById, setLanguageSearchById] = useState<Record<string, string>>({});
   const [currentLocationSuggestions, setCurrentLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [preferredLocationSuggestions, setPreferredLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
@@ -600,11 +880,31 @@ function BasicDetailsPageContent() {
 
   const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
 
+  function normalizeLocationSuggestions(rows: Array<{ id?: string; label?: string }>): LocationSuggestion[] {
+    return rows
+      .map((row) => ({
+        id: (row.id ?? row.label ?? "").trim(),
+        label: (row.label ?? "").trim(),
+      }))
+      .filter((row) => row.id && row.label);
+  }
+
+  function filterByPrefix(rows: LocationSuggestion[], query: string): LocationSuggestion[] {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return rows;
+    return rows.filter((row) => row.label.toLowerCase().startsWith(normalizedQuery));
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const raw = window.sessionStorage.getItem(PROFILE_PIC_STORAGE_KEY);
-      if (raw) setProfilePicPreview(raw);
+      if (raw) {
+        setProfilePicPreview(raw);
+        return;
+      }
+      const storedProfile = readResumeProfile();
+      if (storedProfile?.profileImageUrl) setProfilePicPreview(storedProfile.profileImageUrl);
     } catch {
       // ignore storage errors
     }
@@ -619,12 +919,12 @@ function BasicDetailsPageContent() {
     }
 
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
+    (async () => {
       try {
         setIsCurrentLocationLoading(true);
         const url = new URL("/api/method/get_location_details", window.location.origin);
         url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "10");
+        url.searchParams.set("limit", "100");
         url.searchParams.set("name", query);
         const res = await fetch(url.toString(), {
           method: "GET",
@@ -633,25 +933,19 @@ function BasicDetailsPageContent() {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed to fetch current location suggestions.");
-        const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+        const json = (await res.json()) as LocationSuggestionsResponse;
         const rows = Array.isArray(json.data) ? json.data : [];
-        const normalized = rows
-          .map((row) => ({
-            id: (row.id ?? row.label ?? "").trim(),
-            label: (row.label ?? "").trim(),
-          }))
-          .filter((row) => row.id && row.label);
-        setCurrentLocationSuggestions(normalized);
+        const normalized = normalizeLocationSuggestions(rows);
+        setCurrentLocationSuggestions(filterByPrefix(normalized, query));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setCurrentLocationSuggestions([]);
       } finally {
         setIsCurrentLocationLoading(false);
       }
-    }, 300);
+    })();
 
     return () => {
-      window.clearTimeout(timer);
       controller.abort();
     };
   }, [form.currentLocation]);
@@ -665,12 +959,12 @@ function BasicDetailsPageContent() {
     }
 
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
+    (async () => {
       try {
         setIsPreferredLocationLoading(true);
         const url = new URL("/api/method/get_location_details", window.location.origin);
         url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "10");
+        url.searchParams.set("limit", "100");
         url.searchParams.set("name", query);
         const res = await fetch(url.toString(), {
           method: "GET",
@@ -679,25 +973,19 @@ function BasicDetailsPageContent() {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed to fetch preferred location suggestions.");
-        const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+        const json = (await res.json()) as LocationSuggestionsResponse;
         const rows = Array.isArray(json.data) ? json.data : [];
-        const normalized = rows
-          .map((row) => ({
-            id: (row.id ?? row.label ?? "").trim(),
-            label: (row.label ?? "").trim(),
-          }))
-          .filter((row) => row.id && row.label);
-        setPreferredLocationSuggestions(normalized);
+        const normalized = normalizeLocationSuggestions(rows);
+        setPreferredLocationSuggestions(filterByPrefix(normalized, query));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setPreferredLocationSuggestions([]);
       } finally {
         setIsPreferredLocationLoading(false);
       }
-    }, 300);
+    })();
 
     return () => {
-      window.clearTimeout(timer);
       controller.abort();
     };
   }, [form.preferredLocation]);
@@ -706,8 +994,9 @@ function BasicDetailsPageContent() {
     let cancelled = false;
 
     (async () => {
-      try {
-        const [nationalityList, currencyList] = await Promise.all([
+      setIsLanguageOptionsLoading(true);
+      setLanguageOptionsError("");
+      const [nationalityResult, currencyResult, languageResult] = await Promise.allSettled([
           getDropdownDetailsOptions({
             doctype: "Profile Version",
             fieldName: "nationality",
@@ -715,20 +1004,34 @@ function BasicDetailsPageContent() {
             limit: 1000,
           }),
           getCurrencyListOptions(),
-        ]);
+          getDropdownDetailsOptions({
+            doctype: "Resource Requirement",
+            fieldName: "language_requirement",
+            page: 1,
+            limit: 200,
+          }),
+      ]);
 
-        if (cancelled) return;
+      if (cancelled) return;
 
-        if (nationalityList.length > 0) {
-          setNationalityOptions(nationalityList);
-        }
+      setCountryCodeOptions(defaultCountryCodeOptions);
 
-        if (currencyList.length > 0) {
-          setCurrencyOptions(currencyList);
-        }
-      } catch {
-        // keep fallback static options on API failure
+      if (nationalityResult.status === "fulfilled" && nationalityResult.value.length > 0) {
+        setNationalityOptions(nationalityResult.value);
       }
+
+      if (currencyResult.status === "fulfilled" && currencyResult.value.length > 0) {
+        setCurrencyOptions(currencyResult.value);
+      }
+
+      if (languageResult.status === "fulfilled" && languageResult.value.length > 0) {
+        setLanguageOptions(sanitizeLanguageOptions(languageResult.value));
+      } else if (languageResult.status === "rejected") {
+        setLanguageOptionsError("Could not load languages. Please refresh and try again.");
+      } else {
+        setLanguageOptionsError("No languages found.");
+      }
+      setIsLanguageOptionsLoading(false);
     })();
 
     return () => {
@@ -738,6 +1041,19 @@ function BasicDetailsPageContent() {
 
   function handlePickProfilePic() {
     profilePicInputRef.current?.click();
+  }
+
+  function handleRemoveProfilePic() {
+    setProfilePicPreview(null);
+    upsertResumeProfile({ profileImageUrl: "" });
+    try {
+      window.sessionStorage.removeItem(PROFILE_PIC_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    if (profilePicInputRef.current) {
+      profilePicInputRef.current.value = "";
+    }
   }
 
   async function handleProfilePicFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -756,18 +1072,32 @@ function BasicDetailsPageContent() {
       return;
     }
 
-    const dataUrl: string = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Failed to read file."));
-      reader.onload = () => resolve(String(reader.result));
-      reader.readAsDataURL(file);
-    });
-
-    setProfilePicPreview(dataUrl);
     try {
-      window.sessionStorage.setItem(PROFILE_PIC_STORAGE_KEY, dataUrl);
-    } catch {
-      // ignore storage errors
+      setIsUploadingProfilePic(true);
+      const uploadResponse = await uploadProfileFile(file);
+      const uploadedImageRef = extractUploadedFileRef(uploadResponse);
+      if (!uploadedImageRef) {
+        throw new Error("Upload succeeded but no profile image URL was returned.");
+      }
+
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to read file."));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+
+      setProfilePicPreview(dataUrl);
+      upsertResumeProfile({ profileImageUrl: uploadedImageRef });
+      try {
+        window.sessionStorage.setItem(PROFILE_PIC_STORAGE_KEY, dataUrl);
+      } catch {
+        // ignore storage errors
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to upload profile picture.");
+    } finally {
+      setIsUploadingProfilePic(false);
     }
 
     // Allow re-selecting the same file.
@@ -787,8 +1117,15 @@ function BasicDetailsPageContent() {
     const expYearsNorm = normalizeExperienceYears(profile.experienceYears);
     const expMonthsNorm = normalizeExperienceMonths(profile.experienceMonths);
     const normalizedGender = normalizeGender(profile.gender);
-    const normalizedCountryCode = normalizeCountryCode(profile.countryCode);
     const normalizedDob = normalizeDateForInput(profile.dob);
+    if (profile.profileImageUrl?.trim()) {
+      setProfilePicPreview(profile.profileImageUrl.trim());
+    }
+    const normalizedCountryCode = normalizeCountryCode(profile.countryCode);
+    const inferredCountryCode = inferCountryCodeFromContact(profile.phone ?? "");
+    const resolvedCountryCode = inferredCountryCode || normalizedCountryCode || "";
+    const localContactNumber = getLocalPhoneNumber(profile.phone ?? "");
+
     setForm((prev) => ({
       ...prev,
       professionalTitle: preferExistingFormValue(prev.professionalTitle, profile.professionalTitle ?? ""),
@@ -801,8 +1138,8 @@ function BasicDetailsPageContent() {
       lastName: preferExistingFormValue(prev.lastName, profile.lastName ?? ""),
       dob: preferExistingFormValue(prev.dob, normalizedDob),
       gender: preferExistingFormValue(prev.gender, normalizedGender),
-      countryCode: preferExistingFormValue(prev.countryCode, normalizedCountryCode),
-      contact: preferExistingFormValue(prev.contact, profile.phone ?? ""),
+      countryCode: resolvedCountryCode,
+      contact: localContactNumber,
       email: preferExistingFormValue(prev.email, profile.email ?? ""),
       altEmail: preferExistingFormValue(prev.altEmail, profile.altEmail ?? ""),
       nationality: preferExistingFormValue(prev.nationality, profile.nationality ?? ""),
@@ -854,10 +1191,10 @@ function BasicDetailsPageContent() {
       setLanguages(
         profile.languages.map((entry) =>
           createLanguageEntry({
-            language: entry.language ?? "",
-            read: entry.read ?? "",
-            write: entry.write ?? "",
-            speak: entry.speak ?? "",
+            language: toLanguageDisplayName(entry.language ?? ""),
+            read: (entry.read ?? "").trim(),
+            write: (entry.write ?? "").trim(),
+            speak: (entry.speak ?? "").trim(),
           })
         )
       );
@@ -870,11 +1207,11 @@ function BasicDetailsPageContent() {
       searchParams.get("profile_name")?.trim() ||
       "";
     const effectiveProfileName = queryProfileName || getProfileName() || "";
-    // In edit mode, prefer API hydration to avoid stale create-session data overwriting fields.
-    if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) return;
     const stored = readResumeProfile();
     console.log("Data from session storage:", stored);
     if (!stored) return;
+    // Even in edit mode, restore latest in-session draft first so back/next navigation
+    // does not clear fields like Languages before API hydration completes.
     applyProfileToForm(stored);
   }, [searchParams.toString()]);
 
@@ -999,10 +1336,10 @@ function BasicDetailsPageContent() {
 
     const trimmedLanguages = languages
       .map(({ language, read, write, speak }) => ({
-        language: language.trim(),
-        read,
-        write,
-        speak,
+        language: toLanguageDisplayName(language),
+        read: read.trim(),
+        write: write.trim(),
+        speak: speak.trim(),
       }))
       .filter((entry) => entry.language || entry.read || entry.write || entry.speak);
 
@@ -1020,8 +1357,10 @@ function BasicDetailsPageContent() {
     if (!form.expMonths) return false;
 
     if (!form.salary.trim()) return false;
-    const salaryRaw = form.salary.trim().replace(/\s+/g, "");
-    if (!/^\d+(,\d{3})*(\.\d+)?$/.test(salaryRaw)) return false;
+    const salaryRaw = form.salary.trim();
+    if (!/^\d+(\.\d+)?$/.test(salaryRaw)) return false;
+    const salaryValue = Number.parseFloat(salaryRaw);
+    if (!Number.isFinite(salaryValue) || salaryValue <= 0) return false;
 
     if (!form.salaryCurrency) return false;
 
@@ -1038,12 +1377,14 @@ function BasicDetailsPageContent() {
     if (!form.gender) return false;
     if (!form.countryCode) return false;
     if (!form.email.trim() || !emailRegex.test(form.email.trim())) return false;
+    if (form.altEmail.trim() && !emailRegex.test(form.altEmail.trim())) return false;
     if (!form.nationality) return false;
     if (!form.currentLocation.trim()) return false;
 
     const contactDigits = form.contact.replace(/\D/g, "");
     if (!form.contact.trim()) return false;
-    if (contactDigits.length < 7 || contactDigits.length > 15) return false;
+    if (!/^\d+$/.test(form.contact.trim())) return false;
+    if (contactDigits.length < 7 || contactDigits.length > PHONE_MAX_LENGTH) return false;
 
     return true;
   })();
@@ -1070,12 +1411,18 @@ function BasicDetailsPageContent() {
   })();
 
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    const normalizedValue =
+      key === "contact"
+        ? sanitizePhoneInput(value)
+        : key === "salary"
+          ? sanitizeSalaryInput(value)
+          : value;
+    setForm((prev) => ({ ...prev, [key]: normalizedValue }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
 
     // Persist manual edits immediately so the final "Finish" step
     // (which reads from session via readResumeProfile) includes them.
-    const trimmed = typeof value === "string" ? value.trim() : value;
+    const trimmed = typeof normalizedValue === "string" ? normalizedValue.trim() : normalizedValue;
     const patch: ResumeProfileData = {};
     switch (key) {
       case "professionalTitle":
@@ -1109,7 +1456,7 @@ function BasicDetailsPageContent() {
         patch.gender = trimmed || undefined;
         break;
       case "countryCode":
-        patch.countryCode = trimmed || undefined;
+        patch.countryCode = normalizeCountryCode(trimmed) || undefined;
         break;
       case "contact":
         patch.phone = trimmed || undefined;
@@ -1162,8 +1509,10 @@ function BasicDetailsPageContent() {
 
     if (!form.salary.trim()) {
       nextErrors.salary = "Salary is required.";
-    } else if (!/^\d+(,\d{3})*(\.\d+)?$/.test(form.salary.trim().replace(/\s+/g, ""))) {
-      nextErrors.salary = "Enter a valid salary value.";
+    } else if (!/^\d+(\.\d+)?$/.test(form.salary.trim())) {
+      nextErrors.salary = "Salary must contain numbers only.";
+    } else if (Number.parseFloat(form.salary.trim()) <= 0) {
+      nextErrors.salary = "Salary must be greater than 0.";
     }
 
     if (!form.salaryCurrency) nextErrors.salaryCurrency = "Select a currency.";
@@ -1178,12 +1527,16 @@ function BasicDetailsPageContent() {
     if (!form.lastName.trim()) nextErrors.lastName = "Last name is required.";
     if (!form.dob) nextErrors.dob = "Date of birth is required.";
     if (!form.gender) nextErrors.gender = "Select gender.";
-    if (!form.countryCode) nextErrors.countryCode = "Select country code.";
+    const inferredCountryCode = !form.countryCode ? inferCountryCodeFromContact(form.contact) : undefined;
+    if (!form.countryCode && !inferredCountryCode) nextErrors.countryCode = "Select country code.";
 
     if (!form.email.trim()) {
       nextErrors.email = "Email is required.";
     } else if (!emailRegex.test(form.email.trim())) {
       nextErrors.email = "Enter a valid email address.";
+    }
+    if (form.altEmail.trim() && !emailRegex.test(form.altEmail.trim())) {
+      nextErrors.altEmail = "Enter a valid alternative email address.";
     }
 
     if (!form.nationality) nextErrors.nationality = "Select nationality.";
@@ -1192,8 +1545,20 @@ function BasicDetailsPageContent() {
     const contactDigits = form.contact.replace(/\D/g, "");
     if (!form.contact.trim()) {
       nextErrors.contact = "Contact number is required.";
-    } else if (contactDigits.length < 7 || contactDigits.length > 15) {
-      nextErrors.contact = "Enter a valid contact number.";
+    } else if (!/^\d+$/.test(form.contact.trim())) {
+      nextErrors.contact = "Phone number must contain numbers only.";
+    } else if (contactDigits.length < 7 || contactDigits.length > PHONE_MAX_LENGTH) {
+      nextErrors.contact = `Phone number must be 7 to ${PHONE_MAX_LENGTH} digits.`;
+    }
+
+    for (const entry of certifications) {
+      const issueDate = entry.issueDate?.trim();
+      const expirationDate = entry.expirationDate?.trim();
+      if (!issueDate || !expirationDate) continue;
+      if (expirationDate <= issueDate) {
+        nextErrors.certifications = "Expiration date must be greater than issue date.";
+        break;
+      }
     }
 
     setErrors(nextErrors);
@@ -1213,6 +1578,7 @@ function BasicDetailsPageContent() {
                 nextErrors.countryCode ||
                 nextErrors.contact ||
                 nextErrors.email ||
+                nextErrors.altEmail ||
                 nextErrors.nationality ||
                 nextErrors.currentLocation
             ),
@@ -1226,6 +1592,7 @@ function BasicDetailsPageContent() {
                 nextErrors.salaryCurrency ||
                 nextErrors.summary
             ),
+          certifications: prev.certifications || Boolean(nextErrors.certifications),
         }));
       });
     }
@@ -1256,6 +1623,9 @@ function BasicDetailsPageContent() {
     setCertifications((prev) =>
       prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
     );
+    if (field === "issueDate" || field === "expirationDate") {
+      setErrors((prev) => ({ ...prev, certifications: undefined }));
+    }
   }
 
   function addCertificationEntry() {
@@ -1284,19 +1654,72 @@ function BasicDetailsPageContent() {
   }
 
   function updateLanguageEntry(id: string, field: keyof Omit<LanguageEntry, "id">, value: string) {
-    setLanguages((prev) =>
-      prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
-    );
+    setLanguages((prev) => {
+      if (field === "language") {
+        const normalizedNextValue = normalizeLanguageValue(value);
+        if (normalizedNextValue) {
+          const alreadySelected = prev.some(
+            (entry) =>
+              entry.id !== id && normalizeLanguageValue(entry.language) === normalizedNextValue
+          );
+          if (alreadySelected) return prev;
+        }
+      }
+      return prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry));
+    });
   }
 
   function addLanguageEntry() {
-    setLanguages((prev) => [...prev, createLanguageEntry()]);
+    const nextEntry = createLanguageEntry();
+    setLanguages((prev) => [...prev, nextEntry]);
+    setLanguageSearchById((prev) => ({ ...prev, [nextEntry.id]: "" }));
   }
 
   function removeLanguageEntry(id: string) {
+    setLanguageSearchById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setOpenLanguageDropdownId((prev) => (prev === id ? null : prev));
     setLanguages((prev) => {
       const next = prev.filter((entry) => entry.id !== id);
       return next.length ? next : [createLanguageEntry()];
+    });
+  }
+
+  function updateLanguageSearch(entryId: string, value: string) {
+    setLanguageSearchById((prev) => ({ ...prev, [entryId]: value }));
+  }
+
+  function getFilteredLanguageOptions(entryId: string) {
+    const query = (languageSearchById[entryId] ?? "").trim().toLowerCase();
+    const selectedInOtherEntries = new Set(
+      languages
+        .filter((entry) => entry.id !== entryId)
+        .map((entry) => normalizeLanguageValue(entry.language))
+        .filter(Boolean)
+    );
+    const optionsWithState = languageOptions.map((option) => ({
+      option,
+      alreadySelected: selectedInOtherEntries.has(normalizeLanguageValue(option)),
+    }));
+    if (!query) return optionsWithState;
+    return optionsWithState.filter(({ option }) => option.toLowerCase().includes(query));
+  }
+
+  function getFilteredCountryCodeOptions() {
+    const query = countryCodeSearch.trim().toLowerCase();
+    const options = withCurrentOption(countryCodeOptions, form.countryCode);
+    const selectedCode = form.countryCode.trim();
+    const prioritizedOptions =
+      selectedCode && options.includes(selectedCode)
+        ? [selectedCode, ...options.filter((code) => code !== selectedCode)]
+        : options;
+    if (!query) return prioritizedOptions;
+    return prioritizedOptions.filter((code) => {
+      const label = formatCountryOptionLabel(code).toLowerCase();
+      return code.toLowerCase().includes(query) || label.includes(query);
     });
   }
 
@@ -1337,7 +1760,7 @@ function BasicDetailsPageContent() {
           .filter((entry) => entry.title || entry.institute || entry.specialization || entry.graduationYear || entry.score),
         languages: languages
           .map(({ language, read, write, speak }) => ({
-            language: language.trim(),
+            language: toLanguageDisplayName(language),
             read: read.trim(),
             write: write.trim(),
             speak: speak.trim(),
@@ -1396,13 +1819,19 @@ function BasicDetailsPageContent() {
 
     const trimmedLanguages = languages
       .map(({ language, read, write, speak }) => ({
-        language: language.trim(),
-        read,
-        write,
-        speak,
+        language: toLanguageDisplayName(language),
+        read: read.trim(),
+        write: write.trim(),
+        speak: speak.trim(),
       }))
       .filter((entry) => entry.language);
 
+    const inferredCountryCode = inferCountryCodeFromContact(form.contact);
+    const countryCodeForPayload = normalizeCountryCode(form.countryCode.trim()) || inferredCountryCode;
+    const dialCodeForPayload = normalizeDialCode(getDialCode(countryCodeForPayload));
+    const contactNumberForPayload = `${dialCodeForPayload}${form.contact.trim()}`;
+
+    const existingProfile = readResumeProfile() ?? {};
     const payload: ResumeProfileData = {
       professionalTitle: form.professionalTitle.trim(),
       experienceYears: form.expYears,
@@ -1414,13 +1843,14 @@ function BasicDetailsPageContent() {
       lastName: form.lastName.trim(),
       dob: form.dob,
       gender: form.gender,
-      countryCode: form.countryCode,
-      phone: form.contact.trim(),
+      countryCode: countryCodeForPayload || undefined,
+      phone: contactNumberForPayload,
       email: form.email.trim(),
       altEmail: form.altEmail.trim(),
       nationality: form.nationality,
       currentLocation: form.currentLocation.trim(),
       preferredLocation: form.preferredLocation.trim(),
+      profileImageUrl: existingProfile.profileImageUrl?.trim() || undefined,
       education: trimmedEducation,
       certifications: trimmedCertifications,
       externalLinks: trimmedLinks,
@@ -1470,7 +1900,7 @@ function BasicDetailsPageContent() {
         onChange={handleProfilePicFileChange}
       />
 
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-visible">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4">
           <h1 className="text-lg font-bold text-gray-900">Create Profile</h1>
         </div>
@@ -1494,6 +1924,7 @@ function BasicDetailsPageContent() {
                 }
               >
                 <div className="p-4 space-y-4">
+                  <p className="text-sm font-medium text-gray-800">Profile Image</p>
                   <div className="bg-[#F4F7FC] border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
                     <div className="w-14 h-14 border border-gray-300 rounded-md bg-white flex items-center justify-center text-primary-600 text-2xl overflow-hidden">
                       {profilePicPreview ? (
@@ -1507,14 +1938,26 @@ function BasicDetailsPageContent() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <button
-                        type="button"
-                        onClick={handlePickProfilePic}
-                        className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
-                      >
-                        <SmallUploadIcon />
-                        Upload
-                      </button>
+                      {!profilePicPreview ? (
+                        <button
+                          type="button"
+                          onClick={handlePickProfilePic}
+                          disabled={isUploadingProfilePic}
+                          className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
+                        >
+                          <SmallUploadIcon />
+                          {isUploadingProfilePic ? "Uploading..." : "Upload"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleRemoveProfilePic}
+                          disabled={isUploadingProfilePic}
+                          className="inline-flex items-center border border-red-300 rounded-md px-4 py-2 text-sm font-medium text-red-600 bg-white hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      )}
                       <p className="text-xs text-gray-500 mt-2">JPG, PNG or GIF up to 2 MB</p>
                     </div>
                   </div>
@@ -1583,28 +2026,82 @@ function BasicDetailsPageContent() {
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Contact <span className="text-red-500">*</span></span>
-                    <div className="flex items-stretch gap-0 rounded-md overflow-hidden border border-gray-200 bg-white">
-                      <select
-                        value={form.countryCode}
-                        onChange={(e) => setField("countryCode", e.target.value)}
-                        className={`${fieldClass(Boolean(errors.countryCode))} bg-white px-2 border-none w-auto`}
-                        style={{ width: 96 }}
+                    <div className="flex items-stretch gap-0 rounded-md overflow-visible border border-gray-200 bg-white">
+                      <div
+                        className="relative"
+                        style={{ width: 150 }}
+                        onBlur={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                            setOpenCountryCodeDropdown(false);
+                          }
+                        }}
                       >
-                        <option value="">Code</option>
-                        {withCurrentOption(supportedCountryCodes, form.countryCode).map((code) => (
-                          <option key={code} value={code}>
-                            {code === "+1" ? "US (+1)" : code === "+91" ? "IN (+91)" : code === "+44" ? "UK (+44)" : code}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="tel"
-                        value={form.contact}
-                        onChange={(e) => setField("contact", e.target.value)}
-                        placeholder="Enter contact number"
-                        className={`${fieldClass(Boolean(errors.contact))} w-auto`}
-                        style={{ borderRadius: 0, border: "none", flex: 1 }}
-                      />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenCountryCodeDropdown((prev) => !prev);
+                            setCountryCodeSearch("");
+                          }}
+                          className={`${fieldClass(Boolean(errors.countryCode))} flex h-full items-center justify-between bg-white px-2 text-left border-none rounded-none`}
+                        >
+                          <span className={form.countryCode ? "text-gray-900" : "text-gray-400"}>
+                            {form.countryCode ? formatCountryOptionLabel(form.countryCode) : "Code"}
+                          </span>
+                          <ChevronDown className="h-4 w-4 text-gray-400" />
+                        </button>
+                        {openCountryCodeDropdown ? (
+                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div className="border-b border-gray-100 p-2">
+                              <div className="relative">
+                                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                <input
+                                  type="text"
+                                  value={countryCodeSearch}
+                                  onChange={(e) => setCountryCodeSearch(e.target.value)}
+                                  placeholder="Search country code"
+                                  className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                              </div>
+                            </div>
+                            <div className="max-h-48 overflow-auto py-1">
+                              {getFilteredCountryCodeOptions().length ? (
+                                getFilteredCountryCodeOptions().map((code) => (
+                                  <button
+                                    key={`contact-code-mobile-${code}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setField("countryCode", code);
+                                      setOpenCountryCodeDropdown(false);
+                                      setCountryCodeSearch("");
+                                    }}
+                                    className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
+                                      form.countryCode === code
+                                        ? "bg-primary-50 text-primary-700"
+                                        : "text-gray-700"
+                                    }`}
+                                  >
+                                    {formatCountryOptionLabel(code)}
+                                  </button>
+                                ))
+                              ) : (
+                                <p className="px-3 py-2 text-sm text-gray-500">No country codes found</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="relative flex-1">
+                        <input
+                          type="tel"
+                          value={form.contact}
+                          onChange={(e) => setField("contact", e.target.value)}
+                          inputMode="numeric"
+                          maxLength={PHONE_MAX_LENGTH}
+                          placeholder="Enter contact number"
+                          className={`${fieldClass(Boolean(errors.contact))} w-auto`}
+                          style={{ borderRadius: 0, border: "none", flex: 1, paddingLeft: 12 }}
+                        />
+                      </div>
                     </div>
                     {(errors.countryCode || errors.contact) && (
                       <p className="text-xs text-red-500">{errors.countryCode ?? errors.contact}</p>
@@ -1630,8 +2127,9 @@ function BasicDetailsPageContent() {
                       value={form.altEmail}
                       onChange={(e) => setField("altEmail", e.target.value)}
                       placeholder="Optional"
-                      className={fieldClass(false)}
+                      className={fieldClass(Boolean(errors.altEmail))}
                     />
+                    {errors.altEmail && <p className="text-xs text-red-500">{errors.altEmail}</p>}
                   </label>
 
                   <label className="flex flex-col gap-2">
@@ -1802,6 +2300,7 @@ function BasicDetailsPageContent() {
                           type="text"
                           value={form.salary}
                           onChange={(e) => setField("salary", e.target.value)}
+                          inputMode="decimal"
                           placeholder="Enter monthly salary"
                           className={fieldClass(Boolean(errors.salary))}
                         />
@@ -1930,16 +2429,23 @@ function BasicDetailsPageContent() {
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Graduation Year</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
+                          <select
                             value={entry.graduationYear}
                             onChange={(e) =>
                               updateEducationEntry(entry.id, "graduationYear", e.target.value)
                             }
-                            placeholder="e.g., 2016"
-                            className={fieldClass(false)}
-                          />
+                            className={`${fieldClass(false)} bg-white`}
+                          >
+                            <option value="">Select year</option>
+                            {Array.from({ length: 70 }).map((_, idx) => {
+                              const year = new Date().getFullYear() - idx;
+                              return (
+                                <option key={year} value={String(year)}>
+                                  {year}
+                                </option>
+                              );
+                            })}
+                          </select>
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Score</span>
@@ -1978,6 +2484,9 @@ function BasicDetailsPageContent() {
                       + Add
                     </button>
                   </div>
+                  {errors.certifications ? (
+                    <p className="text-sm text-red-600">{errors.certifications}</p>
+                  ) : null}
 
                   {certifications.map((entry) => (
                     <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
@@ -2182,19 +2691,81 @@ function BasicDetailsPageContent() {
                       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                         <label className="flex flex-col gap-2 md:col-span-2">
                           <span className="text-sm font-medium text-gray-800">Language</span>
-                          <input
-                            type="text"
-                            value={entry.language}
-                            onChange={(e) => updateLanguageEntry(entry.id, "language", e.target.value)}
-                            placeholder="English"
-                            list="language-options"
-                            className={fieldClass(false)}
-                          />
-                          <datalist id="language-options">
-                            {languageOptions.map((lang) => (
-                              <option key={lang} value={lang} />
-                            ))}
-                          </datalist>
+                          <div
+                            className={`relative ${openLanguageDropdownId === entry.id ? "z-30" : ""}`}
+                            onBlur={(e) => {
+                              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : prev));
+                              }
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
+                                updateLanguageSearch(entry.id, entry.language);
+                              }}
+                              className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                            >
+                              <span className={entry.language ? "text-gray-900" : "text-gray-400"}>
+                                {entry.language || "Select language"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 text-gray-400" />
+                            </button>
+
+                            {openLanguageDropdownId === entry.id ? (
+                              <div className="absolute bottom-full z-50 mb-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                <div className="border-b border-gray-100 p-2">
+                                  <div className="relative">
+                                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                      type="text"
+                                      value={languageSearchById[entry.id] ?? ""}
+                                      onChange={(e) => updateLanguageSearch(entry.id, e.target.value)}
+                                      placeholder="Search language"
+                                      className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-40 overflow-auto py-1">
+                                  {getFilteredLanguageOptions(entry.id).length ? (
+                                    getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
+                                      <button
+                                        key={`${entry.id}-lang-${option}`}
+                                        type="button"
+                                        onClick={() => {
+                                          if (alreadySelected) return;
+                                          updateLanguageEntry(entry.id, "language", option);
+                                          setOpenLanguageDropdownId(null);
+                                          updateLanguageSearch(entry.id, option);
+                                        }}
+                                        disabled={alreadySelected}
+                                        className={`block w-full px-3 py-2 text-left text-sm ${
+                                          alreadySelected
+                                            ? "cursor-not-allowed text-gray-400 bg-gray-50"
+                                            : "text-gray-700 hover:bg-gray-100"
+                                        }`}
+                                      >
+                                        <span>{option}</span>
+                                        {alreadySelected ? (
+                                          <span className="ml-2 text-xs font-medium text-amber-700">
+                                            Already Selected
+                                          </span>
+                                        ) : null}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <p className="px-3 py-2 text-sm text-gray-500">No languages found</p>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          {isLanguageOptionsLoading ? (
+                            <span className="text-xs text-gray-500">Loading languages...</span>
+                          ) : languageOptionsError ? (
+                            <span className="text-xs text-red-600">{languageOptionsError}</span>
+                          ) : null}
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Read</span>
@@ -2312,6 +2883,7 @@ function BasicDetailsPageContent() {
                         type="text"
                         value={form.salary}
                         onChange={(e) => setField("salary", e.target.value)}
+                        inputMode="decimal"
                         placeholder="Enter monthly salary"
                         className={fieldClass(Boolean(errors.salary))}
                       />
@@ -2340,14 +2912,14 @@ function BasicDetailsPageContent() {
                 <div className="border-t border-gray-200 pt-5 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-semibold text-gray-900">Summary <span className="text-red-500">*</span></span>
-                    <button
+                    {/* <button
                       ref={generateButtonRef}
                       type="button"
                       onClick={openSummaryDrawer}
                       className="text-sm font-semibold text-primary-600 hover:text-primary-700"
                     >
                       Generate
-                    </button>
+                    </button> */}
                   </div>
 
                   <textarea
@@ -2426,14 +2998,21 @@ function BasicDetailsPageContent() {
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Graduation Year</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
+                        <select
                           value={entry.graduationYear}
                           onChange={(e) => updateEducationEntry(entry.id, "graduationYear", e.target.value)}
-                          placeholder="e.g., 2016"
-                          className={fieldClass(false)}
-                        />
+                          className={`${fieldClass(false)} bg-white`}
+                        >
+                          <option value="">Select year</option>
+                          {Array.from({ length: 70 }).map((_, idx) => {
+                            const year = new Date().getFullYear() - idx;
+                            return (
+                              <option key={year} value={String(year)}>
+                                {year}
+                              </option>
+                            );
+                          })}
+                        </select>
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Score</span>
@@ -2451,7 +3030,7 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section id="languages-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section id="languages-section" className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Certifications</h3>
@@ -2466,6 +3045,9 @@ function BasicDetailsPageContent() {
                 </button>
               </div>
               <div className="p-4 sm:p-6 space-y-4">
+                {errors.certifications ? (
+                  <p className="text-sm text-red-600">{errors.certifications}</p>
+                ) : null}
                 {certifications.map((entry) => (
                   <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
@@ -2543,7 +3125,7 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">External Links</h3>
@@ -2603,7 +3185,7 @@ function BasicDetailsPageContent() {
               )}
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Languages</h3>
@@ -2633,19 +3215,81 @@ function BasicDetailsPageContent() {
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                       <label className="flex flex-col gap-2 md:col-span-2">
                         <span className="text-sm font-medium text-gray-800">Language</span>
-                        <input
-                          type="text"
-                          value={entry.language}
-                          onChange={(e) => updateLanguageEntry(entry.id, "language", e.target.value)}
-                          placeholder="English"
-                          list="language-options"
-                          className={fieldClass(false)}
-                        />
-                        <datalist id="language-options">
-                          {languageOptions.map((lang) => (
-                            <option key={lang} value={lang} />
-                          ))}
-                        </datalist>
+                          <div
+                            className={`relative ${openLanguageDropdownId === entry.id ? "z-30" : ""}`}
+                          onBlur={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                              setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : prev));
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
+                              updateLanguageSearch(entry.id, entry.language);
+                            }}
+                            className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                          >
+                            <span className={entry.language ? "text-gray-900" : "text-gray-400"}>
+                              {entry.language || "Select language"}
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-gray-400" />
+                          </button>
+
+                          {openLanguageDropdownId === entry.id ? (
+                            <div className="absolute bottom-full z-50 mb-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                              <div className="border-b border-gray-100 p-2">
+                                <div className="relative">
+                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                  <input
+                                    type="text"
+                                    value={languageSearchById[entry.id] ?? ""}
+                                    onChange={(e) => updateLanguageSearch(entry.id, e.target.value)}
+                                    placeholder="Search language"
+                                    className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-40 overflow-auto py-1">
+                                {getFilteredLanguageOptions(entry.id).length ? (
+                                  getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
+                                    <button
+                                      key={`${entry.id}-lang-${option}`}
+                                      type="button"
+                                      onClick={() => {
+                                        if (alreadySelected) return;
+                                        updateLanguageEntry(entry.id, "language", option);
+                                        setOpenLanguageDropdownId(null);
+                                        updateLanguageSearch(entry.id, option);
+                                      }}
+                                      disabled={alreadySelected}
+                                      className={`block w-full px-3 py-2 text-left text-sm ${
+                                        alreadySelected
+                                          ? "cursor-not-allowed text-gray-400 bg-gray-50"
+                                          : "text-gray-700 hover:bg-gray-100"
+                                      }`}
+                                    >
+                                      <span>{option}</span>
+                                      {alreadySelected ? (
+                                        <span className="ml-2 text-xs font-medium text-amber-700">
+                                          Already Selected
+                                        </span>
+                                      ) : null}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <p className="px-3 py-2 text-sm text-gray-500">No languages found</p>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        {isLanguageOptionsLoading ? (
+                          <span className="text-xs text-gray-500">Loading languages...</span>
+                        ) : languageOptionsError ? (
+                          <span className="text-xs text-red-600">{languageOptionsError}</span>
+                        ) : null}
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Read</span>
@@ -2706,12 +3350,13 @@ function BasicDetailsPageContent() {
               description="Higher profile strength improves recruiter visibility"
             />
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 py-4 border-b border-gray-200">
                 <h3 className="text-xl sm:text-2xl font-semibold text-gray-900">Personal Information</h3>
               </div>
 
               <div className="p-4 space-y-4">
+                <p className="text-sm font-medium text-gray-800">Profile Image</p>
                 <div className="bg-[#F4F7FC] border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="w-14 h-14 border border-gray-300 rounded-md bg-white flex items-center justify-center text-primary-600 text-2xl overflow-hidden">
                     {profilePicPreview ? (
@@ -2725,14 +3370,26 @@ function BasicDetailsPageContent() {
                     )}
                   </div>
                   <div className="flex-1">
-                    <button
-                      type="button"
-                      onClick={handlePickProfilePic}
-                      className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
-                    >
-                      <SmallUploadIcon />
-                      Upload
-                    </button>
+                    {!profilePicPreview ? (
+                      <button
+                        type="button"
+                        onClick={handlePickProfilePic}
+                        disabled={isUploadingProfilePic}
+                        className="inline-flex items-center gap-2 border border-gray-300 rounded-md px-4 py-2 text-sm font-medium bg-white hover:bg-gray-50"
+                      >
+                        <SmallUploadIcon />
+                        {isUploadingProfilePic ? "Uploading..." : "Upload"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRemoveProfilePic}
+                        disabled={isUploadingProfilePic}
+                        className="inline-flex items-center border border-red-300 rounded-md px-4 py-2 text-sm font-medium text-red-600 bg-white hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    )}
                     <p className="text-xs text-gray-500 mt-2">JPG, PNG or GIF up to 2 MB</p>
                   </div>
                 </div>
@@ -2810,8 +3467,9 @@ function BasicDetailsPageContent() {
                     value={form.altEmail}
                     onChange={(e) => setField("altEmail", e.target.value)}
                     placeholder="Optional"
-                    className={fieldClass(false)}
+                    className={fieldClass(Boolean(errors.altEmail))}
                   />
+                  {errors.altEmail && <p className="text-xs text-red-500">{errors.altEmail}</p>}
                 </label>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2912,26 +3570,81 @@ function BasicDetailsPageContent() {
 
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-gray-800">Contact <span className="text-red-500">*</span></span>
-                  <div className="grid grid-cols-[84px_1fr] gap-2">
-                    <select
-                      value={form.countryCode}
-                      onChange={(e) => setField("countryCode", e.target.value)}
-                      className={`${fieldClass(Boolean(errors.countryCode))} bg-white px-2`}
+                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                    <div
+                      className="relative"
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                          setOpenCountryCodeDropdown(false);
+                        }
+                      }}
                     >
-                      <option value="">Code</option>
-                      {withCurrentOption(supportedCountryCodes, form.countryCode).map((code) => (
-                        <option key={code} value={code}>
-                          {code}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="tel"
-                      value={form.contact}
-                      onChange={(e) => setField("contact", e.target.value)}
-                      placeholder="Enter contact number"
-                      className={fieldClass(Boolean(errors.contact))}
-                    />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenCountryCodeDropdown((prev) => !prev);
+                          setCountryCodeSearch("");
+                        }}
+                        className={`${fieldClass(Boolean(errors.countryCode))} flex items-center justify-between bg-white px-2 text-left`}
+                      >
+                        <span className={form.countryCode ? "text-gray-900" : "text-gray-400"}>
+                          {form.countryCode ? formatCountryOptionLabel(form.countryCode) : "Code"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {openCountryCodeDropdown ? (
+                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="border-b border-gray-100 p-2">
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={countryCodeSearch}
+                                onChange={(e) => setCountryCodeSearch(e.target.value)}
+                                placeholder="Search country code"
+                                className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-48 overflow-auto py-1">
+                            {getFilteredCountryCodeOptions().length ? (
+                              getFilteredCountryCodeOptions().map((code) => (
+                                <button
+                                  key={`contact-code-desktop-${code}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setField("countryCode", code);
+                                    setOpenCountryCodeDropdown(false);
+                                    setCountryCodeSearch("");
+                                  }}
+                                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
+                                    form.countryCode === code
+                                      ? "bg-primary-50 text-primary-700"
+                                      : "text-gray-700"
+                                  }`}
+                                >
+                                  {formatCountryOptionLabel(code)}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-500">No country codes found</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        value={form.contact}
+                        onChange={(e) => setField("contact", e.target.value)}
+                        inputMode="numeric"
+                        maxLength={PHONE_MAX_LENGTH}
+                        placeholder="Enter contact number"
+                        className={fieldClass(Boolean(errors.contact))}
+                        style={{ paddingLeft: 12 }}
+                      />
+                    </div>
                   </div>
                   {(errors.countryCode || errors.contact) && (
                     <p className="text-xs text-red-500">{errors.countryCode ?? errors.contact}</p>

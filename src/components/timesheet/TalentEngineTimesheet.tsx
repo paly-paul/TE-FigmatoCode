@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ArrowLeft, ArrowRight, Clock, Bandage } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppNavbar from "../profile/AppNavbar";
 import CandidateAppShell, { type TimesheetBottomTab } from "../mobile/CandidateAppShell";
 import { useIs768AndBelow } from "@/lib/useResponsive";
@@ -11,7 +11,7 @@ import { createEditCandidateTimesheet } from "@/services/timesheet/candidateTime
 import { getProjectsForProfile } from "@/services/timesheet/profileProjects";
 import { getTimesheetForProject } from "@/services/timesheet/projectTimesheet";
 import { getDaysOfWeek } from "@/services/timesheet/weekCalendar";
-import { getTimesheetByWeek } from "@/services/timesheet/weekTimesheet";
+import { getTimesheetByWeek, type WeekTimesheetDay } from "@/services/timesheet/weekTimesheet";
 import { getTimesheetForWorkorder } from "@/services/timesheet/workorderTimesheet";
 import { useRouter } from "next/navigation";
 
@@ -33,6 +33,8 @@ type WeeklySheet = {
   total: number;
   current?: boolean;
   rows: WeeklyRow[];
+  weekStartIso?: string;
+  weekEndIso?: string;
 };
 
 const FALLBACK_WEEKS: WeeklySheet[] = [
@@ -63,6 +65,16 @@ function formatIsoDateForDisplay(isoDate: string): string {
   });
 }
 
+function getIsoWeekYear(date: Date): { weekNumber: number; year: number } {
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
+  const year = utcDate.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const weekNumber = Math.ceil(((utcDate.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { weekNumber, year };
+}
+
 export default function TalentEngineTimesheet() {
   const router = useRouter();
   const [workorderWeeks, setWorkorderWeeks] = useState<WeeklySheet[]>([]);
@@ -82,6 +94,11 @@ export default function TalentEngineTimesheet() {
   const [isIdentityResolved, setIsIdentityResolved] = useState(false);
   const [hasProjectAssignment, setHasProjectAssignment] = useState(false);
   const [assignmentMessage, setAssignmentMessage] = useState("");
+  const [weekDataByNumber, setWeekDataByNumber] = useState<Record<number, WeekTimesheetDay[]>>({});
+  const workorderFetchKeyRef = useRef<string>("");
+  const inFlightOverviewWeekRef = useRef<Set<string>>(new Set());
+  const inFlightActiveWeekRef = useRef<Set<string>>(new Set());
+  const fetchedWeekDataRef = useRef<Set<string>>(new Set());
 
   const [commentModal, setCommentModal] = useState<{
     date: string;
@@ -151,6 +168,10 @@ export default function TalentEngineTimesheet() {
     const weekNumber = activeWeekNumber || getWeekAndYear(activeWeekData).weekNumber;
     return weekRowsByNumber[weekNumber] ?? activeWeekData.rows;
   }, [activeWeekData, activeWeekNumber, weekRowsByNumber]);
+  const activeWeekInfo = useMemo(
+    () => getWeekAndYear(activeWeekData),
+    [activeWeekData.range, activeWeekData.weekLabel, activeWeekData.weekStartIso, activeWeekData.weekEndIso]
+  );
 
   function toIsoDate(value: string): string {
     const parsed = new Date(value);
@@ -163,10 +184,26 @@ export default function TalentEngineTimesheet() {
 
   function getWeekAndYear(week: WeeklySheet): { weekNumber: number; year: number } {
     const weekMatch = week.weekLabel.match(/\d+/);
-    const weekNumber = Number.parseInt(weekMatch?.[0] || "0", 10);
+    const parsedWeekNumber = Number.parseInt(weekMatch?.[0] || "0", 10);
+    const startYear = week.weekStartIso
+      ? Number.parseInt(week.weekStartIso.slice(0, 4), 10)
+      : 0;
+    const endYear = week.weekEndIso
+      ? Number.parseInt(week.weekEndIso.slice(0, 4), 10)
+      : 0;
     const yearMatch = week.range.match(/\b(\d{4})\b/);
-    const year = Number.parseInt(yearMatch?.[1] || "0", 10);
-    return { weekNumber, year };
+    const rangeYear = Number.parseInt(yearMatch?.[1] || "0", 10);
+    const year =
+      (Number.isFinite(startYear) && startYear > 0 ? startYear : 0) ||
+      (Number.isFinite(endYear) && endYear > 0 ? endYear : 0) ||
+      (Number.isFinite(rangeYear) && rangeYear > 0 ? rangeYear : 0);
+    const fallback = getIsoWeekYear(new Date());
+    const weekNumber =
+      Number.isFinite(parsedWeekNumber) && parsedWeekNumber > 0
+        ? parsedWeekNumber
+        : fallback.weekNumber;
+    const resolvedYear = Number.isFinite(year) && year > 0 ? year : fallback.year;
+    return { weekNumber, year: resolvedYear };
   }
 
   function formatRangeFromIso(startIso?: string, endIso?: string): string {
@@ -179,42 +216,97 @@ export default function TalentEngineTimesheet() {
     return `${startLabel} - ${endLabel}`;
   }
 
+  function getMonthTotalDays(date: Date): number {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  }
+
+  function hydrateWeekRowsFromData(weekNumber: number, weekData: WeekTimesheetDay[]) {
+    setWeekRowsByNumber((prev) => {
+      const base = prev[weekNumber] ?? [];
+      const next = base.map((row) => {
+        const iso = row.isoDate ?? "";
+        const match = weekData.find((d) => d.week_date === iso);
+        if (!match) return row;
+        return {
+          ...row,
+          total: match.total_working_hours,
+          regular: match.total_working_hours,
+          overtime: 0,
+        };
+      });
+      return { ...prev, [weekNumber]: next };
+    });
+
+    const remarkPatch: Record<string, string> = {};
+    for (const day of weekData) {
+      if (!day.week_date || !day.remarks?.trim()) continue;
+      remarkPatch[day.week_date] = day.remarks;
+    }
+    if (Object.keys(remarkPatch).length > 0) {
+      setDayRemarks((prev) => ({ ...remarkPatch, ...prev }));
+    }
+  }
+
   useEffect(() => {
     const rrCandidate = candidateId.trim();
-    const { year } = getWeekAndYear(activeWeekData);
-    if (!rrCandidate || /^PR-/i.test(rrCandidate) || !year) return;
+    if (!rrCandidate || /^PR-/i.test(rrCandidate)) return;
+
+    const { year } = activeWeekInfo;
+    const nowYear = new Date().getFullYear();
+    const targetYears = year > 0 ? [year] : [nowYear, nowYear - 1];
+    const fetchKey = `${rrCandidate}::${targetYears.join(",")}`;
+    if (workorderFetchKeyRef.current === fetchKey) return;
+    workorderFetchKeyRef.current = fetchKey;
 
     let cancelled = false;
-    void getTimesheetForWorkorder(rrCandidate, year)
-      .then((response) => {
-        if (cancelled) return;
-        const nextWeeks: WeeklySheet[] = response.timesheets.map((ts) => ({
-          range: formatRangeFromIso(ts.week_start_date, ts.week_end_date),
-          weekLabel: `Week ${ts.week_number}`,
-          regular: ts.total_work_hours,
-          overtime: 0,
-          total: ts.total_work_hours,
-          current: false,
-          rows: [],
-        }));
-        setWorkorderWeeks(nextWeeks);
-        if (!activeWeekNumber && nextWeeks[0]) {
-          const n = Number.parseInt(nextWeeks[0].weekLabel.replace(/\D+/g, ""), 10);
-          if (Number.isFinite(n) && n > 0) setActiveWeekNumber(n);
+    void (async () => {
+      for (let i = 0; i < targetYears.length; i += 1) {
+        const y = targetYears[i];
+        const isLastTry = i === targetYears.length - 1;
+        try {
+          const response = await getTimesheetForWorkorder(rrCandidate, y);
+          if (cancelled) return;
+          const nextWeeks: WeeklySheet[] = response.timesheets.map((ts) => ({
+            range: formatRangeFromIso(ts.week_start_date, ts.week_end_date),
+            weekLabel: `Week ${ts.week_number}`,
+            regular: ts.total_work_hours,
+            overtime: 0,
+            total: ts.total_work_hours,
+            current: false,
+            rows: [],
+            weekStartIso: ts.week_start_date,
+            weekEndIso: ts.week_end_date,
+          }));
+          if (nextWeeks.length > 0 || isLastTry) {
+            setWorkorderWeeks(nextWeeks);
+            const statusMap: Record<number, string> = {};
+            for (const item of response.timesheets) {
+              statusMap[item.week_number] = item.consolidation_status;
+            }
+            setWeekStatusByNumber(statusMap);
+            if (!activeWeekNumber && nextWeeks[0]) {
+              const n = Number.parseInt(nextWeeks[0].weekLabel.replace(/\D+/g, ""), 10);
+              if (Number.isFinite(n) && n > 0) setActiveWeekNumber(n);
+            }
+            return;
+          }
+        } catch {
+          if (cancelled) return;
+          if (isLastTry) {
+            setWorkorderWeeks([]);
+            setWeekStatusByNumber({});
+          }
         }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWorkorderWeeks([]);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeWeekData, activeWeekNumber, candidateId]);
+  }, [activeWeekInfo, candidateId]);
 
   useEffect(() => {
-    const { weekNumber, year } = getWeekAndYear(activeWeekData);
+    const { weekNumber, year } = activeWeekInfo;
     if (!weekNumber || !year || weekRowsByNumber[weekNumber]) return;
 
     let cancelled = false;
@@ -251,7 +343,7 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [activeWeekData, weekRowsByNumber]);
+  }, [activeWeekInfo, weekRowsByNumber]);
 
   useEffect(() => {
     if (!isIdentityResolved) return;
@@ -299,40 +391,143 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [candidateId, isIdentityResolved, profileId, projectName, rrName]);
+  }, [isIdentityResolved, profileId]);
 
   useEffect(() => {
     const rrCandidate = candidateId.trim();
-    const { year } = getWeekAndYear(activeWeekData);
-    if (!rrCandidate || /^PR-/i.test(rrCandidate) || !year) return;
+    if (!rrCandidate || /^PR-/i.test(rrCandidate) || workorderWeeks.length === 0) return;
+
+    const now = new Date();
+    const lastMonthRef = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const lastKey = `${lastMonthRef.getFullYear()}-${lastMonthRef.getMonth()}`;
+    const targetWeeks = workorderWeeks.filter((week) => {
+      if (!week.weekEndIso) return false;
+      const weekEnd = new Date(`${week.weekEndIso}T00:00:00`);
+      if (Number.isNaN(weekEnd.getTime())) return false;
+      const key = `${weekEnd.getFullYear()}-${weekEnd.getMonth()}`;
+      return key === currentKey || key === lastKey;
+    });
+    if (targetWeeks.length === 0) return;
 
     let cancelled = false;
-    void getTimesheetForWorkorder(rrCandidate, year)
-      .then((response) => {
-        if (cancelled) return;
-        const map: Record<number, string> = {};
-        for (const item of response.timesheets) {
-          map[item.week_number] = item.consolidation_status;
+    void Promise.all(
+      targetWeeks.map(async (week) => {
+        const { weekNumber, year } = getWeekAndYear(week);
+        if (!weekNumber || !year) return;
+        if (weekDataByNumber[weekNumber]) return;
+        const key = `${rrCandidate}:${year}:${weekNumber}`;
+        if (fetchedWeekDataRef.current.has(key)) return;
+        if (inFlightOverviewWeekRef.current.has(key)) return;
+        inFlightOverviewWeekRef.current.add(key);
+        try {
+          const response = await getTimesheetByWeek({
+            rr_candidate_id: rrCandidate,
+            week: weekNumber,
+            year,
+          });
+          if (cancelled) return;
+          setWeekDataByNumber((prev) => ({
+            ...prev,
+            [weekNumber]: response.week_data,
+          }));
+          fetchedWeekDataRef.current.add(key);
+        } catch {
+          // Keep overview resilient even if one week fails.
+        } finally {
+          inFlightOverviewWeekRef.current.delete(key);
         }
-        setWeekStatusByNumber(map);
       })
-      .catch(() => {
-        if (cancelled) return;
-        setWeekStatusByNumber({});
-      });
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [activeWeekData, candidateId]);
+  }, [candidateId, weekDataByNumber, workorderWeeks]);
+
+  const monthlyOverview = useMemo(() => {
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+    const lastMonthRef = new Date(thisYear, thisMonth - 1, 1);
+    const lastMonth = lastMonthRef.getMonth();
+    const lastMonthYear = lastMonthRef.getFullYear();
+
+    let thisMonthHours = 0;
+    let lastMonthHours = 0;
+    let thisMonthLoggedDays = 0;
+    let lastMonthLoggedDays = 0;
+    const seenThisMonthDays = new Set<string>();
+    const seenLastMonthDays = new Set<string>();
+
+    const allWeekData = Object.values(weekDataByNumber).flat();
+    if (allWeekData.length > 0) {
+      for (const day of allWeekData) {
+        const d = new Date(`${day.week_date}T00:00:00`);
+        if (Number.isNaN(d.getTime())) continue;
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        if (m === thisMonth && y === thisYear) {
+          thisMonthHours += day.total_working_hours || 0;
+          if (day.total_working_hours > 0 && !seenThisMonthDays.has(day.week_date)) {
+            seenThisMonthDays.add(day.week_date);
+            thisMonthLoggedDays += 1;
+          }
+        } else if (m === lastMonth && y === lastMonthYear) {
+          lastMonthHours += day.total_working_hours || 0;
+          if (day.total_working_hours > 0 && !seenLastMonthDays.has(day.week_date)) {
+            seenLastMonthDays.add(day.week_date);
+            lastMonthLoggedDays += 1;
+          }
+        }
+      }
+    } else {
+      for (const week of workorderWeeks) {
+        if (!week.weekEndIso) continue;
+        const weekEnd = new Date(`${week.weekEndIso}T00:00:00`);
+        if (Number.isNaN(weekEnd.getTime())) continue;
+        const m = weekEnd.getMonth();
+        const y = weekEnd.getFullYear();
+        if (m === thisMonth && y === thisYear) thisMonthHours += week.total || 0;
+        if (m === lastMonth && y === lastMonthYear) lastMonthHours += week.total || 0;
+      }
+    }
+
+    const thisMonthTotalDays = getMonthTotalDays(now);
+    const lastMonthTotalDays = getMonthTotalDays(lastMonthRef);
+
+    return {
+      thisMonthHours,
+      lastMonthHours,
+      thisMonthLoggedDays,
+      lastMonthLoggedDays,
+      thisMonthTotalDays,
+      lastMonthTotalDays,
+      thisMonthPercent:
+        thisMonthTotalDays > 0 ? (thisMonthLoggedDays / thisMonthTotalDays) * 100 : 0,
+      lastMonthPercent:
+        lastMonthTotalDays > 0 ? (lastMonthLoggedDays / lastMonthTotalDays) * 100 : 0,
+    };
+  }, [weekDataByNumber, workorderWeeks]);
 
   useEffect(() => {
     const rrCandidate = candidateId.trim();
-    const { weekNumber, year } = getWeekAndYear(activeWeekData);
+    const { weekNumber, year } = activeWeekInfo;
     if (!rrCandidate || /^PR-/i.test(rrCandidate) || !weekNumber || !year) return;
-    if (activeWeekRows.length === 0) return;
+    const key = `${rrCandidate}:${year}:${weekNumber}`;
+
+    const existingWeekData = weekDataByNumber[weekNumber];
+    if (existingWeekData) {
+      hydrateWeekRowsFromData(weekNumber, existingWeekData);
+      fetchedWeekDataRef.current.add(key);
+      return;
+    }
+
+    if (fetchedWeekDataRef.current.has(key)) return;
+    if (inFlightActiveWeekRef.current.has(key)) return;
 
     let cancelled = false;
+    inFlightActiveWeekRef.current.add(key);
     void getTimesheetByWeek({
       rr_candidate_id: rrCandidate,
       week: weekNumber,
@@ -340,38 +535,21 @@ export default function TalentEngineTimesheet() {
     })
       .then((response) => {
         if (cancelled) return;
-        setWeekRowsByNumber((prev) => {
-          const base = prev[weekNumber] ?? activeWeekRows;
-          const next = base.map((row) => {
-            const iso = row.isoDate ?? "";
-            const match = response.week_data.find((d) => d.week_date === iso);
-            if (!match) return row;
-            return {
-              ...row,
-              total: match.total_working_hours,
-              regular: match.total_working_hours,
-              overtime: 0,
-            };
-          });
-          return { ...prev, [weekNumber]: next };
-        });
-        const remarkPatch: Record<string, string> = {};
-        for (const day of response.week_data) {
-          if (!day.week_date || !day.remarks?.trim()) continue;
-          remarkPatch[day.week_date] = day.remarks;
-        }
-        if (Object.keys(remarkPatch).length > 0) {
-          setDayRemarks((prev) => ({ ...remarkPatch, ...prev }));
-        }
+        setWeekDataByNumber((prev) => ({ ...prev, [weekNumber]: response.week_data }));
+        hydrateWeekRowsFromData(weekNumber, response.week_data);
+        fetchedWeekDataRef.current.add(key);
       })
       .catch(() => {
         // Leave remarks user-entered/manual when no existing week data.
+      })
+      .finally(() => {
+        inFlightActiveWeekRef.current.delete(key);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeWeekData, activeWeekRows, candidateId]);
+  }, [activeWeekInfo, candidateId, weekDataByNumber]);
 
   async function saveTimesheet(status: "open" | "submit" | "re_submit") {
     const candidate = candidateId.trim();
@@ -567,19 +745,29 @@ export default function TalentEngineTimesheet() {
               <div>
                 <div className="flex items-center justify-between text-sm text-slate-600">
                   <span>This Month</span>
-                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">6/28 days</span>
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
+                    {monthlyOverview.thisMonthLoggedDays}/{monthlyOverview.thisMonthTotalDays} days
+                  </span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-blue-500" style={{ width: "65%" }} />
+                  <div
+                    className="h-full rounded-full bg-blue-500"
+                    style={{ width: `${Math.min(100, monthlyOverview.thisMonthPercent)}%` }}
+                  />
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-between text-sm text-slate-600">
                   <span>Last Month</span>
-                  <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-600">26/31 days</span>
+                  <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-600">
+                    {monthlyOverview.lastMonthLoggedDays}/{monthlyOverview.lastMonthTotalDays} days
+                  </span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-purple-500" style={{ width: "85%" }} />
+                  <div
+                    className="h-full rounded-full bg-purple-500"
+                    style={{ width: `${Math.min(100, monthlyOverview.lastMonthPercent)}%` }}
+                  />
                 </div>
               </div>
             </div>
@@ -595,13 +783,15 @@ export default function TalentEngineTimesheet() {
               <div className="flex justify-between py-1">
                 <span className="text-sm font-semibold text-emerald-700">This Month:</span>
                 <span className="rounded-full bg-emerald-50 px-4 py-1 text-sm text-emerald-700 font-semibold">
-                  {workorderWeeks.reduce((acc, w) => acc + (w.total || 0), 0)} hrs
+                  {monthlyOverview.thisMonthHours} hrs
                 </span>
               </div>
               <hr />
               <div className="flex justify-between py-1">
                 <span className="text-sm font-semibold text-purple-700">Last Month:</span>
-                <span className="rounded-full bg-purple-50 px-4 py-1 text-sm font-semibold text-purple-700">140 hrs</span>
+                <span className="rounded-full bg-purple-50 px-4 py-1 text-sm font-semibold text-purple-700">
+                  {monthlyOverview.lastMonthHours} hrs
+                </span>
               </div>
             </div>
           </div>

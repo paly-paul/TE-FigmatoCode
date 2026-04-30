@@ -29,8 +29,8 @@ export const actionDrawerJobSummary = {
   matchBarFilledCount: 4,
   matchBarTotalSegments: 5,
   metaFields: [
-    { label: "Project Est. Start Date", value: "March 11, 2026", icon: "calendar" as const },
-    { label: "Project Est. End Date", value: "August 31, 2026", icon: "calendar" as const },
+    { label: "Position Est. Start Date", value: "March 11, 2026", icon: "calendar" as const },
+    { label: "Position Est. End Date", value: "August 31, 2026", icon: "calendar" as const },
     { label: "Minimum Contract Duration", value: "5 months, 20 days", icon: "hourglass" as const },
     { label: "Rotation Cycle", value: "0 Weeks On / 0 Weeks Off", icon: "refresh" as const },
     { label: "Working Hours / Day", value: "8 hours", icon: "clock" as const },

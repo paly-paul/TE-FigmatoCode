@@ -31,16 +31,13 @@ interface FilterDrawerProps {
 }
 
 export const EMPLOYMENT_TYPES = [
-  "Full Time",
-  "Part Time",
-  "Internship",
-  "Training Jobs",
+  "Monthly",
+  "Hourly",
 ];
 
 export const SENIORITY_LEVELS = [
-  "Entry Level",
-  "Mid Level",
-  "Senior Level",
+  "Yes",
+  "No",
 ];
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -48,7 +45,7 @@ export const DEFAULT_FILTERS: FilterState = {
   employmentTypes: [],
   seniorityLevels: [],
   salaryMin: 0,
-  salaryMax: 50000,
+  salaryMax: 10000,
 };
 
 const DEFAULT_DROPDOWN_CONFIG = {
@@ -92,17 +89,19 @@ function CheckboxGroup({
   options,
   selected,
   onChange,
+  singleSelect = false,
 }: {
   options: string[];
   selected: string[];
   onChange: (val: string[]) => void;
+  singleSelect?: boolean;
 }) {
   const toggle = (option: string) => {
-    onChange(
-      selected.includes(option)
-        ? selected.filter((value) => value !== option)
-        : [...selected, option]
-    );
+    if (singleSelect) {
+      onChange(selected.includes(option) ? [] : [option]);
+      return;
+    }
+    onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
   };
 
   return (
@@ -136,7 +135,7 @@ function SalaryRange({
   onMaxChange: (v: number) => void;
 }) {
   const rangeMin = 0;
-  const rangeMax = 50000;
+  const rangeMax = 10000;
 
   const minPct = ((min - rangeMin) / (rangeMax - rangeMin)) * 100;
   const maxPct = ((max - rangeMin) / (rangeMax - rangeMin)) * 100;
@@ -159,8 +158,10 @@ function SalaryRange({
             const value = Number(event.target.value);
             if (value < max) onMinChange(value);
           }}
-          className="absolute w-full h-full opacity-0 cursor-pointer"
-          style={{ zIndex: 3 }}
+          className="dual-range-input absolute w-full h-full opacity-0"
+          style={{
+            zIndex: 3,
+          }}
         />
 
         <input
@@ -173,8 +174,10 @@ function SalaryRange({
             const value = Number(event.target.value);
             if (value > min) onMaxChange(value);
           }}
-          className="absolute w-full h-full opacity-0 cursor-pointer"
-          style={{ zIndex: 4 }}
+          className="dual-range-input absolute w-full h-full opacity-0"
+          style={{
+            zIndex: 4,
+          }}
         />
 
         <div
@@ -451,6 +454,7 @@ export function FilterDrawer({
       options={dynamicSeniorityLevels}
       selected={filters.seniorityLevels}
       onChange={(value) => setValue("seniorityLevels", value)}
+      singleSelect={true}
     />
   );
 
@@ -524,10 +528,10 @@ export function FilterDrawer({
           <CollapsibleFilterSection title="Skills">
             {skillsBody}
           </CollapsibleFilterSection>
-          <CollapsibleFilterSection title="Type of Employment">
+          <CollapsibleFilterSection title="Billing Frequency">
             {employmentBody}
           </CollapsibleFilterSection>
-          <CollapsibleFilterSection title="Seniority Level">
+          <CollapsibleFilterSection title="Rotation">
             {seniorityBody}
           </CollapsibleFilterSection>
           <CollapsibleFilterSection title="Salary Range">
@@ -543,14 +547,14 @@ export function FilterDrawer({
           <div className="border-t border-gray-100" />
 
           <div>
-            <p className="mb-3 text-sm font-semibold text-gray-900">Type of Employment</p>
+            <p className="mb-3 text-sm font-semibold text-gray-900">Billing Frequency</p>
             {employmentBody}
           </div>
 
           <div className="border-t border-gray-100" />
 
           <div>
-            <p className="mb-3 text-sm font-semibold text-gray-900">Seniority Level</p>
+            <p className="mb-3 text-sm font-semibold text-gray-900">Rotation</p>
             {seniorityBody}
           </div>
 

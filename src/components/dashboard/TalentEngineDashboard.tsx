@@ -225,8 +225,8 @@ const JOB_LISTINGS: JobListing[] = [
     stage: "Received",
     postedTime: "6 days ago",
     skills: ["Utility Operations", "Microgrid System"],
-    employmentType: "Full Time",
-    seniorityLevel: "Mid Level",
+    employmentType: "Monthly",
+    seniorityLevel: "Yes",
   },
   {
     id: 2,
@@ -243,8 +243,8 @@ const JOB_LISTINGS: JobListing[] = [
     stage: "Shortlisted",
     postedTime: "20 days ago",
     skills: ["Utility Operations"],
-    employmentType: "Part Time",
-    seniorityLevel: "Entry Level",
+    employmentType: "Hourly",
+    seniorityLevel: "No",
   },
   {
     id: 3,
@@ -261,8 +261,8 @@ const JOB_LISTINGS: JobListing[] = [
     stage: "Interview",
     postedTime: "1 day ago",
     skills: ["Energy data analytics"],
-    employmentType: "Internship",
-    seniorityLevel: "Entry Level",
+    employmentType: "Monthly",
+    seniorityLevel: "No",
   },
   {
     id: 4,
@@ -279,8 +279,8 @@ const JOB_LISTINGS: JobListing[] = [
     stage: "Received",
     postedTime: "1 day ago",
     skills: ["Microgrid System", "Energy data analytics"],
-    employmentType: "Training Jobs",
-    seniorityLevel: "Senior Level",
+    employmentType: "Hourly",
+    seniorityLevel: "Yes",
   },
   {
     id: 5,
@@ -297,8 +297,8 @@ const JOB_LISTINGS: JobListing[] = [
     stage: "Rejected",
     postedTime: "1 day ago",
     skills: ["Utility Operations"],
-    employmentType: "Part Time",
-    seniorityLevel: "Mid Level",
+    employmentType: "Hourly",
+    seniorityLevel: "Yes",
   },
 ];
 
@@ -462,6 +462,7 @@ export default function TalentEngineDashboard() {
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [allLocationOptions, setAllLocationOptions] = useState<LocationOption[]>([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
@@ -470,6 +471,53 @@ export default function TalentEngineDashboard() {
   useEffect(() => {
     // Warm dropdown options before the filter drawer opens.
     prefetchDropdownDetailsAfterLogin();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const byId = new Map<string, string>();
+        const maxPages = 20;
+        const perPage = 200;
+
+        for (let page = 1; page <= maxPages; page += 1) {
+          const url = new URL("/api/method/get_location_details", window.location.origin);
+          url.searchParams.set("page", String(page));
+          url.searchParams.set("limit", String(perPage));
+          const res = await fetch(url.toString(), {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (!res.ok) break;
+          const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+          const rows = Array.isArray(json.data) ? json.data : [];
+          if (rows.length === 0) break;
+
+          for (const row of rows) {
+            const id = (row.id ?? "").trim();
+            const label = (row.label ?? "").trim();
+            if (!id || !label) continue;
+            byId.set(id, label);
+          }
+
+          if (rows.length < perPage) break;
+        }
+
+        if (cancelled) return;
+        const next = Array.from(byId.entries())
+          .map(([id, label]) => ({ id, label }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+        setAllLocationOptions(next);
+      } catch {
+        if (!cancelled) setAllLocationOptions([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
@@ -677,10 +725,16 @@ export default function TalentEngineDashboard() {
           receivedAt: row.accepted_at || undefined,
         }));
 
+        const submittedJobIds = new Set(
+          localSubmittedActionCards
+            .map((card) => card.jobDocumentId?.trim() || "")
+            .filter(Boolean)
+        );
         const mergedByJob = new Map<string, ActionCard>();
-        for (const card of [...localSubmittedActionCards, ...localAcceptedCards, ...nextActions]) {
+        for (const card of [...localAcceptedCards, ...nextActions]) {
           const key = card.jobDocumentId?.trim();
           if (!key) continue;
+          if (submittedJobIds.has(key)) continue;
           const acceptedAtForJob = localAcceptedAtByJob.get(key) || "";
           const cardWithTimelineBackfill: ActionCard = {
             ...card,
@@ -987,14 +1041,20 @@ export default function TalentEngineDashboard() {
 
   const availableLocations = useMemo<LocationOption[]>(() => {
     const byId = new Map<string, string>();
+    for (const location of allLocationOptions) {
+      const id = location.id?.trim();
+      const label = location.label?.trim();
+      if (!id || !label) continue;
+      byId.set(id, label);
+    }
     for (const job of [...apiRecommendedJobs, ...apiApplicationJobs, ...localAppliedJobs]) {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
       const label = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
-      byId.set(id, label || id);
+      if (!byId.has(id)) byId.set(id, label || id);
     }
     return Array.from(byId.entries()).map(([id, label]) => ({ id, label }));
-  }, [apiRecommendedJobs, apiApplicationJobs, localAppliedJobs]);
+  }, [allLocationOptions, apiRecommendedJobs, apiApplicationJobs, localAppliedJobs]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -1065,6 +1125,34 @@ export default function TalentEngineDashboard() {
 
   const { visibleRecommendedJobs, visibleApplicationJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    const normalizeRotation = (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
+      if (
+        normalized === "no" ||
+        normalized === "false" ||
+        normalized === "0" ||
+        normalized === "no rotation" ||
+        normalized.includes("0 weeks on / 0 weeks off")
+      ) {
+        return "no";
+      }
+      if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
+      if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
+      if (
+        normalized.includes("on:") ||
+        normalized.includes("weeks on")
+      ) {
+        return "yes";
+      }
+      return normalized;
+    };
+    const selectedRotations = new Set(activeFilters.seniorityLevels.map(normalizeRotation));
+    const rotationFromJob = (job: JobListing) => {
+      const fromStartDate = normalizeRotation(job.startDate);
+      if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
+      return normalizeRotation(job.seniorityLevel);
+    };
 
     const filterList = (sourceJobs: JobListing[]) =>
       sourceJobs.filter((job) => {
@@ -1094,7 +1182,7 @@ export default function TalentEngineDashboard() {
 
         const matchesSeniority =
           activeFilters.seniorityLevels.length === 0 ||
-          activeFilters.seniorityLevels.includes(job.seniorityLevel);
+          selectedRotations.has(rotationFromJob(job));
 
         const matchesSalary =
           job.hourlyRate >= activeFilters.salaryMin &&
@@ -1336,6 +1424,10 @@ export default function TalentEngineDashboard() {
             next.unshift(nextCard);
             return next;
           });
+          if (action.jobDocumentId?.trim()) {
+            const jobId = action.jobDocumentId.trim();
+            setApiActionCards((prev) => prev.filter((card) => card.jobDocumentId?.trim() !== jobId));
+          }
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
           setLocalSubmittedActionCards((prev) => {
@@ -1348,6 +1440,10 @@ export default function TalentEngineDashboard() {
             next.unshift(nextCard);
             return next;
           });
+          if (action.jobDocumentId?.trim()) {
+            const jobId = action.jobDocumentId.trim();
+            setApiActionCards((prev) => prev.filter((card) => card.jobDocumentId?.trim() !== jobId));
+          }
         } else if (action.rrCandidateName?.trim()) {
           const availabilityDate = extras?.availabilityDate?.trim() || undefined;
           const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
@@ -1386,9 +1482,7 @@ export default function TalentEngineDashboard() {
               ];
             });
             setApiActionCards((prev) => {
-              const next = prev.filter((c) => c.jobDocumentId?.trim() !== jobId);
-              next.unshift(acceptedCard);
-              return next;
+              return prev.filter((c) => c.jobDocumentId?.trim() !== jobId);
             });
             setLocalSubmittedActionCards((prev) => {
               const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
@@ -1469,8 +1563,12 @@ export default function TalentEngineDashboard() {
 
   const renderEmptyJobs = (message: string) => (
     <div className="border border-dashed border-gray-300 rounded-xl bg-gray-50 px-6 py-10 text-center">
-      <p className="text-sm font-medium text-gray-900 mb-1">No jobs match the current filters</p>
-      <p className="text-sm text-gray-500">{message}</p>
+      <p className="text-sm font-medium text-gray-900 mb-1">
+        {showSavedOnly ? "No saved jobs" : "No jobs match the current filters"}
+      </p>
+      <p className="text-sm text-gray-500">
+        {showSavedOnly ? "Save jobs to view them here." : message}
+      </p>
     </div>
   );
 

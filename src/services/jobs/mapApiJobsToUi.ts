@@ -74,6 +74,12 @@ function formatBillRateRange(j: RecommendedJobApi): { label: string; value: numb
       : "monthly";
 
   if (min != null && max != null) {
+    if (min === max) {
+      return {
+        label: `${cur} ${max.toLocaleString()} / ${freqShort}`,
+        value: max,
+      };
+    }
     return {
       label: `${cur} ${min.toLocaleString()} – ${max.toLocaleString()} / ${freqShort}`,
       value: max,
@@ -86,6 +92,35 @@ function formatBillRateRange(j: RecommendedJobApi): { label: string; value: numb
     };
   }
   return { label: "—", value: 0 };
+}
+
+function billingFrequencyLabel(j: RecommendedJobApi): string {
+  const source = (j.billing_frequency || j.employment_type || "").trim().toLowerCase();
+  if (source.includes("hour")) return "Hourly";
+  if (source.includes("month")) return "Monthly";
+  return "—";
+}
+
+function rotationYesNo(j: RecommendedJobApi): string {
+  if (j.is_rotation === 1) return "Yes";
+  if (j.is_rotation === 0) return "No";
+  const normalized = (j.seniority_level || "").trim().toLowerCase();
+  if (normalized === "yes" || normalized === "true" || normalized === "1") return "Yes";
+  if (
+    normalized === "no" ||
+    normalized === "false" ||
+    normalized === "0" ||
+    normalized === "no rotation"
+  ) {
+    return "No";
+  }
+  const rotationText = (j.rotation || "").trim().toLowerCase();
+  if (rotationText === "yes" || rotationText === "true" || rotationText === "1") return "Yes";
+  if (rotationText === "no" || rotationText === "false" || rotationText === "0") return "No";
+  if (rotationText.includes("no rotation")) return "No";
+  if (rotationText.includes("0 weeks on / 0 weeks off")) return "No";
+  if (rotationText) return "Yes";
+  return "No";
 }
 
 export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJobListing {
@@ -107,8 +142,8 @@ export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJob
     stage: "Received",
     postedTime: j.status || "—",
     skills: j.key_skills ?? [],
-    employmentType: j.employment_type || j.billing_frequency || "—",
-    seniorityLevel: j.seniority_level || "—",
+    employmentType: billingFrequencyLabel(j),
+    seniorityLevel: rotationYesNo(j),
     jobDocumentId: j.job_id,
   };
 }

@@ -46,6 +46,7 @@ export interface LanguageItem {
 
 export interface ProfileData {
   name: string;
+  profileImageUrl?: string;
   verified: boolean;
   title: string;
   location: string;
