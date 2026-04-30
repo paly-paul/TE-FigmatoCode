@@ -343,7 +343,7 @@ interface BasicDetailsForm {
   preferredLocation: string;
 }
 
-type FormErrors = Partial<Record<keyof BasicDetailsForm, string>>;
+type FormErrors = Partial<Record<keyof BasicDetailsForm | "certifications", string>>;
 
 function normalizeExperienceYears(value: string | undefined): string {
   if (value == null || value === "") return "";
@@ -1551,6 +1551,16 @@ function BasicDetailsPageContent() {
       nextErrors.contact = `Phone number must be 7 to ${PHONE_MAX_LENGTH} digits.`;
     }
 
+    for (const entry of certifications) {
+      const issueDate = entry.issueDate?.trim();
+      const expirationDate = entry.expirationDate?.trim();
+      if (!issueDate || !expirationDate) continue;
+      if (expirationDate <= issueDate) {
+        nextErrors.certifications = "Expiration date must be greater than issue date.";
+        break;
+      }
+    }
+
     setErrors(nextErrors);
     const isValid = Object.keys(nextErrors).length === 0;
     if (!isValid) {
@@ -1582,6 +1592,7 @@ function BasicDetailsPageContent() {
                 nextErrors.salaryCurrency ||
                 nextErrors.summary
             ),
+          certifications: prev.certifications || Boolean(nextErrors.certifications),
         }));
       });
     }
@@ -1612,6 +1623,9 @@ function BasicDetailsPageContent() {
     setCertifications((prev) =>
       prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
     );
+    if (field === "issueDate" || field === "expirationDate") {
+      setErrors((prev) => ({ ...prev, certifications: undefined }));
+    }
   }
 
   function addCertificationEntry() {
@@ -2470,6 +2484,9 @@ function BasicDetailsPageContent() {
                       + Add
                     </button>
                   </div>
+                  {errors.certifications ? (
+                    <p className="text-sm text-red-600">{errors.certifications}</p>
+                  ) : null}
 
                   {certifications.map((entry) => (
                     <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
@@ -3028,6 +3045,9 @@ function BasicDetailsPageContent() {
                 </button>
               </div>
               <div className="p-4 sm:p-6 space-y-4">
+                {errors.certifications ? (
+                  <p className="text-sm text-red-600">{errors.certifications}</p>
+                ) : null}
                 {certifications.map((entry) => (
                   <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
