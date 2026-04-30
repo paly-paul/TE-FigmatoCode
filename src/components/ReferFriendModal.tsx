@@ -10,6 +10,7 @@ interface Props {
 }
 
 export default function ReferFriendModal({ open, onClose }: Props) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const countryCodeOptions = useMemo(() => {
     const isoCountryCodes = [
       "US", "IN", "GB", "CA", "AU", "AE", "SA", "SG", "DE", "FR", "IT", "ES", "NL", "SE",
@@ -35,11 +36,18 @@ export default function ReferFriendModal({ open, onClose }: Props) {
   const [openCountryCodeDropdown, setOpenCountryCodeDropdown] = useState(false);
   const [countryCodeSearch, setCountryCodeSearch] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [emailError, setEmailError] = useState("");
 
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedEmail = formData.email.trim();
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
     console.log("Referral submitted:", formData);
     setShowSuccess(true);
     window.setTimeout(() => {
@@ -145,9 +153,16 @@ export default function ReferFriendModal({ open, onClose }: Props) {
               <input
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  if (emailError) setEmailError("");
+                }}
+                className={`rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  emailError ? "border border-red-500" : "border border-gray-300"
+                }`}
+                required
               />
+              {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : null}
             </div>
 
             {/* Phone */}

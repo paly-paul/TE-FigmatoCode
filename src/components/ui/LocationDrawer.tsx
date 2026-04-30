@@ -56,7 +56,8 @@ export function LocationDrawer({
     <BaseDrawer
       open={open}
       onClose={onClose}
-      title="Preferred Location"
+      // title="Preferred Location"
+      title="Locations"
       triggerRef={triggerRef}
       headerActions={
         <button
@@ -111,7 +112,7 @@ export function LocationDrawer({
         </div>
 
         <p className="text-sm font-semibold text-gray-700 mb-3">
-          Previously Selected Locations
+          Recommended Locations
         </p>
 
         <div className="space-y-3">
