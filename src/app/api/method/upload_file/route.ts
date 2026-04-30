@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 
+function getCookieValue(cookieHeader: string | null, key: string) {
+  if (!cookieHeader) return "";
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${key}=([^;]+)`));
+  return match?.[1] ? decodeURIComponent(match[1]).trim() : "";
+}
+
 export async function POST(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -24,11 +30,19 @@ export async function POST(request: Request) {
     if (typeof value === "string") target.append(key, value);
   });
 
-  const headers: HeadersInit = {};
-  const auth = process.env.BACKEND_AUTHORIZATION;
-  if (auth) headers.Authorization = auth;
   const cookie = request.headers.get("cookie");
-  if (cookie) headers.Cookie = cookie;
+  const headers: HeadersInit = {};
+  // For user-scoped uploads, prefer the logged-in session cookie context.
+  // Sending a static Authorization token together with cookies can make
+  // Frappe evaluate the request under the wrong principal.
+  if (cookie) {
+    headers.Cookie = cookie;
+    const csrfToken = getCookieValue(cookie, "csrf_token");
+    if (csrfToken) headers["X-Frappe-CSRF-Token"] = csrfToken;
+  } else {
+    const auth = process.env.BACKEND_AUTHORIZATION;
+    if (auth) headers.Authorization = auth;
+  }
 
   const url = `${backendBase}/api/method/upload_file`;
   const upstream = await fetch(url, {
@@ -59,6 +73,7 @@ export async function POST(request: Request) {
 
   const res = NextResponse.json(data, { status: upstream.status });
   res.headers.set("x-upstream-url", url);
+  res.headers.set("x-proxy-auth-mode", cookie ? "cookie" : headers.Authorization ? "authorization" : "none");
   return res;
 }
 

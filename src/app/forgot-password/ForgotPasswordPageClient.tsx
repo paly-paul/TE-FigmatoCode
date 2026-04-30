@@ -8,10 +8,13 @@ import { MobileForgotPasswordScreen } from "@/components/mobile/MobileForgotPass
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
+import { sendCandidateSignupOtp } from "@/services/signup";
 
 export default function ForgotPasswordPageClient() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
@@ -22,11 +25,21 @@ export default function ForgotPasswordPageClient() {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: connect to auth API
-    console.log({ email });
-    router.push("/reset-password/sent/");
+    setError(null);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    setIsSubmitting(true);
+    try {
+      await sendCandidateSignupOtp(normalizedEmail, { allowExistingUser: true });
+      router.push(`/reset-password/sent/?email=${encodeURIComponent(normalizedEmail)}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to send OTP.";
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   if (isMobileViewport) {
@@ -44,7 +57,7 @@ export default function ForgotPasswordPageClient() {
       <div className="mb-6">
         <h1 className="mb-1 text-2xl font-bold text-gray-900">Forgot Password?</h1>
         <p className="text-sm text-gray-500">
-          Enter your email and we&apos;ll send you a reset link
+          Enter your email and we&apos;ll send you a one-time password (OTP)
         </p>
       </div>
 
@@ -59,8 +72,14 @@ export default function ForgotPasswordPageClient() {
           required
         />
 
-        <Button type="submit" className="mt-1">
-          Send Reset Link
+        {error ? (
+          <p className="text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <Button type="submit" className="mt-1" disabled={isSubmitting}>
+          {isSubmitting ? "Sending OTP..." : "Send OTP"}
         </Button>
       </form>
     </AuthLayout>

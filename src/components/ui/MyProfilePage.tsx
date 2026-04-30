@@ -947,7 +947,7 @@ export default function MyProfilePage() {
                                 <div className="mb-3 border border-[#D6DCEA] bg-white px-3 py-2.5">
                                     <button type="button" className="flex w-full items-center justify-between text-[14px] text-[#202939]">
                                         <span>Persona: {PROFILE.persona}</span>
-                                        <ChevronDown className="h-4 w-4 text-[#7b8798]" />
+                                        {/* <ChevronDown className="h-4 w-4 text-[#7b8798]" /> */}
                                     </button>
                                 </div>
 
@@ -1035,7 +1035,7 @@ export default function MyProfilePage() {
                         className="flex w-full items-center justify-between gap-2 border border-[#d7dde7] bg-white px-3 py-2 text-sm text-[#4b5563] sm:w-auto"
                     >
                         <span>Persona: {PROFILE.persona}</span>
-                        <ChevronDown className="h-3.5 w-3.5 text-[#7b8798]" />
+                        {/* <ChevronDown className="h-3.5 w-3.5 text-[#7b8798]" /> */}
                     </button>
 
                     <div className="flex w-full items-center justify-between gap-3 border border-[#d7dde7] bg-white px-3 py-2 text-sm sm:w-auto">

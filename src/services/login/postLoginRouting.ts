@@ -1,8 +1,80 @@
 "use client";
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
-import { isProfileComplete } from "@/lib/profileOnboarding";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
+
+type UnknownRecord = Record<string, unknown>;
+
+async function resolveProfileNameForLogin(email: string): Promise<string> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return "";
+
+  let profileName = getProfileName()?.trim() ?? "";
+  if (profileName) return profileName;
+
+  const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+  resolverUrl.searchParams.set("email", normalized);
+  const resolverResponse = await fetch(resolverUrl.toString(), { method: "GET" });
+  if (!resolverResponse.ok) return "";
+  const resolverData = (await resolverResponse.json()) as { profile_name?: string };
+  profileName = typeof resolverData.profile_name === "string" ? resolverData.profile_name.trim() : "";
+  return profileName;
+}
+
+function extractExistingUploadedResumeRef(input: unknown, depth = 0): string {
+  if (depth > 6 || input == null) return "";
+  if (typeof input === "string") {
+    const value = input.trim();
+    if (!value) return "";
+    const lower = value.toLowerCase();
+    if (lower.includes(".pdf") || lower.includes("/files/") || lower.includes("resume")) return value;
+    return "";
+  }
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = extractExistingUploadedResumeRef(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof input !== "object") return "";
+
+  const record = input as UnknownRecord;
+  const directKeys = [
+    "updated_resume",
+    "updatedResume",
+    "resume",
+    "resume_file",
+    "resumeFile",
+    "resume_url",
+    "resumeUrl",
+    "profile_resume",
+    "profileResume",
+    "profile_doc",
+    "profileDoc",
+  ];
+  for (const key of directKeys) {
+    const found = extractExistingUploadedResumeRef(record[key], depth + 1);
+    if (found) return found;
+  }
+
+  for (const value of Object.values(record)) {
+    const found = extractExistingUploadedResumeRef(value, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+async function hasUploadedResume(profileName: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const profileUrl = new URL("/api/method/get_data/", window.location.origin);
+  profileUrl.searchParams.set("doctype", "Profile");
+  profileUrl.searchParams.set("name", profileName);
+  const profileRes = await fetch(profileUrl.toString(), { method: "GET" });
+  if (!profileRes.ok) return false;
+  const profileData = (await profileRes.json()) as UnknownRecord;
+  return Boolean(extractExistingUploadedResumeRef(profileData));
+}
 
 /**
  * After a successful login (cookies set), decide if the user should skip the
@@ -14,40 +86,18 @@ import { isProfileWizardCompleteOnServer } from "@/services/profile";
 export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
 
-  const localProfileComplete = isProfileComplete();
   const sessionProfileGenerated = getProfileGenerated();
-  const sessionProfileName = getProfileName();
   console.log("[login-routing] start", {
     email: email.trim().toLowerCase(),
-    localProfileComplete,
     sessionProfileGenerated,
-    sessionProfileName,
+    sessionProfileName: getProfileName(),
   });
 
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return false;
+  if (!email.trim()) return false;
 
   try {
-    let profileName = sessionProfileName?.trim() ?? "";
+    const profileName = await resolveProfileNameForLogin(email);
     if (!profileName) {
-      const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-      resolverUrl.searchParams.set("email", normalized);
-      const resolverResponse = await fetch(resolverUrl.toString(), { method: "GET" });
-      if (resolverResponse.ok) {
-        const resolverData = (await resolverResponse.json()) as { profile_name?: string };
-        if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
-          profileName = resolverData.profile_name.trim();
-        }
-      }
-    }
-    if (!profileName) {
-      if (localProfileComplete) {
-        console.log("[login-routing] decision", {
-          reason: "local-profile-complete:fallback-missing-profile-name",
-          skipWizard: true,
-        });
-        return true;
-      }
       console.log("[login-routing] decision", {
         reason: "missing-profile-name",
         skipWizard: false,
@@ -59,17 +109,6 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
     }
     setProfileName(profileName);
 
-    // Backend contract: candidate_login marks existing generated profile users.
-    // Trust this first to avoid false negatives from secondary profile-shape checks.
-    if (sessionProfileGenerated === true) {
-      console.log("[login-routing] decision", {
-        reason: "profile-generated-per-login-response",
-        profileName,
-        skipWizard: true,
-      });
-      return true;
-    }
-
     const isComplete = await isProfileWizardCompleteOnServer(profileName);
     console.log("[login-routing] profile-check:session", {
       profileName,
@@ -80,27 +119,32 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
       return true;
     }
-    if (localProfileComplete) {
-      console.log("[login-routing] decision", {
-        reason: "local-profile-complete:fallback-server-incomplete",
-        skipWizard: true,
-      });
-      return true;
-    }
     console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
     return false;
   } catch {
     /* treat as no server profile */
   }
 
-  if (localProfileComplete) {
-    console.log("[login-routing] decision", {
-      reason: "local-profile-complete:fallback-server-error",
-      skipWizard: true,
-    });
-    return true;
-  }
-
   console.log("[login-routing] decision", { reason: "no-skip-signal", skipWizard: false });
   return false;
+}
+
+export async function getPostLoginDestination(email: string): Promise<string> {
+  const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
+  if (skipWizard) return "/dashboard";
+
+  if (typeof window === "undefined") return "/profile/create";
+  try {
+    const profileName = await resolveProfileNameForLogin(email);
+    if (profileName) {
+      const resumeUploaded = await hasUploadedResume(profileName);
+      if (resumeUploaded) {
+        return `/profile/create/basic-details?profile=${encodeURIComponent(profileName)}`;
+      }
+      return "/profile/create";
+    }
+  } catch {
+    // fallback
+  }
+  return "/profile/create";
 }

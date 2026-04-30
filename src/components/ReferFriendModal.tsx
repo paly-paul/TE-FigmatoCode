@@ -9,6 +9,12 @@ interface Props {
   onClose: () => void;
 }
 
+const PHONE_MAX_LENGTH = 10;
+
+function sanitizePhoneInput(value: string): string {
+  return value.replace(/\D/g, "").slice(0, PHONE_MAX_LENGTH);
+}
+
 export default function ReferFriendModal({ open, onClose }: Props) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const countryCodeOptions = useMemo(() => {
@@ -233,7 +239,12 @@ export default function ReferFriendModal({ open, onClose }: Props) {
                 <input
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: sanitizePhoneInput(e.target.value) })
+                  }
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={PHONE_MAX_LENGTH}
                   className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>

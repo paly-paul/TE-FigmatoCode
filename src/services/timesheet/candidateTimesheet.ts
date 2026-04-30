@@ -10,6 +10,7 @@ type TimesheetEntryInput = {
 
 export type CreateEditCandidateTimesheetInput = {
   candidate_id: string;
+  rr_candidate_id?: string;
   rr_name: string;
   project: string;
   week_number: number;

@@ -7,16 +7,29 @@ import { MobileAuthHeader } from "@/components/mobile/MobileAuthHeader";
 import { MobileSuccessStoriesSection } from "@/components/mobile/MobileSuccessStories";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { sendCandidateSignupOtp } from "@/services/signup";
 
 export function MobileForgotPasswordScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: connect to auth API
-    console.log({ email });
-    router.push("/reset-password/sent/");
+    setError(null);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    setIsSubmitting(true);
+    try {
+      await sendCandidateSignupOtp(normalizedEmail, { allowExistingUser: true });
+      router.push(`/reset-password/sent/?email=${encodeURIComponent(normalizedEmail)}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to send OTP.";
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -27,7 +40,7 @@ export function MobileForgotPasswordScreen() {
         <div className="mb-6">
           <h1 className="mb-1 text-2xl font-bold text-gray-900">Forgot Password?</h1>
           <p className="text-sm text-gray-500">
-            Enter your email and we&apos;ll send you a reset link
+            Enter your email and we&apos;ll send you a one-time password (OTP)
           </p>
         </div>
 
@@ -42,8 +55,14 @@ export function MobileForgotPasswordScreen() {
             required
           />
 
-          <Button type="submit" className="mt-1 min-h-[48px] text-base">
-            Send Reset Link
+          {error ? (
+            <p className="text-sm text-red-600" role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <Button type="submit" className="mt-1 min-h-[48px] text-base" disabled={isSubmitting}>
+            {isSubmitting ? "Sending OTP..." : "Send OTP"}
           </Button>
         </form>
       </main>

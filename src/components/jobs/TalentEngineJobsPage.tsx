@@ -71,6 +71,40 @@ interface ActionCard {
   jobDocumentId?: string;
 }
 
+function recencyScoreFromPostedTime(postedTime: string): number {
+  const text = postedTime.trim().toLowerCase();
+  if (!text) return Number.MAX_SAFE_INTEGER;
+  if (text.includes("just now")) return 0;
+
+  const relativeMatch = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)/);
+  if (relativeMatch) {
+    const value = Number.parseInt(relativeMatch[1], 10);
+    const unit = relativeMatch[2];
+    const multiplier =
+      unit === "second"
+        ? 1
+        : unit === "minute"
+          ? 60
+          : unit === "hour"
+            ? 60 * 60
+            : unit === "day"
+              ? 60 * 60 * 24
+              : unit === "week"
+                ? 60 * 60 * 24 * 7
+                : unit === "month"
+                  ? 60 * 60 * 24 * 30
+                  : 60 * 60 * 24 * 365;
+    return value * multiplier;
+  }
+
+  const absoluteDate = new Date(postedTime);
+  if (!Number.isNaN(absoluteDate.getTime())) {
+    return Math.max(0, Math.floor((Date.now() - absoluteDate.getTime()) / 1000));
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
 const JOBS: JobCard[] = [
   {
     id: 1,
@@ -172,7 +206,6 @@ const JOBS: JobCard[] = [
 
 const SORT_OPTIONS = ["Newest", "Highest Match"];
 const SKILLS_PREVIEW_LIMIT = 8;
-const SKILL_SEARCH_MIN_LENGTH = 3;
 const SAVED_JOBS_STORAGE_PREFIX = "te.jobs.saved";
 const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
@@ -246,15 +279,24 @@ function JobsFilterPanel({
     salary: true,
   });
   const trimmedSkillsSearch = searchSkills.trim();
-  const requiresMoreChars =
-    trimmedSkillsSearch.length > 0 && trimmedSkillsSearch.length < SKILL_SEARCH_MIN_LENGTH;
-  const filteredSkills = skillsOptions.filter((skill) =>
-    skill.toLowerCase().includes(searchSkills.toLowerCase())
-  );
+  const normalizedSkillsSearch = trimmedSkillsSearch.toLowerCase();
+  const filteredSkills = skillsOptions
+    .filter((skill) => skill.toLowerCase().includes(normalizedSkillsSearch))
+    .sort((a, b) => {
+      if (!normalizedSkillsSearch) return a.localeCompare(b);
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aStarts = aLower.startsWith(normalizedSkillsSearch) ? 1 : 0;
+      const bStarts = bLower.startsWith(normalizedSkillsSearch) ? 1 : 0;
+      if (aStarts !== bStarts) return bStarts - aStarts;
+
+      const aIndex = aLower.indexOf(normalizedSkillsSearch);
+      const bIndex = bLower.indexOf(normalizedSkillsSearch);
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return a.localeCompare(b);
+    });
   const visibleSkills =
-    requiresMoreChars
-      ? []
-      : showAllSkills || trimmedSkillsSearch.length > 0
+    showAllSkills || trimmedSkillsSearch.length > 0
       ? filteredSkills
       : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
   const canToggleSkillsView = trimmedSkillsSearch.length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
@@ -297,14 +339,17 @@ function JobsFilterPanel({
             </div>
 
             <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
-            {requiresMoreChars ? (
-              <p className="mb-3 text-xs text-gray-500">Type at least 3 letters to search skills.</p>
-            ) : null}
-            <FilterCheckboxGroup
-              options={visibleSkills}
-              selected={filters.skills}
-              onChange={(value) => setValue("skills", value)}
-            />
+            <div
+              className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
+                showAllSkills || trimmedSkillsSearch.length > 0 ? "max-h-96" : "max-h-72"
+              }`}
+            >
+              <FilterCheckboxGroup
+                options={visibleSkills}
+                selected={filters.skills}
+                onChange={(value) => setValue("skills", value)}
+              />
+            </div>
             {canToggleSkillsView ? (
               <button
                 type="button"
@@ -676,6 +721,7 @@ export default function TalentEngineJobsPage() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
+  const [baseSkills, setBaseSkills] = useState<string[]>([]);
   const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
   const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
@@ -790,7 +836,7 @@ export default function TalentEngineJobsPage() {
       new Set(source.map((job) => job.seniorityLevel.trim()).filter((v) => v && v !== "—"))
     );
     if (skillsFromSource.length > 0) {
-      setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsFromSource])));
+      setBaseSkills((prev) => Array.from(new Set([...prev, ...skillsFromSource])));
     }
 
     if (employmentFromSource.length > 0) {
@@ -829,7 +875,7 @@ export default function TalentEngineJobsPage() {
 
       if (!active) return;
       if (skillsRes.length > 0) {
-        setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
+        setBaseSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
       }
       // Billing Frequency filter is fixed to Monthly/Hourly.
       setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
@@ -892,7 +938,17 @@ export default function TalentEngineJobsPage() {
 
   useEffect(() => {
     const query = skillSearch.trim();
-    if (query.length < SKILL_SEARCH_MIN_LENGTH) return;
+    const normalizedQuery = query.toLowerCase();
+    const localMatches = query
+      ? baseSkills.filter((skill) => skill.toLowerCase().includes(normalizedQuery))
+      : baseSkills;
+
+    if (query.length === 0) {
+      setDynamicSkills(baseSkills);
+      return;
+    }
+    // Keep skill suggestions responsive even if remote search is strict.
+    setDynamicSkills(localMatches);
 
     let active = true;
     const timer = window.setTimeout(() => {
@@ -907,7 +963,10 @@ export default function TalentEngineJobsPage() {
 
         if (!active) return;
         if (Array.isArray(skillsRes)) {
-          setDynamicSkills(skillsRes);
+          const mergedMatches = Array.from(new Set([...localMatches, ...skillsRes])).filter((skill) =>
+            skill.toLowerCase().includes(normalizedQuery)
+          );
+          setDynamicSkills(mergedMatches);
         }
       })();
     }, 300);
@@ -916,7 +975,7 @@ export default function TalentEngineJobsPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [skillSearch]);
+  }, [skillSearch, baseSkills]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
     const byId = new Map<string, string>();
@@ -1029,7 +1088,10 @@ export default function TalentEngineJobsPage() {
     });
 
     if (sortBy === "Newest") {
-      return [...results].sort((a, b) => a.postedTime.localeCompare(b.postedTime));
+      return [...results].sort(
+        (a, b) =>
+          recencyScoreFromPostedTime(a.postedTime) - recencyScoreFromPostedTime(b.postedTime)
+      );
     }
 
     if (sortBy === "Highest Match") {

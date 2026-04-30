@@ -112,6 +112,12 @@ function sanitizeDecimalInput(value: string): string {
   return `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, "")}`;
 }
 
+function isIsoDateString(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(parsed.getTime());
+}
+
 function formatTimelineDate(value?: string): string | undefined {
   const raw = value?.trim();
   if (!raw) return undefined;
@@ -136,10 +142,7 @@ function shouldPrefillSubmittedFromSourcing(action: ActionDrawerActionCard | nul
 
 function shouldUseFirstTimeJobTabs(action: ActionDrawerActionCard | null): boolean {
   if (!action) return false;
-  if (isDirectJobApplyCard(action)) return true;
-  if (action.isSourcingAccepted) return false;
-  const title = action.title.toLowerCase();
-  return title.includes("interest");
+  return isDirectJobApplyCard(action);
 }
 
 function isDirectJobApplyCard(action: ActionDrawerActionCard | null): boolean {
@@ -173,6 +176,13 @@ function isSalaryNegotiationCard(action: ActionDrawerActionCard | null): boolean
   );
 }
 
+function isActionableStageCard(action: ActionDrawerActionCard | null): boolean {
+  if (!action) return false;
+  if (action.type !== "Job") return false;
+  if (isApplicationTimelineCard(action)) return false;
+  return !isDirectJobApplyCard(action);
+}
+
 export default function ActionDrawer({
   open,
   onClose,
@@ -195,6 +205,7 @@ export default function ActionDrawer({
   const [showClarificationBox, setShowClarificationBox] = useState(false);
   const [clarificationRemark, setClarificationRemark] = useState("");
   const [isClarificationSubmitting, setIsClarificationSubmitting] = useState(false);
+  const [showAcceptConfirmation, setShowAcceptConfirmation] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true);
   const [interviewSlots, setInterviewSlots] = useState<InterviewSlotOptionApi[]>([]);
   const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
@@ -210,6 +221,7 @@ export default function ActionDrawer({
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const submitInFlightRef = useRef(false);
   const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
   const expectedSalaryFieldRef = useRef<HTMLDivElement | null>(null);
   const termsFieldRef = useRef<HTMLLabelElement | null>(null);
@@ -226,6 +238,8 @@ export default function ActionDrawer({
       setActiveTab(
         isApplicationTimelineCard(action)
           ? "Job Description"
+          : isActionableStageCard(action)
+            ? "Job Action"
           : shouldUseFirstTimeJobTabs(action)
             ? "Job Description"
             : "Job Action"
@@ -234,12 +248,13 @@ export default function ActionDrawer({
       setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
       setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
       const startWithSalaryNegotiationOpen = isSalaryNegotiationCard(action);
-      setIsProposalExpanded(!startWithSalaryNegotiationOpen);
+      setIsProposalExpanded(true);
       setIsProjectInfoExpanded(!startWithSalaryNegotiationOpen);
       setIsSalaryNegotiationExpanded(startWithSalaryNegotiationOpen);
-      setShowClarificationBox(isSalaryNegotiationCard(action));
+      setShowClarificationBox(false);
       setClarificationRemark("");
       setIsClarificationSubmitting(false);
+      setShowAcceptConfirmation(false);
       setHasAcceptedTerms(true);
       setInterviewSlots([]);
       setInterviewSlotsLoading(false);
@@ -254,12 +269,15 @@ export default function ActionDrawer({
       setProposalError(null);
       setValidationMessage(null);
       setIsSubmitting(false);
+      submitInFlightRef.current = false;
       setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
     }
   }, [open, action?.isSourcingAccepted, action?.title, minAvailableDate]);
 
   const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
     ? ["Job Description", "Timeline"]
+    : isActionableStageCard(action)
+      ? [...actionDrawerChrome.tabs]
     : shouldUseFirstTimeJobTabs(action)
       ? ["Job Description", "Job Action", "Timeline"]
       : [...actionDrawerChrome.tabs];
@@ -647,7 +665,7 @@ export default function ActionDrawer({
         />
         <span>{actionDrawerRecruiterInterest.termsAgreement}</span>
       </label>
-      {isDirectApply && validationMessage ? (
+      {validationMessage ? (
         <p className="mt-2 text-xs text-red-600">
           {validationMessage}
         </p>
@@ -745,51 +763,6 @@ export default function ActionDrawer({
 
   const renderSalaryNegotiationAction = () => (
     <div className="space-y-3.5">
-      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
-        <button
-          type="button"
-          onClick={() =>
-            setIsProjectInfoExpanded((current) => {
-              const next = !current;
-              if (next) {
-                setIsSalaryNegotiationExpanded(false);
-              }
-              return next;
-            })
-          }
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
-        >
-          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Project Info</h3>
-          {isProjectInfoExpanded ? (
-            <ChevronUp className="h-5 w-5 text-[#202939]" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-[#202939]" />
-          )}
-        </button>
-        {isProjectInfoExpanded ? (
-          <div className="border-t border-[#E6ECF6] px-4 py-3">
-            <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-xs sm:grid-cols-2 sm:text-sm">
-              <div>
-                <p className="text-[#5E7397]">Job Posting</p>
-                <p className="mt-0.5 font-semibold text-[#202939]">{resolvedReferenceId}</p>
-              </div>
-              <div>
-                <p className="text-[#5E7397]">Location</p>
-                <p className="mt-0.5 font-semibold text-[#202939]">
-                  {locationLabel} | {resolvedLocationSuffix}
-                </p>
-              </div>
-              {resolvedMetaFields.map((field) => (
-                <div key={field.label}>
-                  <p className="text-[#5E7397]">{field.label}</p>
-                  <p className="mt-0.5 font-semibold text-[#202939]">{field.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
-
       <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
         <button
           type="button"
@@ -1109,14 +1082,14 @@ export default function ActionDrawer({
 
   const runPrimaryAction = () => {
     if (!action) return;
-    if (isSubmitting || hasSubmitted) return;
+    if (submitInFlightRef.current || isSubmitting || hasSubmitted) return;
     if (isDirectApply && activeTab !== "Job Action") {
       setValidationMessage(null);
       setActiveTab("Job Action");
       return;
     }
     if (isInterviewScheduled && interviewSubmitDisabled) {
-      setValidationMessage(null);
+      setValidationMessage("Please select an available interview slot to continue.");
       scrollToMissingField(interviewSlotsSectionRef.current);
       return;
     }
@@ -1133,6 +1106,11 @@ export default function ActionDrawer({
     }
     setValidationMessage(null);
     if (isRecruiterInterestReceived && recruiterSubmitDisabled) {
+      if (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms) {
+        setValidationMessage(
+          "Please enter a valid available date, expected salary greater than 0, and accept the terms to continue."
+        );
+      }
       if (recruiterDateInvalid) {
         scrollToMissingField(availableDateFieldRef.current);
         return;
@@ -1146,45 +1124,68 @@ export default function ActionDrawer({
         return;
       }
     }
-    void (async () => {
-      setIsSubmitting(true);
-      let ok = true;
-      if (isInterviewScheduled) {
-        const interviewId = pickInterviewIdForSlotSubmit({
-          resolvedInterviewId,
-          explicitCardInterviewId: action.interviewId,
-          actionableRecordName: action.proposalName,
-        });
-        const result = await Promise.resolve(
-          onPrimaryAction?.(action, {
-            interviewId,
-            interviewSlotId: selectedInterviewSlot,
-          })
-        );
-        ok = result !== false;
-      } else if (isRecruiterInterestReceived) {
-        const result = await Promise.resolve(
-          onPrimaryAction?.(action, {
-            availabilityDate: availableDate,
-            expectedSalary,
-            acceptTerms: hasAcceptedTerms,
-          })
-        );
-        ok = result !== false;
-      } else if (isDirectApply) {
-        const result = await Promise.resolve(
-          onPrimaryAction?.(action, {
-            availabilityDate: availableDate,
-            expectedSalary,
-          })
-        );
-        ok = result !== false;
-      } else {
-        const result = await Promise.resolve(onPrimaryAction?.(action));
-        ok = result !== false;
+    if (isRecruiterInterestReceived) {
+      const parsedAvailableDate = availableDate.trim();
+      if (!isIsoDateString(parsedAvailableDate) || parsedAvailableDate < minAvailableDate) {
+        setValidationMessage("Please enter a valid available date to continue.");
+        scrollToMissingField(availableDateFieldRef.current);
+        return;
       }
-      if (ok) setHasSubmitted(true);
-      setIsSubmitting(false);
+      if (!Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0) {
+        setValidationMessage("Expected salary must be greater than 0.");
+        scrollToMissingField(expectedSalaryFieldRef.current);
+        return;
+      }
+      if (!hasAcceptedTerms) {
+        setValidationMessage("Please accept the terms to continue.");
+        scrollToMissingField(termsFieldRef.current);
+        return;
+      }
+    }
+    void (async () => {
+      submitInFlightRef.current = true;
+      setIsSubmitting(true);
+      try {
+        let ok = true;
+        if (isInterviewScheduled) {
+          const interviewId = pickInterviewIdForSlotSubmit({
+            resolvedInterviewId,
+            explicitCardInterviewId: action.interviewId,
+            actionableRecordName: action.proposalName,
+          });
+          const result = await Promise.resolve(
+            onPrimaryAction?.(action, {
+              interviewId,
+              interviewSlotId: selectedInterviewSlot,
+            })
+          );
+          ok = result !== false;
+        } else if (isRecruiterInterestReceived) {
+          const result = await Promise.resolve(
+            onPrimaryAction?.(action, {
+              availabilityDate: availableDate,
+              expectedSalary,
+              acceptTerms: hasAcceptedTerms,
+            })
+          );
+          ok = result !== false;
+        } else if (isDirectApply) {
+          const result = await Promise.resolve(
+            onPrimaryAction?.(action, {
+              availabilityDate: availableDate,
+              expectedSalary,
+            })
+          );
+          ok = result !== false;
+        } else {
+          const result = await Promise.resolve(onPrimaryAction?.(action));
+          ok = result !== false;
+        }
+        if (ok) setHasSubmitted(true);
+      } finally {
+        setIsSubmitting(false);
+        submitInFlightRef.current = false;
+      }
     })();
   };
 
@@ -1213,9 +1214,9 @@ export default function ActionDrawer({
             }
             void (async () => {
               setIsClarificationSubmitting(true);
-              const ok = await Promise.resolve(
-                onRequestClarification?.(action, clarificationRemark.trim())
-              );
+              const ok = onRequestClarification
+                ? await Promise.resolve(onRequestClarification(action, clarificationRemark.trim()))
+                : false;
               if (ok !== false) {
                 setShowClarificationBox(false);
                 setClarificationRemark("");
@@ -1231,22 +1232,24 @@ export default function ActionDrawer({
       </div>
     ) : (
       <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
+        {onRequestClarification ? (
+          <button
+            type="button"
+            onClick={() => {
+              setShowClarificationBox(true);
+              setIsSalaryNegotiationExpanded(true);
+              setIsProposalExpanded(false);
+            }}
+            className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
+          >
+            {actionDrawerFooter.requestClarification}
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={() => {
-            setShowClarificationBox(true);
-            setIsSalaryNegotiationExpanded(true);
-            setIsProjectInfoExpanded(false);
-            setIsProposalExpanded(false);
-          }}
-          className="rounded-md border border-[#D6DCEA] px-4 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50 sm:px-5 sm:py-2.5"
-        >
-          {actionDrawerFooter.requestClarification}
-        </button>
-        <button
-          type="button"
-          onClick={runPrimaryAction}
-          className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] sm:px-6 sm:py-2.5"
+          disabled={primarySubmitDisabled}
+          onClick={() => setShowAcceptConfirmation(true)}
+          className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:py-2.5"
         >
           Accept
         </button>
@@ -1299,91 +1302,131 @@ export default function ActionDrawer({
     </>
   );
 
+  const confirmTargetJobLabel = action?.subtitle.split(" - ")[0]?.trim() || roleTitle;
+  const confirmTargetProposalLabel = action?.proposalName?.trim() || resolvedReferenceId;
+
   return (
-    <BaseDrawer
-      open={open}
-      onClose={onClose}
-      title={actionDrawerChrome.drawerTitle}
-      placement={isMobileViewport ? "bottom" : "right"}
-      panelClassName={isMobileViewport ? "h-[80svh] max-h-[80svh]" : ""}
-      widthClassName="w-full sm:w-[94%] lg:w-[90%] xl:w-[1120px]"
-      bodyClassName={isMobileViewport ? "px-4 py-3" : "px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"}
-      contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
-      footer={footerContent}
-      headerActions={isMobileViewport ? undefined : (
-        <div className="text-right">
-          <p className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerChrome.referenceId}</p>
-        </div>
-      )}
-    >
-      {isMobileViewport ? mobileDrawerContent : (
-        <>
-      <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
-            {actionDrawerJobSummary.matchBadge}
-          </span>
-          <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>
-        </div>
-
-        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <h3 className="text-base font-semibold text-[#202939] sm:text-lg lg:text-xl">{roleTitle}</h3>
-            <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
-              <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
-              <span>
-                {locationLabel} | {resolvedLocationSuffix}
-              </span>
-            </p>
+    <>
+      <BaseDrawer
+        open={open}
+        onClose={onClose}
+        title={actionDrawerChrome.drawerTitle}
+        placement={isMobileViewport ? "bottom" : "right"}
+        panelClassName={isMobileViewport ? "h-[80svh] max-h-[80svh]" : ""}
+        widthClassName="w-full sm:w-[94%] lg:w-[90%] xl:w-[1120px]"
+        bodyClassName={isMobileViewport ? "px-4 py-3" : "px-4 py-3.5 sm:px-5 sm:py-4 md:px-6 md:py-5"}
+        contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
+        footer={footerContent}
+        headerActions={isMobileViewport ? undefined : (
+          <div className="text-right">
+            <p className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerChrome.referenceId}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 self-start xl:self-center sm:gap-2.5">
-            <span className="text-sm font-medium text-[#5E7397] sm:text-base">
-              {actionDrawerJobSummary.matchLabel}
+        )}
+      >
+        {isMobileViewport ? mobileDrawerContent : (
+          <>
+        <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
+              {actionDrawerJobSummary.matchBadge}
             </span>
-            <div className="flex gap-1">
-              {Array.from({ length: actionDrawerJobSummary.matchBarTotalSegments }, (_, i) => (
-                <div
-                  key={i}
-                  className={`h-3.5 w-2.5 rounded-[1px] ${
-                    i < actionDrawerJobSummary.matchBarFilledCount ? "bg-[#1447E6]" : "bg-[#E1E7F0]"
-                  }`}
-                />
-              ))}
+            <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>
+          </div>
+
+          <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <h3 className="text-base font-semibold text-[#202939] sm:text-lg lg:text-xl">{roleTitle}</h3>
+              <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
+                <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
+                <span>
+                  {locationLabel} | {resolvedLocationSuffix}
+                </span>
+              </p>
             </div>
-            <span className="text-sm font-semibold text-[#202939] sm:text-base">
-              {resolvedMatchPercent}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 self-start xl:self-center sm:gap-2.5">
+              <span className="text-sm font-medium text-[#5E7397] sm:text-base">
+                {actionDrawerJobSummary.matchLabel}
+              </span>
+              <div className="flex gap-1">
+                {Array.from({ length: actionDrawerJobSummary.matchBarTotalSegments }, (_, i) => (
+                  <div
+                    key={i}
+                    className={`h-3.5 w-2.5 rounded-[1px] ${
+                      i < actionDrawerJobSummary.matchBarFilledCount ? "bg-[#1447E6]" : "bg-[#E1E7F0]"
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="text-sm font-semibold text-[#202939] sm:text-base">
+                {resolvedMatchPercent}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-x-5 gap-y-3 text-xs md:grid-cols-2 xl:grid-cols-3 sm:gap-y-3.5 sm:text-sm">
+            {resolvedMetaFields.map((field) => {
+              const Icon = metaIcons[field.icon];
+              return (
+                <div key={field.label} className="flex items-start gap-2.5 sm:gap-3">
+                  <Icon
+                    size={16}
+                    className="mt-0.5 flex-shrink-0 text-[#5E7397] sm:mt-1 sm:h-[18px] sm:w-[18px]"
+                  />
+                  <div>
+                    <p className="text-xs text-[#5E7397] sm:text-sm">{field.label}</p>
+                    <p className="mt-0.5 text-sm font-semibold text-[#202939] sm:text-base">{field.value}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+        {renderTabNavigation()}
 
-        <div className="grid grid-cols-1 gap-x-5 gap-y-3 text-xs md:grid-cols-2 xl:grid-cols-3 sm:gap-y-3.5 sm:text-sm">
-          {resolvedMetaFields.map((field) => {
-            const Icon = metaIcons[field.icon];
-            return (
-              <div key={field.label} className="flex items-start gap-2.5 sm:gap-3">
-                <Icon
-                  size={16}
-                  className="mt-0.5 flex-shrink-0 text-[#5E7397] sm:mt-1 sm:h-[18px] sm:w-[18px]"
-                />
-                <div>
-                  <p className="text-xs text-[#5E7397] sm:text-sm">{field.label}</p>
-                  <p className="mt-0.5 text-sm font-semibold text-[#202939] sm:text-base">{field.value}</p>
-                </div>
-              </div>
-            );
-          })}
+        {activeTab === "Job Action" ? renderJobActionContent() : null}
+
+        {activeTab === "Timeline" ? renderTimelineContent() : null}
+
+        {activeTab === "Job Description" ? renderJobDescriptionContent() : null}
+          </>
+        )}
+      </BaseDrawer>
+      {showAcceptConfirmation ? (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-[#202939]">Confirm acceptance</h3>
+            <p className="mt-2 text-sm text-[#5E7397]">
+              Please confirm you want to accept this proposal for the selected job.
+            </p>
+            <div className="mt-4 space-y-2 rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-3">
+              <p className="text-xs text-[#5E7397]">Job</p>
+              <p className="text-sm font-medium text-[#202939]">{confirmTargetJobLabel}</p>
+              <p className="pt-1 text-xs text-[#5E7397]">Proposal</p>
+              <p className="text-sm font-medium text-[#202939]">{confirmTargetProposalLabel}</p>
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAcceptConfirmation(false)}
+                className="rounded-md border border-[#D6DCEA] px-5 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={primarySubmitDisabled}
+                onClick={() => {
+                  setShowAcceptConfirmation(false);
+                  runPrimaryAction();
+                }}
+                className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSubmitting ? "Submitting..." : "Confirm"}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {renderTabNavigation()}
-
-      {activeTab === "Job Action" ? renderJobActionContent() : null}
-
-      {activeTab === "Timeline" ? renderTimelineContent() : null}
-
-      {activeTab === "Job Description" ? renderJobDescriptionContent() : null}
-        </>
-      )}
-    </BaseDrawer>
+      ) : null}
+    </>
   );
 }

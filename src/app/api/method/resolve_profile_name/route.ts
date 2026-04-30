@@ -69,13 +69,18 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const cookieHeader = request.headers.get("cookie");
 
-  const hints = uniqueNonEmpty([
+  const queryHints = uniqueNonEmpty([
     searchParams.get("candidate_id"),
     searchParams.get("email"),
     searchParams.get("profile_name"),
+  ]);
+  const cookieHints = uniqueNonEmpty([
     getCookieValue(cookieHeader, "user_id"),
     getCookieValue(cookieHeader, "full_name"),
   ]);
+  // Prevent cross-account lookups: explicit query hints should not be mixed
+  // with stale/current session cookies from a different user.
+  const hints = queryHints.length > 0 ? queryHints : cookieHints;
   console.info("[resolve_profile_name] start", {
     hints,
     hasCookieHeader: Boolean(cookieHeader),
@@ -86,7 +91,7 @@ export async function GET(request: Request) {
   if (auth) headers.Authorization = auth;
   if (cookieHeader) headers.Cookie = cookieHeader;
 
-  const filterFields = ["name", "email", "user", "candidate_id", "owner", "full_name"];
+  const filterFields = ["name", "email", "owner", "full_name"];
   let lastUpstreamError:
     | { status: number; ok: boolean; url: string; data: JsonRecord; hint: string; field?: string }
     | undefined;

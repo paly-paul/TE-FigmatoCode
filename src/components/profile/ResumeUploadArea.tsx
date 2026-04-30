@@ -7,6 +7,7 @@ import {
   TrashIcon,
   CheckCircleSolidIcon,
 } from "@/components/icons";
+import { RotatingLoadingQuote } from "@/components/ui/RotatingLoadingQuote";
 
 interface UploadedFile {
   name: string;
@@ -29,9 +30,11 @@ export function ResumeUploadArea({
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFileName, setUploadingFileName] = useState("");
+  const MIN_LOADER_MS = 5200;
 
-  function handleFiles(files: FileList | null) {
+  async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    if (isUploading) return;
     const file = files[0];
     const allowed = [
       "application/pdf",
@@ -46,25 +49,29 @@ export function ResumeUploadArea({
       return;
     }
 
-    // Start upload animation:
+    // Start upload animation and keep it visible long enough to read quotes.
     setIsUploading(true);
     setUploadingFileName(file.name);
-
-    setTimeout(async () => {
-      try {
-        await onUpload(file);
-      } catch {
-        alert("We couldn't parse that resume. Please try again.");
-      } finally {
-        setIsUploading(false);
+    const startedAt = Date.now();
+    try {
+      await onUpload(file);
+    } catch {
+      alert("We couldn't parse that resume. Please try again.");
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, MIN_LOADER_MS - elapsed);
+      if (remaining > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remaining));
       }
-    }, 3000);
+      setIsUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+    void handleFiles(e.dataTransfer.files);
   }
 
   return (
@@ -191,6 +198,7 @@ export function ResumeUploadArea({
           <p className="text-sm font-medium text-gray-700">
             Uploading {uploadFileName}...
           </p>
+          <RotatingLoadingQuote className="max-w-md" />
         </div>
       ) : uploadedFile ? (
         /*  Uploaded state  */
@@ -227,7 +235,12 @@ export function ResumeUploadArea({
           </div>
           <button
             type="button"
-            onClick={() => inputRef.current?.click()}
+            onClick={() => {
+              if (inputRef.current) {
+                inputRef.current.value = "";
+                inputRef.current.click();
+              }
+            }}
             className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-5 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
           >
             <SmallUploadIcon />
@@ -242,7 +255,10 @@ export function ResumeUploadArea({
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          void handleFiles(e.target.files);
+          e.target.value = "";
+        }}
       />
     </div>
   );

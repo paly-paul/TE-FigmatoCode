@@ -54,7 +54,6 @@ const DEFAULT_DROPDOWN_CONFIG = {
   limit: 1000,
 } as const;
 const SKILLS_PREVIEW_LIMIT = 8;
-const SKILL_SEARCH_MIN_LENGTH = 3;
 
 function CollapsibleFilterSection({
   title,
@@ -339,11 +338,17 @@ export function FilterDrawer({
   useEffect(() => {
     if (!open) return;
     const query = skillSearch.trim();
+    const normalizedQuery = query.toLowerCase();
+    const localMatches = query
+      ? baseSkills.filter((skill) => skill.toLowerCase().includes(normalizedQuery))
+      : baseSkills;
+
     if (query.length === 0) {
       setDynamicSkills(baseSkills);
       return;
     }
-    if (query.length < SKILL_SEARCH_MIN_LENGTH) return;
+    // Always show local matches immediately while typing.
+    setDynamicSkills(localMatches);
 
     let active = true;
     const timer = window.setTimeout(() => {
@@ -358,7 +363,10 @@ export function FilterDrawer({
 
         if (!active) return;
         if (Array.isArray(searchedSkills)) {
-          setDynamicSkills(searchedSkills);
+          const mergedMatches = Array.from(new Set([...localMatches, ...searchedSkills])).filter((skill) =>
+            skill.toLowerCase().includes(normalizedQuery)
+          );
+          setDynamicSkills(mergedMatches);
         }
       })();
     }, 300);
@@ -370,15 +378,24 @@ export function FilterDrawer({
   }, [open, skillSearch, baseSkills]);
 
   const trimmedSkillSearch = skillSearch.trim();
-  const requiresMoreChars =
-    trimmedSkillSearch.length > 0 && trimmedSkillSearch.length < SKILL_SEARCH_MIN_LENGTH;
-  const filteredSkills = dynamicSkills.filter((skill) =>
-    skill.toLowerCase().includes(skillSearch.toLowerCase())
-  );
+  const normalizedSkillSearch = trimmedSkillSearch.toLowerCase();
+  const filteredSkills = dynamicSkills
+    .filter((skill) => skill.toLowerCase().includes(normalizedSkillSearch))
+    .sort((a, b) => {
+      if (!normalizedSkillSearch) return a.localeCompare(b);
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aStarts = aLower.startsWith(normalizedSkillSearch) ? 1 : 0;
+      const bStarts = bLower.startsWith(normalizedSkillSearch) ? 1 : 0;
+      if (aStarts !== bStarts) return bStarts - aStarts;
+
+      const aIndex = aLower.indexOf(normalizedSkillSearch);
+      const bIndex = bLower.indexOf(normalizedSkillSearch);
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return a.localeCompare(b);
+    });
   const visibleSkills =
-    requiresMoreChars
-      ? []
-      : showAllSkills || trimmedSkillSearch.length > 0
+    showAllSkills || trimmedSkillSearch.length > 0
       ? filteredSkills
       : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
   const canToggleSkillsView = trimmedSkillSearch.length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
@@ -421,14 +438,17 @@ export function FilterDrawer({
       {!isCompactFilterUi ? <p className="mb-3 text-sm font-semibold text-gray-900">Skills</p> : null}
       {skillsSearchInput}
       <p className="mb-3 text-sm font-medium text-gray-700">Popular Skills</p>
-      {requiresMoreChars ? (
-        <p className="mb-3 text-xs text-gray-500">Type at least 3 letters to search skills.</p>
-      ) : null}
-      <CheckboxGroup
-        options={visibleSkills}
-        selected={filters.skills}
-        onChange={(value) => setValue("skills", value)}
-      />
+      <div
+        className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
+          showAllSkills || trimmedSkillSearch.length > 0 ? "max-h-96" : "max-h-72"
+        }`}
+      >
+        <CheckboxGroup
+          options={visibleSkills}
+          selected={filters.skills}
+          onChange={(value) => setValue("skills", value)}
+        />
+      </div>
       {canToggleSkillsView ? (
         <button
           type="button"
