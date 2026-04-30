@@ -28,6 +28,15 @@ interface UploadedFile {
   updated_resume?: string;
 }
 
+const UPLOADED_RESUME_META_KEY = "uploadedResumeMeta";
+const LOGIN_EMAIL_KEY = "te_login_email";
+
+function getPersistedUploadedResumeMetaKey(): string {
+  if (typeof window === "undefined") return "";
+  const email = window.localStorage.getItem(LOGIN_EMAIL_KEY)?.trim().toLowerCase() || "";
+  return email ? `te_resume_profile_draft:${email}:${UPLOADED_RESUME_META_KEY}` : "";
+}
+
 function extractPreProfileNameFromCreateEditProfileResponse(
   payload: Record<string, unknown> | null
 ): string {
@@ -72,6 +81,51 @@ function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null)
       const value = root[key];
       if (typeof value === "string" && value.trim()) return value.trim();
     }
+  }
+  return "";
+}
+
+function extractExistingUploadedResumeRef(input: unknown, depth = 0): string {
+  if (depth > 6 || input == null) return "";
+  if (typeof input === "string") {
+    const value = input.trim();
+    if (!value) return "";
+    const lower = value.toLowerCase();
+    // Match typical uploaded resume refs/URLs.
+    if (lower.includes(".pdf") || lower.includes("/files/") || lower.includes("resume")) return value;
+    return "";
+  }
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = extractExistingUploadedResumeRef(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof input !== "object") return "";
+
+  const record = input as Record<string, unknown>;
+  const directKeys = [
+    "updated_resume",
+    "updatedResume",
+    "resume",
+    "resume_file",
+    "resumeFile",
+    "resume_url",
+    "resumeUrl",
+    "profile_resume",
+    "profileResume",
+    "profile_doc",
+    "profileDoc",
+  ];
+  for (const key of directKeys) {
+    const found = extractExistingUploadedResumeRef(record[key], depth + 1);
+    if (found) return found;
+  }
+
+  for (const value of Object.values(record)) {
+    const found = extractExistingUploadedResumeRef(value, depth + 1);
+    if (found) return found;
   }
   return "";
 }
@@ -135,24 +189,94 @@ export default function CreateProfilePage() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isProcessingResume, setIsProcessingResume] = useState(false);
   const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
+  const [isResolvingEntryStep, setIsResolvingEntryStep] = useState(true);
   // Keep initial render identical to server HTML to avoid hydration mismatch.
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
-  // Re-hydrate uploaded resume info when the user navigates back
-  // to this page within the same session.
+  // Resolve initial entry step before rendering upload UI:
+  // if a resume already exists (session/local/server), jump straight to basic details.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = window.sessionStorage.getItem("uploadedResumeMeta");
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as UploadedFile;
-      if (parsed?.name && parsed?.uploadDate) {
-        setUploadedFile(parsed);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const persistedKey = getPersistedUploadedResumeMetaKey();
+        let raw = window.sessionStorage.getItem(UPLOADED_RESUME_META_KEY);
+        if (!raw && persistedKey) {
+          const persistedRaw = window.localStorage.getItem(persistedKey);
+          if (persistedRaw) {
+            raw = persistedRaw;
+            window.sessionStorage.setItem(UPLOADED_RESUME_META_KEY, persistedRaw);
+          }
+        }
+
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as UploadedFile;
+            if (parsed?.name && parsed?.uploadDate) {
+              if (cancelled) return;
+              setUploadedFile(parsed);
+              router.replace("/profile/create/basic-details");
+              return;
+            }
+          } catch {
+            // ignore invalid JSON and continue with server lookup
+          }
+        }
+
+        const sessionEmail = getSessionLoginEmail()?.trim() || "";
+        if (!sessionEmail) return;
+
+        const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+        resolverUrl.searchParams.set("email", sessionEmail);
+        const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
+        if (!resolverRes.ok || cancelled) return;
+        const resolverData = (await resolverRes.json()) as { profile_name?: string };
+        const profileName = resolverData.profile_name?.trim() || "";
+        if (!profileName || cancelled) return;
+
+        const profileUrl = new URL("/api/method/get_data/", window.location.origin);
+        profileUrl.searchParams.set("doctype", "Profile");
+        profileUrl.searchParams.set("name", profileName);
+        const profileRes = await fetch(profileUrl.toString(), { method: "GET" });
+        if (!profileRes.ok || cancelled) return;
+        const profileData = (await profileRes.json()) as Record<string, unknown>;
+        const uploadedResumeRef = extractExistingUploadedResumeRef(profileData);
+        if (!uploadedResumeRef || cancelled) return;
+
+        const resumeName = uploadedResumeRef.split("/").pop()?.trim() || "Uploaded Resume";
+        const restoredMeta: UploadedFile = {
+          name: resumeName,
+          uploadDate: formatDate(new Date()),
+          updated_resume: uploadedResumeRef,
+        };
+        setUploadedFile(restoredMeta);
+
+        try {
+          const serialized = JSON.stringify(restoredMeta);
+          window.sessionStorage.setItem(UPLOADED_RESUME_META_KEY, serialized);
+          const persistedKey = getPersistedUploadedResumeMetaKey();
+          if (persistedKey) {
+            window.localStorage.setItem(persistedKey, serialized);
+          }
+        } catch {
+          // ignore storage errors
+        }
+        router.replace("/profile/create/basic-details");
+      } catch {
+        // best-effort fallback only
+      } finally {
+        if (!cancelled) {
+          setIsResolvingEntryStep(false);
+        }
       }
-    } catch {
-      // ignore invalid JSON
-    }
-  }, []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -234,7 +358,12 @@ export default function CreateProfilePage() {
 
       if (typeof window !== "undefined") {
         try {
-          window.sessionStorage.setItem("uploadedResumeMeta", JSON.stringify(storedMeta));
+          const serialized = JSON.stringify(storedMeta);
+          window.sessionStorage.setItem(UPLOADED_RESUME_META_KEY, serialized);
+          const persistedKey = getPersistedUploadedResumeMetaKey();
+          if (persistedKey) {
+            window.localStorage.setItem(persistedKey, serialized);
+          }
         } catch {
           // ignore storage errors
         }
@@ -250,9 +379,13 @@ export default function CreateProfilePage() {
     clearResumeProfile();
     if (typeof window !== "undefined") {
       try {
-        window.sessionStorage.removeItem("uploadedResumeMeta");
+        window.sessionStorage.removeItem(UPLOADED_RESUME_META_KEY);
         window.sessionStorage.removeItem("resumeSkills");
         window.sessionStorage.removeItem("resumeProfilePic");
+        const persistedKey = getPersistedUploadedResumeMetaKey();
+        if (persistedKey) {
+          window.localStorage.removeItem(persistedKey);
+        }
       } catch {
         // ignore storage errors
       }
@@ -501,6 +634,13 @@ export default function CreateProfilePage() {
     <div className="flex flex-col min-h-screen bg-[#F3F4F6]">
       <AppNavbar />
 
+      {isResolvingEntryStep ? (
+        <div className="flex flex-1 items-center justify-center px-6">
+          <p className="text-sm font-medium text-gray-600">Loading your profile...</p>
+        </div>
+      ) : (
+        <>
+
       {isGeneratingProfile ? (
         <div className="fixed inset-0 z-50 bg-white/70 backdrop-blur-[1px] flex items-center justify-center px-6">
           <div className="flex flex-col items-center gap-4">
@@ -665,6 +805,8 @@ export default function CreateProfilePage() {
           {isProcessingResume ? "Processing..." : isGeneratingProfile ? "Generating..." : "Next"}
         </Button>
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
-import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
+import { getPostLoginDestination } from "@/services/login/postLoginRouting";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { useCandidateLogin } from "@/services/login";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
@@ -44,18 +44,17 @@ export default function LoginPageClient() {
     setIsRedirecting(true);
     prefetchDropdownDetailsAfterLogin();
 
-    const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
+    const destination = await getPostLoginDestination(email);
+    const skipWizard = destination === "/dashboard";
     console.log("[login-page] final-decision", {
       email: email.trim().toLowerCase(),
       skipWizard,
-      destination: skipWizard ? "/dashboard" : "/profile/create",
+      destination,
     });
     if (skipWizard) {
       setDashboardWelcomePending();
-      router.replace("/dashboard");
-    } else {
-      router.replace("/profile/create");
     }
+    router.replace(destination);
   }
 
   if (isMobileViewport) {

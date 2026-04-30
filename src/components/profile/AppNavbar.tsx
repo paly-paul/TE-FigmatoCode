@@ -85,8 +85,19 @@ export default function AppNavbar() {
     if (notifOpen && sessionEmail) void refreshNotifications();
   }, [notifOpen, sessionEmail, refreshNotifications]);
 
+  const shouldBlockNavigation = (href: string): boolean => {
+    if (!href) return false;
+    const navEvent = new CustomEvent<{ url: string }>("te:navigation-attempt", {
+      detail: { url: href },
+      cancelable: true,
+    });
+    window.dispatchEvent(navEvent);
+    return navEvent.defaultPrevented;
+  };
+
   const navigateTo = (href: string) => {
     if (!href || href === pathname) return;
+    if (shouldBlockNavigation(href)) return;
     setMobileMenuOpen(false);
     setProfileOpen(false);
     router.push(href);
@@ -133,6 +144,11 @@ export default function AppNavbar() {
           {/* Logo */}
           <Link
             href="/dashboard"
+            onClick={(event) => {
+              if (shouldBlockNavigation("/dashboard")) {
+                event.preventDefault();
+              }
+            }}
             className="flex items-center gap-2 sm:gap-3"
           >
             {/* <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-tl-xl rounded-br-xl flex items-center justify-center">
@@ -157,6 +173,11 @@ export default function AppNavbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={(event) => {
+                    if (shouldBlockNavigation(item.href)) {
+                      event.preventDefault();
+                    }
+                  }}
                   className={`px-4 py-2 rounded-md font-medium transition-colors ${
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
@@ -265,7 +286,11 @@ export default function AppNavbar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={() => {
+                    onClick={(event) => {
+                      if (shouldBlockNavigation(item.href)) {
+                        event.preventDefault();
+                        return;
+                      }
                       setMobileMenuOpen(false);
                     }}
                     className={`px-4 py-2 rounded-md font-medium text-left transition-colors ${
