@@ -47,6 +47,30 @@ function pickFirstString(row: Record<string, unknown>, keys: string[]): string |
   return undefined;
 }
 
+function pickRotationLabel(row: Record<string, unknown>): string | undefined {
+  const raw =
+    row.is_rotation ??
+    row.isRotation ??
+    row.rotation_required ??
+    row.is_rotation_required ??
+    row.rotationRequired;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw === 1 ? "Yes" : "No";
+  }
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "1" || normalized === "yes" || normalized === "true") return "Yes";
+    if (normalized === "0" || normalized === "no" || normalized === "false") return "No";
+  }
+  const rotationValue = row.rotation;
+  if (typeof rotationValue === "string") {
+    const normalized = rotationValue.trim().toLowerCase();
+    if (normalized === "yes" || normalized === "true" || normalized === "1") return "Yes";
+    if (normalized === "no" || normalized === "false" || normalized === "0") return "No";
+  }
+  return undefined;
+}
+
 function normalizeRecommendedJobs(payload: Record<string, unknown>): RecommendedJobApi[] {
   const candidates: unknown[] = [];
   if (Array.isArray(payload.data)) candidates.push(...payload.data);
@@ -81,12 +105,10 @@ function normalizeRecommendedJobs(payload: Record<string, unknown>): Recommended
       "job_type",
       "employmentType",
     ]);
-    const seniorityLevel = pickFirstString(item, [
-      "seniority_level",
-      "experience_level",
-      "seniority",
-      "level",
-    ]);
+    const seniorityLevel =
+      pickRotationLabel(item) ||
+      pickFirstString(item, ["seniority_level", "experience_level", "seniority", "level"]);
+    const rotationCycle = pickFirstString(item, ["rotation", "rotation_cycle", "rotationCycle"]);
     output.push({
       job_title,
       job_id,
@@ -105,8 +127,24 @@ function normalizeRecommendedJobs(payload: Record<string, unknown>): Recommended
       nationality: nationalities,
       employment_type: employmentType,
       seniority_level: seniorityLevel,
+      is_rotation:
+        asNumberOrNull(
+          item.is_rotation ??
+            item.isRotation ??
+            item.rotation_required ??
+            item.is_rotation_required ??
+            item.rotationRequired
+        ) ??
+        (() => {
+          if (typeof item.rotation === "string") {
+            const normalized = item.rotation.trim().toLowerCase();
+            if (normalized === "yes" || normalized === "true" || normalized === "1") return 1;
+            if (normalized === "no" || normalized === "false" || normalized === "0") return 0;
+          }
+          return null;
+        })(),
       status: typeof item.status === "string" ? item.status : undefined,
-      rotation: typeof item.rotation === "string" ? item.rotation : undefined,
+      rotation: rotationCycle,
       match_score: asNumberOrZero(item.match_score),
       action: typeof item.action === "string" ? item.action : undefined,
     });

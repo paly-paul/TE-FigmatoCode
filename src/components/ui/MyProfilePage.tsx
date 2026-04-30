@@ -41,12 +41,29 @@ import Image from "next/image";
 import CandidateAppShell from "../mobile/CandidateAppShell";
 import { useIsMobile } from "@/lib/useResponsive";
 import { getCandidateProfileData } from "@/services/profile/getCandidateProfile";
-import { getProfileName } from "@/lib/authSession";
+import { downloadProfileResume } from "@/services/profile/downloadProfileResume";
+import { setProfileStatus } from "@/services/profile/setProfileStatus";
+import { getProfileName, setProfileName } from "@/lib/authSession";
+import { readResumeProfile } from "@/lib/profileSession";
 import type { ResumeProfileData } from "@/types/profile";
+
+function CopySuccessBadge({ show }: { show: boolean }) {
+    return (
+        <span
+            className={`inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700 transition-all duration-200 ${
+                show ? "translate-y-0 scale-100 opacity-100" : "-translate-y-1 scale-95 opacity-0"
+            }`}
+            aria-live="polite"
+        >
+            Copied!
+        </span>
+    );
+}
 
 const EMPTY_PROFILE: ProfileData = {
     ...PROFILE_FALLBACK,
     name: "",
+    profileImageUrl: "",
     title: "",
     location: "",
     countryCode: "",
@@ -282,6 +299,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
     return {
         ...fallback,
         name: fullName || fallback.name,
+        profileImageUrl: resume.profileImageUrl || fallback.profileImageUrl || "",
         title: resume.professionalTitle || fallback.title,
         location: resume.currentLocation || resume.preferredLocation || fallback.location,
         countryCode: resume.countryCode || fallback.countryCode,
@@ -293,6 +311,14 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         summary: resume.summary || fallback.summary,
         experience: experienceParts || fallback.experience,
         salary: salaryText || fallback.salary,
+        profileStrength:
+            typeof resume.profileStrength === "number" && Number.isFinite(resume.profileStrength)
+                ? Math.max(0, Math.min(100, Math.round(resume.profileStrength)))
+                : fallback.profileStrength,
+        visibilityScore:
+            typeof resume.visibilityScore === "number" && Number.isFinite(resume.visibilityScore)
+                ? Math.max(0, Math.min(100, Math.round(resume.visibilityScore)))
+                : fallback.visibilityScore,
         persona: resume.professionalTitle || fallback.persona,
         personalInfo: {
             dob: parseMaybeDate(resume.dob) || fallback.personalInfo.dob,
@@ -359,7 +385,10 @@ export default function MyProfilePage() {
     const isMobile = useIsMobile();
     const [profileData, setProfileData] = useState<ProfileData>(EMPTY_PROFILE);
     const [activeProfile, setActiveProfile] = useState(true);
+    const [isUpdatingProfileStatus, setIsUpdatingProfileStatus] = useState(false);
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+    const [isDownloadingResume, setIsDownloadingResume] = useState(false);
+    const [copiedKey, setCopiedKey] = useState("");
     const [mobileTab, setMobileTab] = useState<"about" | "professional" | "personal">("about");
     const [openSections, setOpenSections] = useState({
         skills: true,
@@ -372,15 +401,51 @@ export default function MyProfilePage() {
         languages: false,
     });
     const PROFILE = profileData;
+    const profileImageSrc = PROFILE.profileImageUrl?.trim() || "";
     const formattedPhone = formatContactNumber(PROFILE.phone, PROFILE.countryCode);
 
+    const copyText = async (value: string, key: string) => {
+        const text = value.trim();
+        if (!text) return;
+        try {
+            if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else if (typeof document !== "undefined") {
+                const temp = document.createElement("textarea");
+                temp.value = text;
+                temp.style.position = "fixed";
+                temp.style.opacity = "0";
+                document.body.appendChild(temp);
+                temp.focus();
+                temp.select();
+                document.execCommand("copy");
+                document.body.removeChild(temp);
+            }
+            setCopiedKey(key);
+            window.setTimeout(() => setCopiedKey((prev) => (prev === key ? "" : prev)), 1200);
+        } catch {
+            // no-op
+        }
+    };
+
     useEffect(() => {
+        const sessionProfile = readResumeProfile();
+        if (sessionProfile?.profileImageUrl?.trim()) {
+            setProfileData((prev) => ({
+                ...prev,
+                profileImageUrl: sessionProfile.profileImageUrl?.trim(),
+            }));
+        }
+
         const profileId = getProfileName();
         if (!profileId) return;
         void (async () => {
             try {
                 const data = await getCandidateProfileData(profileId);
                 setProfileData(toProfileData(data, EMPTY_PROFILE));
+                if (typeof data.profileStatus === "string") {
+                    setActiveProfile(data.profileStatus.trim().toLowerCase() === "active");
+                }
             } catch {
                 // Keep empty profile if API fails.
             }
@@ -408,6 +473,75 @@ export default function MyProfilePage() {
         navigateToEditProfile();
     };
 
+    const resolveProfileIdForActions = async (): Promise<string | null> => {
+        const fromSession = getProfileName()?.trim();
+        if (fromSession) return fromSession;
+
+        try {
+            const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+            const resolverRes = await fetch(resolverUrl.toString(), {
+                method: "GET",
+                credentials: "same-origin",
+                cache: "no-store",
+            });
+            if (!resolverRes.ok) return null;
+            const resolverData = (await resolverRes.json()) as { profile_name?: unknown };
+            if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
+                const resolved = resolverData.profile_name.trim();
+                setProfileName(resolved);
+                return resolved;
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    };
+
+    const handleToggleActiveProfile = async () => {
+        const profileName = await resolveProfileIdForActions();
+        if (!profileName || isUpdatingProfileStatus) return;
+
+        const previous = activeProfile;
+        const nextValue = !previous;
+        setActiveProfile(nextValue);
+        try {
+            setIsUpdatingProfileStatus(true);
+            const updatedStatus = await setProfileStatus(profileName, nextValue);
+            setActiveProfile(updatedStatus.trim().toLowerCase() === "active");
+        } catch (error) {
+            setActiveProfile(previous);
+            const message = error instanceof Error && error.message.trim()
+                ? error.message
+                : "Unable to update profile status right now.";
+            if (typeof window !== "undefined") {
+                window.alert(message);
+            }
+        } finally {
+            setIsUpdatingProfileStatus(false);
+        }
+    };
+
+    const handleDownloadProfile = async () => {
+        const profileName = await resolveProfileIdForActions();
+        if (!profileName || isDownloadingResume) return;
+
+        try {
+            setIsDownloadingResume(true);
+            setShowDownloadMenu(false);
+            const response = await downloadProfileResume(profileName);
+            window.open(response.downloadUrl, "_blank", "noopener,noreferrer");
+        } catch (error) {
+            const message = error instanceof Error && error.message.trim()
+                ? error.message
+                : "Unable to download profile right now.";
+            if (typeof window !== "undefined") {
+                window.alert(message);
+            }
+        } finally {
+            setIsDownloadingResume(false);
+        }
+    };
+
     const renderAccordionHeader = (
         title: string,
         key: keyof typeof openSections,
@@ -433,18 +567,26 @@ export default function MyProfilePage() {
                 <div className="px-4 pb-4">
                     <div className="-mt-10 flex items-end justify-between gap-3">
                         <div className="h-[90px] w-[90px] overflow-hidden border-[3px] border-white bg-[#d9dee7] shadow-sm">
-                            <img
-                                src="https://i.pravatar.cc/148?img=12"
-                                alt={PROFILE.name}
-                                className="h-full w-full object-cover"
-                            />
+                            {profileImageSrc ? (
+                                <img
+                                    src={profileImageSrc}
+                                    alt={PROFILE.name}
+                                    className="h-full w-full object-cover"
+                                />
+                            ) : (
+                                <div className="flex h-full w-full items-center justify-center bg-[#d9dee7] text-[#5E7397]">
+                                    <UserCircle2 className="h-9 w-9" />
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
+                                onClick={handleDownloadProfile}
                                 className="flex h-10 w-10 items-center justify-center border border-[#D6DCEA] bg-white text-[#202939]"
                                 aria-label="Download profile"
+                                disabled={isDownloadingResume}
                             >
                                 <Download className="h-4 w-4" />
                             </button>
@@ -479,7 +621,16 @@ export default function MyProfilePage() {
                         <div className="flex items-center gap-2">
                             <Phone className="h-4 w-4" />
                             <span>{formattedPhone || PROFILE.phone}</span>
-                            <Copy className="h-4 w-4" />
+                            <button
+                                type="button"
+                                onClick={() => copyText(formattedPhone || PROFILE.phone, "phone-mobile")}
+                                className="text-[#5E7397] transition-transform hover:scale-110 active:scale-95"
+                                aria-label="Copy phone number"
+                                title={copiedKey === "phone-mobile" ? "Copied" : "Copy"}
+                            >
+                                <Copy className="h-4 w-4" />
+                            </button>
+                            <CopySuccessBadge show={copiedKey === "phone-mobile"} />
                         </div>
                     </div>
 
@@ -683,7 +834,16 @@ export default function MyProfilePage() {
                                 {PROFILE.personalInfo.emails.map((email) => (
                                     <div key={email} className="flex items-start gap-2">
                                         <p className="break-all text-[14px] text-[#202939]">{email}</p>
-                                        <Copy className="mt-0.5 h-4 w-4 shrink-0 text-[#5E7397]" />
+                                        <button
+                                            type="button"
+                                            onClick={() => copyText(email, `email-mobile-${email}`)}
+                                            className="mt-0.5 shrink-0 text-[#5E7397] transition-transform hover:scale-110 active:scale-95"
+                                            aria-label="Copy email"
+                                            title={copiedKey === `email-mobile-${email}` ? "Copied" : "Copy"}
+                                        >
+                                            <Copy className="h-4 w-4" />
+                                        </button>
+                                        <CopySuccessBadge show={copiedKey === `email-mobile-${email}`} />
                                     </div>
                                 ))}
                             </div>
@@ -797,7 +957,8 @@ export default function MyProfilePage() {
                                         type="button"
                                         role="switch"
                                         aria-checked={activeProfile}
-                                        onClick={() => setActiveProfile((value) => !value)}
+                                        onClick={handleToggleActiveProfile}
+                                        disabled={isUpdatingProfileStatus}
                                         className={`relative h-6 w-10 rounded-full transition ${activeProfile ? "bg-[#27C168]" : "bg-[#CBD5E1]"}`}
                                     >
                                         <span
@@ -883,7 +1044,8 @@ export default function MyProfilePage() {
                             type="button"
                             role="switch"
                             aria-checked={activeProfile}
-                            onClick={() => setActiveProfile((value) => !value)}
+                            onClick={handleToggleActiveProfile}
+                            disabled={isUpdatingProfileStatus}
                             className={`relative h-5 w-9 rounded-full transition ${activeProfile ? "bg-[#27c168]" : "bg-[#cbd5e1]"
                                 }`}
                         >
@@ -904,11 +1066,17 @@ export default function MyProfilePage() {
                                 <div className="-mt-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                                     <div className="flex flex-col items-start gap-4">
                                         <div className="h-[82px] w-[82px] overflow-hidden border-[3px] border-white bg-[#d9dee7] shadow-sm sm:h-[92px] sm:w-[92px]">
-                                            <img
-                                                src="https://i.pravatar.cc/148?img=12"
-                                                alt={PROFILE.name}
-                                                className="h-full w-full object-cover"
-                                            />
+                                            {profileImageSrc ? (
+                                                <img
+                                                    src={profileImageSrc}
+                                                    alt={PROFILE.name}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center bg-[#d9dee7] text-[#5f6b7d]">
+                                                    <UserCircle2 className="h-10 w-10" />
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="pb-1">
                                             <div className="flex flex-wrap items-center gap-2">
@@ -932,6 +1100,7 @@ export default function MyProfilePage() {
                                             onClick={() => setShowDownloadMenu(prev => !prev)}
                                             className="flex h-9 w-9 items-center justify-center border border-[#d7dde7] bg-white text-[#4b5563] transition hover:bg-[#f8fafc] sm:h-10 sm:w-10"
                                             aria-label="Download profile"
+                                            disabled={isDownloadingResume}
                                         >
                                             <Download className="h-4 w-4" />
                                         </button>
@@ -939,15 +1108,17 @@ export default function MyProfilePage() {
                                         {showDownloadMenu && (
                                             <div className="absolute top-full right-0 mt-2 w-40 bg-white border border-gray-200 shadow-lg z-50">
                                                 <button
-                                                    onClick={() => { setShowDownloadMenu(false) }}
+                                                    onClick={handleDownloadProfile}
                                                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                                                    disabled={isDownloadingResume}
                                                 >
-                                                    Download PDF
+                                                    {isDownloadingResume ? "Preparing..." : "Download PDF"}
                                                 </button>
 
                                                 <button
                                                     onClick={() => { setShowDownloadMenu(false) }}
-                                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                                                    className="w-full text-left px-4 py-2 text-sm text-gray-400"
+                                                    disabled
                                                 >
                                                     Download Word
                                                 </button>
@@ -972,7 +1143,16 @@ export default function MyProfilePage() {
                                     <span className="inline-flex items-center gap-1.5">
                                         <Phone className="h-5 w-5" />
                                         {formattedPhone || PROFILE.phone}
-                                        <Copy className="h-4 w-4" />
+                                        <button
+                                            type="button"
+                                            onClick={() => copyText(formattedPhone || PROFILE.phone, "phone-desktop")}
+                                            className="text-[#5f6b7d] transition-transform hover:scale-110 active:scale-95"
+                                            aria-label="Copy phone number"
+                                            title={copiedKey === "phone-desktop" ? "Copied" : "Copy"}
+                                        >
+                                            <Copy className="h-4 w-4" />
+                                        </button>
+                                        <CopySuccessBadge show={copiedKey === "phone-desktop"} />
                                     </span>
                                 </div>
 
@@ -1135,7 +1315,16 @@ export default function MyProfilePage() {
                                         {PROFILE.personalInfo.emails.map((email) => (
                                             <div key={email} className="flex items-start gap-1.5">
                                                 <p className="text-sm font-medium leading-5 text-[#111827] sm:text-[15px] break-all">{email}</p>
-                                                <Copy className="mt-0.5 h-3.5 w-3.5 text-[#7b8798]" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyText(email, `email-desktop-${email}`)}
+                                                    className="mt-0.5 text-[#7b8798] transition-transform hover:scale-110 active:scale-95"
+                                                    aria-label="Copy email"
+                                                    title={copiedKey === `email-desktop-${email}` ? "Copied" : "Copy"}
+                                                >
+                                                    <Copy className="h-3.5 w-3.5" />
+                                                </button>
+                                                <CopySuccessBadge show={copiedKey === `email-desktop-${email}`} />
                                             </div>
                                         ))}
                                     </div>

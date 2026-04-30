@@ -1262,11 +1262,13 @@ function SkillsProjectsPageContent() {
     const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
+    const profileCompletionPercentage = Math.round(completionPercent);
 
     const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
     const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
       countryHint: storedProfile?.nationality?.trim() || "India",
     });
+    const profileImageRef = storedProfile?.profileImageUrl?.trim() || "";
 
     const nextProfilePayload = {
       full_name: fullName,
@@ -1280,12 +1282,15 @@ function SkillsProjectsPageContent() {
       alternative_email: storedProfile?.altEmail?.trim() || "",
       current_location: normalizedCurrentLocation,
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      ...(profileImageRef ? { profile_image: profileImageRef } : {}),
     };
 
     const nextProfileVersionPayload = {
       professional_title: storedProfile?.professionalTitle?.trim() || "",
       experience_years: experienceYearsValue,
       experience_months: experienceMonthsValue,
+      profile_completion: profileCompletionPercentage,
+      completion_percentage: profileCompletionPercentage,
       current_location: normalizedCurrentLocation,
       current_salary: currentSalaryValue,
       current_salary_per_hour: currentSalaryValue,
@@ -1295,6 +1300,7 @@ function SkillsProjectsPageContent() {
       professional_summary: storedProfile?.summary?.trim() || "",
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      ...(profileImageRef ? { profile_image: profileImageRef } : {}),
       skills_table: skillsTable,
       key_skills: keySkills,
       education_qualifications: educationDetails.map((entry) => ({
@@ -1419,6 +1425,7 @@ function SkillsProjectsPageContent() {
       "alternative_email",
       "current_location",
       "preferred_location",
+      "profile_image",
     ];
     const editableProfileVersionFields = [
       "name",
@@ -1433,6 +1440,7 @@ function SkillsProjectsPageContent() {
       "current_location",
       "nationality",
       "preferred_location",
+      "profile_image",
       "skills_table",
       "key_skills",
       "education_qualifications",
@@ -1470,6 +1478,8 @@ function SkillsProjectsPageContent() {
         salary_per_hour: currentSalaryValue,
         salary_currency: currentSalaryCurrencyValue,
         current_location: normalizedCurrentLocation || undefined,
+        profile_completion: profileCompletionPercentage,
+        completion_percentage: profileCompletionPercentage,
         key_skills_count: keySkills.length,
         education_details_count: educationDetails.length,
         profile_doc: mergedProfilePayload,
@@ -1490,6 +1500,8 @@ function SkillsProjectsPageContent() {
         salary_per_hour: currentSalaryValue,
         salary_currency: currentSalaryCurrencyValue,
         current_location: normalizedCurrentLocation || undefined,
+        profile_completion: profileCompletionPercentage,
+        completion_percentage: profileCompletionPercentage,
         key_skills: keySkills.length ? keySkills : undefined,
         education_details: educationDetails.length ? educationDetails : undefined,
         profile_doc: mergedProfilePayload,
@@ -1529,7 +1541,9 @@ function SkillsProjectsPageContent() {
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
     clearResumeWizardSession();
-    setDashboardWelcomePending();
+    if (!lastSubmitWasEdit) {
+      setDashboardWelcomePending({ force: true });
+    }
     router.push("/dashboard");
   }
 
@@ -1659,7 +1673,7 @@ function SkillsProjectsPageContent() {
                     return (
                       <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-gray-600">Tool Experience {idx + 1}</p>
+                          <p className="text-sm text-gray-600">Experience {idx + 1}</p>
                           <button
                             type="button"
                             onClick={() => handleRemoveExperience(entry.id)}
@@ -1988,7 +2002,7 @@ function SkillsProjectsPageContent() {
                   return (
                     <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm text-gray-600">Tool Experience {idx + 1}</p>
+                        <p className="text-sm text-gray-600">Experience {idx + 1}</p>
                         <button
                           type="button"
                           onClick={() => handleRemoveExperience(entry.id)}

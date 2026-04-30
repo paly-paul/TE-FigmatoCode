@@ -100,7 +100,7 @@ export default function ConfirmationPage() {
 
       const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
       if (skipWizard) {
-        setDashboardWelcomePending();
+        setDashboardWelcomePending({ force: true });
         router.replace("/dashboard");
       } else {
         router.replace("/profile/create");

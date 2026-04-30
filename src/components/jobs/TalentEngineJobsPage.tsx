@@ -5,6 +5,7 @@ import {
   Bookmark,
   Calendar,
   ChevronDown,
+  ChevronUp,
   DollarSign,
   MapPin,
   Search,
@@ -28,7 +29,6 @@ import {
   prefetchDropdownDetailsAfterLogin,
 } from "@/services/jobs/dropdownDetails";
 import {
-  DEFAULT_LOCATIONS,
   LocationDrawer,
   type LocationOption,
 } from "../ui/LocationDrawer";
@@ -85,8 +85,8 @@ const JOBS: JobCard[] = [
     startDate: "Starts March 11, 2026",
     matchPercentage: 80,
     skills: ["Microgrid System"],
-    employmentType: "Part Time",
-    seniorityLevel: "Entry Level",
+    employmentType: "Hourly",
+    seniorityLevel: "No",
   },
   {
     id: 2,
@@ -101,8 +101,8 @@ const JOBS: JobCard[] = [
     startDate: "Starts March 01, 2026",
     matchPercentage: 60,
     skills: ["Energy data analytics"],
-    employmentType: "Full Time",
-    seniorityLevel: "Mid Level",
+    employmentType: "Monthly",
+    seniorityLevel: "Yes",
   },
   {
     id: 3,
@@ -117,8 +117,8 @@ const JOBS: JobCard[] = [
     startDate: "Starts February 09, 2026",
     matchPercentage: 62,
     skills: ["Utility Operations"],
-    employmentType: "Internship",
-    seniorityLevel: "Entry Level",
+    employmentType: "Monthly",
+    seniorityLevel: "No",
   },
   {
     id: 4,
@@ -133,8 +133,8 @@ const JOBS: JobCard[] = [
     startDate: "Starts March 11, 2026",
     matchPercentage: 30,
     skills: ["Microgrid System"],
-    employmentType: "Training Jobs",
-    seniorityLevel: "Senior Level",
+    employmentType: "Hourly",
+    seniorityLevel: "Yes",
   },
   {
     id: 5,
@@ -149,8 +149,8 @@ const JOBS: JobCard[] = [
     startDate: "Starts March 11, 2026",
     matchPercentage: 80,
     skills: ["Microgrid System"],
-    employmentType: "Part Time",
-    seniorityLevel: "Entry Level",
+    employmentType: "Hourly",
+    seniorityLevel: "No",
   },
   {
     id: 6,
@@ -165,34 +165,43 @@ const JOBS: JobCard[] = [
     startDate: "Starts March 01, 2026",
     matchPercentage: 60,
     skills: ["Energy data analytics"],
-    employmentType: "Full Time",
-    seniorityLevel: "Mid Level",
+    employmentType: "Monthly",
+    seniorityLevel: "Yes",
   },
 ];
 
-const SORT_OPTIONS = ["Most Relevant", "Newest", "Highest Match"];
+const SORT_OPTIONS = ["Newest", "Highest Match"];
 const SKILLS_PREVIEW_LIMIT = 8;
 const SKILL_SEARCH_MIN_LENGTH = 3;
+const SAVED_JOBS_STORAGE_PREFIX = "te.jobs.saved";
 const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
   salaryMax: 10000,
 };
 
+function getSavedJobsStorageKey(candidateId: string | null): string | null {
+  const id = candidateId?.trim();
+  if (!id) return null;
+  return `${SAVED_JOBS_STORAGE_PREFIX}:${id}`;
+}
+
 function FilterCheckboxGroup({
   options,
   selected,
   onChange,
+  singleSelect = false,
 }: {
   options: string[];
   selected: string[];
   onChange: (values: string[]) => void;
+  singleSelect?: boolean;
 }) {
   const toggle = (option: string) => {
-    onChange(
-      selected.includes(option)
-        ? selected.filter((value) => value !== option)
-        : [...selected, option]
-    );
+    if (singleSelect) {
+      onChange(selected.includes(option) ? [] : [option]);
+      return;
+    }
+    onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
   };
 
   return (
@@ -230,6 +239,12 @@ function JobsFilterPanel({
   seniorityLevelOptions: string[];
 }) {
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const [openSections, setOpenSections] = useState({
+    skills: true,
+    employment: true,
+    seniority: true,
+    salary: true,
+  });
   const trimmedSkillsSearch = searchSkills.trim();
   const requiresMoreChars =
     trimmedSkillsSearch.length > 0 && trimmedSkillsSearch.length < SKILL_SEARCH_MIN_LENGTH;
@@ -254,77 +269,132 @@ function JobsFilterPanel({
   return (
     <aside className="bg-white border border-gray-200 rounded-sm p-4 space-y-5">
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={() =>
+            setOpenSections((prev) => ({ ...prev, skills: !prev.skills }))
+          }
+          className="w-full flex items-center justify-between mb-3 text-left"
+        >
           <h2 className="text-sm font-semibold text-gray-900">Skills</h2>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        </div>
+          {openSections.skills ? (
+            <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          )}
+        </button>
 
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            value={searchSkills}
-            onChange={(event) => onSearchSkillsChange(event.target.value)}
-            placeholder="Search by name..."
-            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-sm text-base focus:outline-none focus:ring-1 focus:ring-blue-500"
+        {openSections.skills ? (
+          <>
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                value={searchSkills}
+                onChange={(event) => onSearchSkillsChange(event.target.value)}
+                placeholder="Search by name..."
+                className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-sm text-base focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
+            {requiresMoreChars ? (
+              <p className="mb-3 text-xs text-gray-500">Type at least 3 letters to search skills.</p>
+            ) : null}
+            <FilterCheckboxGroup
+              options={visibleSkills}
+              selected={filters.skills}
+              onChange={(value) => setValue("skills", value)}
+            />
+            {canToggleSkillsView ? (
+              <button
+                type="button"
+                onClick={() => setShowAllSkills((prev) => !prev)}
+                className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                {showAllSkills ? "Show less" : `See all (${filteredSkills.length})`}
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      <div className="border-t border-gray-100 pt-4">
+        <button
+          type="button"
+          onClick={() =>
+            setOpenSections((prev) => ({ ...prev, employment: !prev.employment }))
+          }
+          className="w-full flex items-center justify-between mb-3 text-left"
+        >
+          <h2 className="text-sm font-semibold text-gray-900">Billing Frequency</h2>
+          {openSections.employment ? (
+            <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          )}
+        </button>
+        {openSections.employment ? (
+          <FilterCheckboxGroup
+            options={employmentTypeOptions}
+            selected={filters.employmentTypes}
+            onChange={(value) => setValue("employmentTypes", value)}
           />
-        </div>
-
-        <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
-        {requiresMoreChars ? (
-          <p className="mb-3 text-xs text-gray-500">Type at least 3 letters to search skills.</p>
-        ) : null}
-        <FilterCheckboxGroup
-          options={visibleSkills}
-          selected={filters.skills}
-          onChange={(value) => setValue("skills", value)}
-        />
-        {canToggleSkillsView ? (
-          <button
-            type="button"
-            onClick={() => setShowAllSkills((prev) => !prev)}
-            className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
-          >
-            {showAllSkills ? "Show less" : `See all (${filteredSkills.length})`}
-          </button>
         ) : null}
       </div>
 
       <div className="border-t border-gray-100 pt-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Type of Employment</h2>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        </div>
-        <FilterCheckboxGroup
-          options={employmentTypeOptions}
-          selected={filters.employmentTypes}
-          onChange={(value) => setValue("employmentTypes", value)}
-        />
+        <button
+          type="button"
+          onClick={() =>
+            setOpenSections((prev) => ({ ...prev, seniority: !prev.seniority }))
+          }
+          className="w-full flex items-center justify-between mb-3 text-left"
+        >
+          <h2 className="text-sm font-semibold text-gray-900">Rotation</h2>
+          {openSections.seniority ? (
+            <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          )}
+        </button>
+        {openSections.seniority ? (
+          <FilterCheckboxGroup
+            options={seniorityLevelOptions}
+            selected={filters.seniorityLevels}
+            onChange={(value) => setValue("seniorityLevels", value)}
+            singleSelect={true}
+          />
+        ) : null}
       </div>
 
       <div className="border-t border-gray-100 pt-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Seniority Level</h2>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        </div>
-        <FilterCheckboxGroup
-          options={seniorityLevelOptions}
-          selected={filters.seniorityLevels}
-          onChange={(value) => setValue("seniorityLevels", value)}
-        />
-      </div>
-
-      <div className="border-t border-gray-100 pt-4">
-        <div className="flex items-center justify-between mb-4">
+        <button
+          type="button"
+          onClick={() =>
+            setOpenSections((prev) => ({ ...prev, salary: !prev.salary }))
+          }
+          className="w-full flex items-center justify-between mb-4 text-left"
+        >
           <h2 className="text-sm font-semibold text-gray-900">Salary Range</h2>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        </div>
+          {openSections.salary ? (
+            <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          )}
+        </button>
 
+        {openSections.salary ? (
+          <>
+        {(() => {
+          const minPct = (filters.salaryMin / 10000) * 100;
+          const maxPct = (filters.salaryMax / 10000) * 100;
+          return (
         <div className="relative h-1.5 bg-gray-200 rounded-full mb-6 mx-1">
           <div
             className="absolute h-1.5 bg-blue-600 rounded-full"
             style={{
-              left: `${(filters.salaryMin / 10000) * 100}%`,
-              right: `${100 - (filters.salaryMax / 10000) * 100}%`,
+              left: `${minPct}%`,
+              right: `${100 - maxPct}%`,
             }}
           />
 
@@ -338,7 +408,10 @@ function JobsFilterPanel({
               const next = Number(event.target.value);
               if (next < filters.salaryMax) setValue("salaryMin", next);
             }}
-            className="absolute w-full h-full opacity-0 cursor-pointer"
+            className="dual-range-input absolute w-full h-full opacity-0"
+            style={{
+              zIndex: 10,
+            }}
           />
           <input
             type="range"
@@ -350,18 +423,23 @@ function JobsFilterPanel({
               const next = Number(event.target.value);
               if (next > filters.salaryMin) setValue("salaryMax", next);
             }}
-            className="absolute w-full h-full opacity-0 cursor-pointer"
+            className="dual-range-input absolute w-full h-full opacity-0"
+            style={{
+              zIndex: 11,
+            }}
           />
 
           <div
-            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm"
-            style={{ left: `${(filters.salaryMin / 10000) * 100}%` }}
+            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm pointer-events-none"
+            style={{ left: `${minPct}%` }}
           />
           <div
-            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm"
-            style={{ left: `${(filters.salaryMax / 10000) * 100}%` }}
+            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm pointer-events-none"
+            style={{ left: `${maxPct}%` }}
           />
         </div>
+          );
+        })()}
 
         <div className="grid grid-cols-2 gap-3 text-xs text-gray-600 mb-5">
           <div>
@@ -403,21 +481,23 @@ function JobsFilterPanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => onFiltersChange(JOBS_FILTER_DEFAULTS)}
-            className="h-9 text-sm text-gray-700 border border-gray-200 rounded-sm hover:bg-gray-50"
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            className="h-9 text-sm text-white bg-blue-600 rounded-sm hover:bg-blue-700"
-          >
-            Apply
-          </button>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => onFiltersChange(JOBS_FILTER_DEFAULTS)}
+                className="h-9 text-sm text-gray-700 border border-gray-200 rounded-sm hover:bg-gray-50"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="h-9 text-sm text-white bg-blue-600 rounded-sm hover:bg-blue-700"
+              >
+                Apply
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </aside>
   );
@@ -587,7 +667,8 @@ export default function TalentEngineJobsPage() {
   const [showReferModal, setShowReferModal] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("Most Relevant");
+  const [allLocationOptions, setAllLocationOptions] = useState<LocationOption[]>([]);
+  const [sortBy, setSortBy] = useState("Newest");
   const [skillSearch, setSkillSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>(JOBS_FILTER_DEFAULTS);
   const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
@@ -605,6 +686,35 @@ export default function TalentEngineJobsPage() {
     // Candidate id is stored in sessionStorage on login.
     setCandidateIdState(getCandidateId());
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storageKey = getSavedJobsStorageKey(candidateId);
+    if (!storageKey) return;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      const ids = parsed
+        .map((value) => Number.parseInt(String(value), 10))
+        .filter((value) => Number.isFinite(value));
+      setSavedJobIds(new Set(ids));
+    } catch {
+      // ignore storage issues
+    }
+  }, [candidateId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storageKey = getSavedJobsStorageKey(candidateId);
+    if (!storageKey) return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(Array.from(savedJobIds)));
+    } catch {
+      // ignore storage issues
+    }
+  }, [candidateId, savedJobIds]);
 
   useEffect(() => {
     let active = true;
@@ -684,21 +794,100 @@ export default function TalentEngineJobsPage() {
     }
 
     if (employmentFromSource.length > 0) {
-      setDynamicEmploymentTypes(employmentFromSource);
-    } else {
-      setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
+      setDynamicEmploymentTypes((prev) => Array.from(new Set([...prev, ...employmentFromSource])));
     }
 
     if (seniorityFromSource.length > 0) {
-      setDynamicSeniorityLevels(seniorityFromSource);
-    } else {
-      setDynamicSeniorityLevels(SENIORITY_LEVELS);
+      setDynamicSeniorityLevels((prev) => Array.from(new Set([...prev, ...seniorityFromSource])));
     }
 
   }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
 
   useEffect(() => {
     prefetchDropdownDetailsAfterLogin();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const fetchFirstNonEmpty = async (fieldNames: string[]) => {
+        for (const fieldName of fieldNames) {
+          const options = await getDropdownDetailsOptions({
+            doctype: "Resource Requirement",
+            fieldName,
+            page: 1,
+            limit: 1000,
+          }).catch(() => null);
+          if (Array.isArray(options) && options.length > 0) return options;
+        }
+        return [];
+      };
+
+      const [skillsRes] = await Promise.all([
+        fetchFirstNonEmpty(["key_skills"]),
+      ]);
+
+      if (!active) return;
+      if (skillsRes.length > 0) {
+        setDynamicSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
+      }
+      // Billing Frequency filter is fixed to Monthly/Hourly.
+      setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
+      // Rotation filter is a strict Yes/No toggle (backed by is_rotation),
+      // so we intentionally keep the options fixed to avoid mismatches.
+      setDynamicSeniorityLevels(SENIORITY_LEVELS);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const byId = new Map<string, string>();
+        const maxPages = 20;
+        const perPage = 200;
+
+        for (let page = 1; page <= maxPages; page += 1) {
+          const url = new URL("/api/method/get_location_details", window.location.origin);
+          url.searchParams.set("page", String(page));
+          url.searchParams.set("limit", String(perPage));
+          const res = await fetch(url.toString(), {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (!res.ok) break;
+          const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
+          const rows = Array.isArray(json.data) ? json.data : [];
+          if (rows.length === 0) break;
+
+          for (const row of rows) {
+            const id = (row.id ?? "").trim();
+            const label = (row.label ?? "").trim();
+            if (!id || !label) continue;
+            byId.set(id, label);
+          }
+
+          if (rows.length < perPage) break;
+        }
+
+        if (cancelled) return;
+        const next = Array.from(byId.entries())
+          .map(([id, label]) => ({ id, label }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+        setAllLocationOptions(next);
+      } catch {
+        if (!cancelled) setAllLocationOptions([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -730,18 +919,24 @@ export default function TalentEngineJobsPage() {
   }, [skillSearch]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
-    const sourceJobs = hasAttemptedJobsLoad && apiRecommendedJobs.length > 0 ? apiRecommendedJobs : JOBS;
     const byId = new Map<string, string>();
+    for (const location of allLocationOptions) {
+      const id = location.id?.trim();
+      const label = location.label?.trim();
+      if (!id || !label) continue;
+      byId.set(id, label);
+    }
+
+    const sourceJobs = hasAttemptedJobsLoad && apiRecommendedJobs.length > 0 ? apiRecommendedJobs : JOBS;
     for (const job of sourceJobs) {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
       const label = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
-      byId.set(id, label || id);
+      if (!byId.has(id)) byId.set(id, label || id);
     }
 
-    if (byId.size === 0) return DEFAULT_LOCATIONS;
     return Array.from(byId.entries()).map(([id, label]) => ({ id, label }));
-  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
+  }, [allLocationOptions, apiRecommendedJobs, hasAttemptedJobsLoad]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -767,6 +962,34 @@ export default function TalentEngineJobsPage() {
 
   const filteredJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    const normalizeRotation = (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
+      if (
+        normalized === "no" ||
+        normalized === "false" ||
+        normalized === "0" ||
+        normalized === "no rotation" ||
+        normalized.includes("0 weeks on / 0 weeks off")
+      ) {
+        return "no";
+      }
+      if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
+      if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
+      if (
+        normalized.includes("on:") ||
+        normalized.includes("weeks on")
+      ) {
+        return "yes";
+      }
+      return normalized;
+    };
+    const selectedRotations = new Set(filters.seniorityLevels.map(normalizeRotation));
+    const rotationFromJob = (job: JobCard) => {
+      const fromStartDate = normalizeRotation(job.startDate);
+      if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
+      return normalizeRotation(job.seniorityLevel);
+    };
 
     const results = jobsSource.filter((job) => {
       const matchesSearch =
@@ -787,7 +1010,7 @@ export default function TalentEngineJobsPage() {
         filters.employmentTypes.includes(job.employmentType);
       const matchesSeniority =
         filters.seniorityLevels.length === 0 ||
-        filters.seniorityLevels.includes(job.seniorityLevel);
+        selectedRotations.has(rotationFromJob(job));
       const matchesSalary =
         job.compensationValue >= filters.salaryMin &&
         job.compensationValue <= filters.salaryMax;
@@ -811,6 +1034,20 @@ export default function TalentEngineJobsPage() {
 
     if (sortBy === "Highest Match") {
       return [...results].sort((a, b) => b.matchPercentage - a.matchPercentage);
+    }
+
+    if (sortBy === "Rotation") {
+      const rotationRank = (value: string) => {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "yes") return 0;
+        if (normalized === "no") return 1;
+        return 2;
+      };
+      return [...results].sort((a, b) => {
+        const diff = rotationRank(a.seniorityLevel) - rotationRank(b.seniorityLevel);
+        if (diff !== 0) return diff;
+        return b.matchPercentage - a.matchPercentage;
+      });
     }
 
     return [...results].sort((a, b) => b.matchPercentage - a.matchPercentage);
@@ -946,7 +1183,8 @@ export default function TalentEngineJobsPage() {
         >
           {SORT_OPTIONS.map((option) => (
             <option key={option} value={option}>
-              Sort by: {option}
+              {/* Sort by: {option} */}
+              {option}
             </option>
           ))}
         </select>
@@ -969,9 +1207,13 @@ export default function TalentEngineJobsPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-          <p className="mb-1 text-sm font-medium text-gray-900">No jobs found</p>
+          <p className="mb-1 text-sm font-medium text-gray-900">
+            {showSavedOnly ? "No saved jobs" : "No jobs found"}
+          </p>
           <p className="text-sm text-gray-500">
-            Try broadening the selected filters or changing the location.
+            {showSavedOnly
+              ? "Save jobs to view them here."
+              : "Try broadening the selected filters or changing the location."}
           </p>
         </div>
       )}
@@ -1022,7 +1264,14 @@ export default function TalentEngineJobsPage() {
 
                   <button
                     type="button"
-                    className="w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 bg-white text-gray-700 hover:bg-gray-50"
+                    aria-label={showSavedOnly ? "Show all jobs" : "Show saved jobs only"}
+                    aria-pressed={showSavedOnly}
+                    onClick={() => setShowSavedOnly((v) => !v)}
+                    className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                      showSavedOnly
+                        ? "border-blue-600 text-blue-600 bg-white"
+                        : "border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
+                    }`}
                   >
                     <Bookmark size={16} />
                   </button>
@@ -1035,7 +1284,8 @@ export default function TalentEngineJobsPage() {
                     >
                       {SORT_OPTIONS.map((option) => (
                         <option key={option} value={option}>
-                          Sort by: {option}
+                          {/* Sort by: {option} */}
+                          {option}
                         </option>
                       ))}
                     </select>
@@ -1081,9 +1331,13 @@ export default function TalentEngineJobsPage() {
               </div>
             ) : (
               <div className="bg-white border border-dashed border-gray-300 rounded-sm px-6 py-12 text-center">
-                <p className="text-sm font-medium text-gray-900 mb-1">No jobs found</p>
+                <p className="text-sm font-medium text-gray-900 mb-1">
+                  {showSavedOnly ? "No saved jobs" : "No jobs found"}
+                </p>
                 <p className="text-sm text-gray-500">
-                  Try broadening the selected filters or changing the location.
+                  {showSavedOnly
+                    ? "Save jobs to view them here."
+                    : "Try broadening the selected filters or changing the location."}
                 </p>
               </div>
             )}

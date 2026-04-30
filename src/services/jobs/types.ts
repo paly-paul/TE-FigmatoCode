@@ -14,6 +14,7 @@ export type RecommendedJobApi = {
   nationality?: string[];
   employment_type?: string;
   seniority_level?: string;
+  is_rotation?: number | null;
   status?: string;
   rotation?: string;
   match_score: number;

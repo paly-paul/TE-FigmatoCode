@@ -83,6 +83,10 @@ export async function completeSignupFromPending(): Promise<void> {
   const displayName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
   if (displayName) setUserDisplayName(displayName);
   setSessionLoginEmail(form.email.trim().toLowerCase());
+  if (typeof window !== "undefined") {
+    // Prevent immediate inactivity logout after signup due to stale prior-session timestamp.
+    window.localStorage.setItem("te_last_activity_at", String(Date.now()));
+  }
   clearPendingSignupForm();
 }
 

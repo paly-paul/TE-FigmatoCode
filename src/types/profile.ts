@@ -45,6 +45,7 @@ export interface ResumeLanguageEntry {
 }
 
 export interface ResumeProfileData {
+  profileStatus?: string;
   professionalTitle?: string;
   experienceYears?: string;
   experienceMonths?: string;
@@ -62,6 +63,9 @@ export interface ResumeProfileData {
   nationality?: string;
   currentLocation?: string;
   preferredLocation?: string;
+  profileImageUrl?: string;
+  profileStrength?: number;
+  visibilityScore?: number;
   education?: ResumeEducationEntry[];
   certifications?: ResumeCertificationEntry[];
   externalLinks?: ResumeExternalLinkEntry[];

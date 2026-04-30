@@ -9,9 +9,10 @@ import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import { clearAuthSession, getProfileName } from "@/lib/authSession";
 import { clearSessionLoginEmail, getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { useUserNotifications } from "@/services/notifications";
-import { clearResumeWizardSession } from "@/lib/profileSession";
+import { clearResumeWizardSession, readResumeProfile } from "@/lib/profileSession";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import Image from "next/image";
+import { getCandidateProfileData } from "@/services/profile";
 
 export default function AppNavbar() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function AppNavbar() {
   // Keep the initial render deterministic (server + first client render must match).
   const [navDisplayName, setNavDisplayName] = useState("User");
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string>("");
 
   const {
     notifications,
@@ -51,6 +53,32 @@ export default function AppNavbar() {
 
   useEffect(() => {
     setSessionEmail(getSessionLoginEmail());
+  }, [pathname]);
+
+  useEffect(() => {
+    const fromSession = readResumeProfile()?.profileImageUrl?.trim() || "";
+    if (fromSession) {
+      setProfileImageUrl(fromSession);
+    }
+
+    const profileName = getProfileName()?.trim();
+    if (!profileName) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getCandidateProfileData(profileName);
+        if (cancelled) return;
+        const fromApi = profile.profileImageUrl?.trim() || "";
+        if (fromApi) setProfileImageUrl(fromApi);
+      } catch {
+        // Keep session/local fallback avatar if API read fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -164,11 +192,17 @@ export default function AppNavbar() {
               onMouseEnter={() => setProfileOpen(true)}
               onMouseLeave={() => setProfileOpen(false)}
             >
-              <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(navDisplayName)}`}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full"
-                alt=""
-              />
+              {profileImageUrl ? (
+                <img
+                  src={profileImageUrl}
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full"
+                  alt=""
+                />
+              ) : (
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center">
+                  <User className="w-4 h-4" />
+                </div>
+              )}
               <span className="text-sm font-medium text-gray-900 hidden md:block">
                 {navDisplayName}
               </span>
