@@ -8,7 +8,7 @@ import { useIs768AndBelow } from "@/lib/useResponsive";
 import CommentModal from "../ui/CommentModal";
 import { getCandidateId, getProfileName, setCandidateId } from "@/lib/authSession";
 import { createEditCandidateTimesheet } from "@/services/timesheet/candidateTimesheet";
-import { getProjectsForProfile } from "@/services/timesheet/profileProjects";
+import { getProjectsForProfile, type ProfileProject } from "@/services/timesheet/profileProjects";
 import { getTimesheetForProject } from "@/services/timesheet/projectTimesheet";
 import { getDaysOfWeek } from "@/services/timesheet/weekCalendar";
 import { getTimesheetByWeek, type WeekTimesheetDay } from "@/services/timesheet/weekTimesheet";
@@ -75,6 +75,10 @@ function getIsoWeekYear(date: Date): { weekNumber: number; year: number } {
   return { weekNumber, year };
 }
 
+function getDisplayWeekLabel(week: WeeklySheet): string {
+  return week.current ? `Current Week - ${week.weekLabel}` : week.weekLabel;
+}
+
 export default function TalentEngineTimesheet() {
   const router = useRouter();
   const [workorderWeeks, setWorkorderWeeks] = useState<WeeklySheet[]>([]);
@@ -85,9 +89,10 @@ export default function TalentEngineTimesheet() {
   const [weekLoadStatus, setWeekLoadStatus] = useState<string>("");
   const [profileId, setProfileId] = useState("");
   const [weekStatusByNumber, setWeekStatusByNumber] = useState<Record<number, string>>({});
-  const [candidateId, setCandidateIdState] = useState("");
+  const [rrCandidateId, setRrCandidateId] = useState("");
   const [rrName, setRrName] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [assignedProjects, setAssignedProjects] = useState<ProfileProject[]>([]);
   const [submissionStatus, setSubmissionStatus] = useState<string>("");
   const [submitBusy, setSubmitBusy] = useState(false);
   const [isCheckingAssignment, setIsCheckingAssignment] = useState(true);
@@ -107,6 +112,22 @@ export default function TalentEngineTimesheet() {
     triggerElement: HTMLElement | null;
   } | null>(null);
   const [mobileTimesheetTab, setMobileTimesheetTab] = useState<TimesheetBottomTab>("overview");
+
+  const resetWeeklyState = () => {
+    setWorkorderWeeks([]);
+    setWeekStatusByNumber({});
+    setWeekRowsByNumber({});
+    setWeekDataByNumber({});
+    setLeaveSelections({});
+    setDayRemarks({});
+    fetchedWeekDataRef.current = new Set();
+    inFlightOverviewWeekRef.current = new Set();
+    inFlightActiveWeekRef.current = new Set();
+    workorderFetchKeyRef.current = "";
+    setWeekLoadStatus("");
+    setSubmissionStatus("");
+    setActiveWeekNumber(0);
+  };
 
   const toggleLeave = (date: string) => {
     setLeaveSelections((prev) => ({
@@ -133,22 +154,21 @@ export default function TalentEngineTimesheet() {
       if (/^PR-/i.test(candidateFromQuery)) {
         setProfileId(candidateFromQuery);
       } else {
-        setCandidateIdState(candidateFromQuery);
+        setRrCandidateId(candidateFromQuery);
       }
       setCandidateId(candidateFromQuery);
-      return;
     }
 
-    if (profileFromSession) {
+    if (profileFromSession && !candidateFromQuery) {
       setProfileId(profileFromSession);
     }
 
     const fromSession = getCandidateId()?.trim() || "";
-    if (fromSession) {
+    if (fromSession && !candidateFromQuery) {
       if (/^PR-/i.test(fromSession)) {
         setProfileId(fromSession);
       } else {
-        setCandidateIdState(fromSession);
+        setRrCandidateId(fromSession);
       }
     }
     setIsIdentityResolved(true);
@@ -248,7 +268,7 @@ export default function TalentEngineTimesheet() {
   }
 
   useEffect(() => {
-    const rrCandidate = candidateId.trim();
+    const rrCandidate = rrCandidateId.trim();
     if (!rrCandidate || /^PR-/i.test(rrCandidate)) return;
 
     const { year } = activeWeekInfo;
@@ -266,13 +286,14 @@ export default function TalentEngineTimesheet() {
         try {
           const response = await getTimesheetForWorkorder(rrCandidate, y);
           if (cancelled) return;
+          const currentWeek = getIsoWeekYear(new Date());
           const nextWeeks: WeeklySheet[] = response.timesheets.map((ts) => ({
             range: formatRangeFromIso(ts.week_start_date, ts.week_end_date),
             weekLabel: `Week ${ts.week_number}`,
             regular: ts.total_work_hours,
             overtime: 0,
             total: ts.total_work_hours,
-            current: false,
+            current: ts.week_number === currentWeek.weekNumber && ts.year === currentWeek.year,
             rows: [],
             weekStartIso: ts.week_start_date,
             weekEndIso: ts.week_end_date,
@@ -303,7 +324,7 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [activeWeekInfo, candidateId]);
+  }, [activeWeekInfo, rrCandidateId]);
 
   useEffect(() => {
     const { weekNumber, year } = activeWeekInfo;
@@ -362,20 +383,28 @@ export default function TalentEngineTimesheet() {
       .then((response) => {
         if (cancelled) return;
         const hasAssignments = response.projects.length > 0;
+        setAssignedProjects(response.projects);
         setHasProjectAssignment(hasAssignments);
         if (!hasAssignments) {
           setAssignmentMessage("Timesheet will be enabled once you are allotted to a project.");
+          setProjectName("");
+          setRrName("");
+          setRrCandidateId("");
+          resetWeeklyState();
+          return;
         }
-        const first = response.projects[0];
-        if (!first) return;
-        if (!projectName.trim()) setProjectName(first.project);
-        if (!rrName.trim()) setRrName(first.rr);
-        if (!candidateId.trim() || /^PR-/i.test(candidateId)) {
-          setCandidateIdState(first.rr_candidate);
-        }
+        const preferredProject = projectName.trim();
+        const selected =
+          response.projects.find((item) => item.project === preferredProject) ?? response.projects[0];
+        if (!selected) return;
+        setProjectName(selected.project);
+        setRrName(selected.rr);
+        setRrCandidateId(selected.rr_candidate);
+        resetWeeklyState();
       })
       .catch((error: unknown) => {
         if (cancelled) return;
+        setAssignedProjects([]);
         setHasProjectAssignment(false);
         setAssignmentMessage(
           error instanceof Error
@@ -394,7 +423,21 @@ export default function TalentEngineTimesheet() {
   }, [isIdentityResolved, profileId]);
 
   useEffect(() => {
-    const rrCandidate = candidateId.trim();
+    const selected = assignedProjects.find((item) => item.project === projectName.trim());
+    if (!selected) return;
+    if (
+      rrName.trim() === selected.rr &&
+      rrCandidateId.trim() === selected.rr_candidate
+    ) {
+      return;
+    }
+    setRrName(selected.rr);
+    setRrCandidateId(selected.rr_candidate);
+    resetWeeklyState();
+  }, [assignedProjects, projectName, rrCandidateId, rrName]);
+
+  useEffect(() => {
+    const rrCandidate = rrCandidateId.trim();
     if (!rrCandidate || /^PR-/i.test(rrCandidate) || workorderWeeks.length === 0) return;
 
     const now = new Date();
@@ -443,7 +486,7 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [candidateId, weekDataByNumber, workorderWeeks]);
+  }, [rrCandidateId, weekDataByNumber, workorderWeeks]);
 
   const monthlyOverview = useMemo(() => {
     const now = new Date();
@@ -511,7 +554,7 @@ export default function TalentEngineTimesheet() {
   }, [weekDataByNumber, workorderWeeks]);
 
   useEffect(() => {
-    const rrCandidate = candidateId.trim();
+    const rrCandidate = rrCandidateId.trim();
     const { weekNumber, year } = activeWeekInfo;
     if (!rrCandidate || /^PR-/i.test(rrCandidate) || !weekNumber || !year) return;
     const key = `${rrCandidate}:${year}:${weekNumber}`;
@@ -549,14 +592,19 @@ export default function TalentEngineTimesheet() {
     return () => {
       cancelled = true;
     };
-  }, [activeWeekInfo, candidateId, weekDataByNumber]);
+  }, [activeWeekInfo, rrCandidateId, weekDataByNumber]);
 
   async function saveTimesheet(status: "open" | "submit" | "re_submit") {
-    const candidate = candidateId.trim();
+    const candidate = profileId.trim();
+    const rrCandidate = rrCandidateId.trim();
     const rr = rrName.trim();
     const project = projectName.trim();
-    if (!candidate || !rr || !project) {
-      setSubmissionStatus("Candidate ID, RR Name and Project are required.");
+    if (!candidate || !rr || !rrCandidate) {
+      setSubmissionStatus("Unable to resolve assignment details. Please refresh and try again.");
+      return;
+    }
+    if (!project) {
+      setSubmissionStatus("Project name is required.");
       return;
     }
 
@@ -636,6 +684,7 @@ export default function TalentEngineTimesheet() {
     try {
       const response = await createEditCandidateTimesheet({
         candidate_id: candidate,
+        rr_candidate_id: rrCandidate,
         rr_name: rr,
         project,
         week_number: weekNumber,
@@ -894,60 +943,37 @@ export default function TalentEngineTimesheet() {
             </div>
           </header>
 
-          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-3">
-            <input
-              type="text"
-              value={candidateId}
-              onChange={(event) => setCandidateIdState(event.target.value)}
-              placeholder="RR Candidate ID (example: RRC-00001)"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <input
-              type="text"
-              value={rrName}
-              onChange={(event) => setRrName(event.target.value)}
-              placeholder="RR Name (e.g. RR-25-00125)"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <input
-              type="text"
-              value={projectName}
-              onChange={(event) => setProjectName(event.target.value)}
-              placeholder="Project (e.g. PRJ-Ashok Leyland-000005)"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <div className="md:col-span-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={submitBusy}
-                onClick={() => void saveTimesheet("open")}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <select
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:max-w-xl"
               >
-                Save Draft
-              </button>
+                {assignedProjects.length === 0 ? (
+                  <option value="">No project assigned</option>
+                ) : null}
+                {assignedProjects.map((project) => (
+                  <option key={`${project.project}-${project.rr_candidate}`} value={project.project}>
+                    {project.project}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 disabled={submitBusy}
                 onClick={() => void saveTimesheet("submit")}
-                className="rounded-xl bg-[#033CE5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="self-start rounded-xl bg-[#033CE5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 md:self-auto"
               >
                 Submit
               </button>
-              <button
-                type="button"
-                disabled={submitBusy}
-                onClick={() => void saveTimesheet("re_submit")}
-                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Re-submit
-              </button>
-              {submissionStatus ? (
-                <p className="self-center text-sm text-slate-600">{submissionStatus}</p>
-              ) : null}
-              {weekLoadStatus ? (
-                <p className="self-center text-sm text-amber-700">{weekLoadStatus}</p>
-              ) : null}
             </div>
+            {submissionStatus ? (
+              <p className="text-sm text-slate-600">{submissionStatus}</p>
+            ) : null}
+            {weekLoadStatus ? (
+              <p className="text-sm text-amber-700">{weekLoadStatus}</p>
+            ) : null}
           </div>
 
           <div className="space-y-3">
@@ -975,7 +1001,7 @@ export default function TalentEngineTimesheet() {
                         {week.range}
                       </p>
                       <p className={`text-slate-500 ${isCompact ? "text-xs" : "text-sm"}`}>
-                        {week.weekLabel}
+                        {getDisplayWeekLabel(week)}
                       </p>
                       {consolidationStatus ? (
                         <p className={`mt-1 text-xs font-semibold ${isCompact ? "" : "text-sm"} text-blue-700`}>

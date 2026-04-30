@@ -16,6 +16,10 @@ type VerifyOtpResponse = {
   verified?: number;
 };
 
+type SendSignupOtpOptions = {
+  allowExistingUser?: boolean;
+};
+
 function normalizeRoot(data: Record<string, unknown>): Record<string, unknown> {
   const msg = data.message;
   if (msg && typeof msg === "object") {
@@ -40,6 +44,11 @@ function readStatus(data: Record<string, unknown>): string {
   const root = normalizeRoot(data);
   const value = root.status;
   return typeof value === "string" ? value.toLowerCase() : "";
+}
+
+function isExistingUserMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("already exists") || lower.includes("please login");
 }
 
 function setOtpDevMode(email: string): void {
@@ -70,7 +79,10 @@ function isOtpDevModeValid(email: string, otp: string): boolean {
   }
 }
 
-export async function sendCandidateSignupOtp(email: string): Promise<SendOtpResponse> {
+export async function sendCandidateSignupOtp(
+  email: string,
+  options?: SendSignupOtpOptions
+): Promise<SendOtpResponse> {
   const normalizedEmail = email.trim().toLowerCase();
   const res = await fetch("/api/method/send_candidate_signup_otp", {
     method: "POST",
@@ -86,12 +98,30 @@ export async function sendCandidateSignupOtp(email: string): Promise<SendOtpResp
   }
 
   if (!res.ok) {
-    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+    const message = parseApiErrorMessage(data) || `Request failed (${res.status})`;
+    if (options?.allowExistingUser && isExistingUserMessage(message)) {
+      return {
+        status: "success",
+        message: "OTP flow accepted for existing account.",
+        otp_required: 1,
+        isMock: false,
+      };
+    }
+    throw new Error(message);
   }
 
   const status = readStatus(data);
   if (status === "error") {
-    throw new Error(parseApiErrorMessage(data));
+    const message = parseApiErrorMessage(data);
+    if (options?.allowExistingUser && isExistingUserMessage(message)) {
+      return {
+        status: "success",
+        message: "OTP flow accepted for existing account.",
+        otp_required: 1,
+        isMock: false,
+      };
+    }
+    throw new Error(message);
   }
 
   const otpRequired = getOtpRequired(data);

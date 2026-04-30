@@ -1,5 +1,7 @@
 "use client";
 
+import { RotatingLoadingQuote } from "@/components/ui/RotatingLoadingQuote";
+
 export default function TimesheetLoading() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -8,6 +10,9 @@ export default function TimesheetLoading() {
           <div className="flex items-center gap-3">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
             <p className="text-sm font-semibold text-slate-700">Loading Timesheet…</p>
+          </div>
+          <div className="mt-4">
+            <RotatingLoadingQuote />
           </div>
           <div className="mt-6 space-y-3">
             <div className="h-4 w-2/3 rounded bg-slate-100" />

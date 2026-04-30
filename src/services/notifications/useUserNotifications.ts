@@ -9,12 +9,40 @@ import {
   type RrNotificationApiItem,
 } from "./rrNotifications";
 
+const NOTIFICATION_PAGE_LIMIT = 50;
+const NOTIFICATION_POLL_MS = 45_000;
+
 function categoryToVariant(category: string | undefined): Notification["variant"] {
   const c = (category ?? "").toLowerCase();
   if (c.includes("interview")) return "interview";
   if (c.includes("shortlist")) return "shortlisted";
   if (c.includes("availability")) return "availability";
   return "recruiter";
+}
+
+function toEpochMs(raw: string | undefined): number {
+  if (!raw?.trim()) return 0;
+  const direct = Date.parse(raw);
+  if (!Number.isNaN(direct)) return direct;
+  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
+  const withUtcSuffix = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
+  const parsed = Date.parse(withUtcSuffix);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function normalizeApiItems(items: RrNotificationApiItem[]): RrNotificationApiItem[] {
+  const dedupedById = new Map<string, RrNotificationApiItem>();
+  for (const item of items) {
+    const id = item.notification_id?.trim();
+    if (!id) continue;
+    const existing = dedupedById.get(id);
+    if (!existing || toEpochMs(item.created_on) >= toEpochMs(existing.created_on)) {
+      dedupedById.set(id, item);
+    }
+  }
+  return Array.from(dedupedById.values()).sort(
+    (a, b) => toEpochMs(b.created_on) - toEpochMs(a.created_on)
+  );
 }
 
 function mapApiItemToNotification(item: RrNotificationApiItem): Notification {
@@ -38,20 +66,23 @@ export function useUserNotifications(userEmail: string | null) {
   const [markingAll, setMarkingAll] = useState(false);
   const [markingItemId, setMarkingItemId] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    const isSilent = options?.silent === true;
     if (!userEmail?.trim()) {
       setNotifications([]);
       setUnreadCount(0);
       setError(null);
       return;
     }
-    setLoading(true);
-    setError(null);
+    if (!isSilent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const { ok, payload, raw } = await getUserAllNotifications({
         userEmail,
         page: 1,
-        limit: 50,
+        limit: NOTIFICATION_PAGE_LIMIT,
       });
       const statusLow =
         payload && typeof payload.status === "string" ? payload.status.toLowerCase() : "success";
@@ -67,20 +98,60 @@ export function useUserNotifications(userEmail: string | null) {
         setUnreadCount(0);
         return;
       }
-      setNotifications(payload.data.map(mapApiItemToNotification));
-      setUnreadCount(payload.counts?.unread_notifications ?? 0);
+      const normalized = normalizeApiItems(payload.data);
+      setNotifications(normalized.map(mapApiItemToNotification));
+      setUnreadCount(
+        typeof payload.counts?.unread_notifications === "number"
+          ? payload.counts.unread_notifications
+          : normalized.filter((row) => !row.mark_as_read).length
+      );
+      if (isSilent) {
+        setError(null);
+      }
     } catch {
       setError("Could not load notifications.");
       setNotifications([]);
       setUnreadCount(0);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }, [userEmail]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!userEmail?.trim() || typeof window === "undefined") return;
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refresh({ silent: true });
+      }
+    };
+
+    const handleFocus = () => {
+      refreshIfVisible();
+    };
+
+    const handleVisibilityChange = () => {
+      refreshIfVisible();
+    };
+
+    const intervalId = window.setInterval(() => {
+      refreshIfVisible();
+    }, NOTIFICATION_POLL_MS);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh, userEmail]);
 
   const markAllRead = useCallback(async () => {
     setMarkingAll(true);

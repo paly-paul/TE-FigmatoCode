@@ -191,7 +191,7 @@ const countryDialCodes = [
   { country_code: "ZW", dial_code: "+263" },
 ];
 const defaultCountryCodeOptions = Array.from(new Set(countryDialCodes.map((item) => item.country_code)));
-const PHONE_MAX_LENGTH = 15;
+const PHONE_MAX_LENGTH = 10;
 
 function sanitizePhoneInput(value: string): string {
   return value.replace(/\D/g, "").slice(0, PHONE_MAX_LENGTH);
@@ -343,7 +343,10 @@ interface BasicDetailsForm {
   preferredLocation: string;
 }
 
-type FormErrors = Partial<Record<keyof BasicDetailsForm | "certifications", string>>;
+type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
+  certifications?: string;
+  certificationDateById?: Record<string, string>;
+};
 
 function normalizeExperienceYears(value: string | undefined): string {
   if (value == null || value === "") return "";
@@ -798,9 +801,7 @@ function extractUploadedFileRef(uploadResponse: Record<string, unknown> | null):
   for (const root of roots) {
     for (const key of candidateKeys) {
       const value = root[key];
-      if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) {
-        return value.trim();
-      }
+      if (typeof value === "string" && value.trim()) return value.trim();
     }
   }
   return "";
@@ -872,6 +873,8 @@ function BasicDetailsPageContent() {
   const [languageOptionsError, setLanguageOptionsError] = useState("");
   const [openLanguageDropdownId, setOpenLanguageDropdownId] = useState<string | null>(null);
   const [languageSearchById, setLanguageSearchById] = useState<Record<string, string>>({});
+  const [openGraduationYearDropdownId, setOpenGraduationYearDropdownId] = useState<string | null>(null);
+  const [graduationYearSearchById, setGraduationYearSearchById] = useState<Record<string, string>>({});
   const [currentLocationSuggestions, setCurrentLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [preferredLocationSuggestions, setPreferredLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
@@ -1551,14 +1554,17 @@ function BasicDetailsPageContent() {
       nextErrors.contact = `Phone number must be 7 to ${PHONE_MAX_LENGTH} digits.`;
     }
 
+    const certificationDateById: Record<string, string> = {};
     for (const entry of certifications) {
       const issueDate = entry.issueDate?.trim();
       const expirationDate = entry.expirationDate?.trim();
       if (!issueDate || !expirationDate) continue;
       if (expirationDate <= issueDate) {
-        nextErrors.certifications = "Expiration date must be greater than issue date.";
-        break;
+        certificationDateById[entry.id] = "Expiration date must be after issue date.";
       }
+    }
+    if (Object.keys(certificationDateById).length) {
+      nextErrors.certificationDateById = certificationDateById;
     }
 
     setErrors(nextErrors);
@@ -1592,23 +1598,34 @@ function BasicDetailsPageContent() {
                 nextErrors.salaryCurrency ||
                 nextErrors.summary
             ),
-          certifications: prev.certifications || Boolean(nextErrors.certifications),
+          certifications:
+            prev.certifications ||
+            Boolean(nextErrors.certifications || nextErrors.certificationDateById),
         }));
       });
     }
     return isValid;
   }
   function updateEducationEntry(id: string, field: keyof Omit<EducationEntry, "id">, value: string) {
+    const nextValue = field === "graduationYear" ? value.replace(/\D/g, "").slice(0, 4) : value;
     setEducation((prev) =>
-      prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
+      prev.map((entry) => (entry.id === id ? { ...entry, [field]: nextValue } : entry))
     );
   }
 
   function addEducationEntry() {
-    setEducation((prev) => [...prev, createEducationEntry()]);
+    const nextEntry = createEducationEntry();
+    setEducation((prev) => [...prev, nextEntry]);
+    setGraduationYearSearchById((prev) => ({ ...prev, [nextEntry.id]: "" }));
   }
 
   function removeEducationEntry(id: string) {
+    setGraduationYearSearchById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setOpenGraduationYearDropdownId((prev) => (prev === id ? null : prev));
     setEducation((prev) => {
       const next = prev.filter((entry) => entry.id !== id);
       return next.length ? next : [createEducationEntry()];
@@ -1624,7 +1641,17 @@ function BasicDetailsPageContent() {
       prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
     );
     if (field === "issueDate" || field === "expirationDate") {
-      setErrors((prev) => ({ ...prev, certifications: undefined }));
+      setErrors((prev) => {
+        const nextDateErrors = { ...(prev.certificationDateById ?? {}) };
+        delete nextDateErrors[id];
+        return {
+          ...prev,
+          certifications: undefined,
+          certificationDateById: Object.keys(nextDateErrors).length
+            ? nextDateErrors
+            : undefined,
+        };
+      });
     }
   }
 
@@ -1692,8 +1719,16 @@ function BasicDetailsPageContent() {
     setLanguageSearchById((prev) => ({ ...prev, [entryId]: value }));
   }
 
+  function updateGraduationYearSearch(entryId: string, value: string) {
+    const sanitized = value.replace(/\D/g, "").slice(0, 4);
+    setGraduationYearSearchById((prev) => ({ ...prev, [entryId]: sanitized }));
+  }
+
   function getFilteredLanguageOptions(entryId: string) {
     const query = (languageSearchById[entryId] ?? "").trim().toLowerCase();
+    const currentSelected = normalizeLanguageValue(
+      languages.find((entry) => entry.id === entryId)?.language ?? ""
+    );
     const selectedInOtherEntries = new Set(
       languages
         .filter((entry) => entry.id !== entryId)
@@ -1704,8 +1739,28 @@ function BasicDetailsPageContent() {
       option,
       alreadySelected: selectedInOtherEntries.has(normalizeLanguageValue(option)),
     }));
-    if (!query) return optionsWithState;
-    return optionsWithState.filter(({ option }) => option.toLowerCase().includes(query));
+    const filtered = !query
+      ? optionsWithState
+      : optionsWithState.filter(({ option }) => option.toLowerCase().includes(query));
+
+    if (!currentSelected) return filtered;
+
+    return filtered.sort((a, b) => {
+      const aSelected = normalizeLanguageValue(a.option) === currentSelected ? 1 : 0;
+      const bSelected = normalizeLanguageValue(b.option) === currentSelected ? 1 : 0;
+      return bSelected - aSelected;
+    });
+  }
+
+  function getFilteredGraduationYearOptions(entryId: string) {
+    const query = (graduationYearSearchById[entryId] ?? "").trim();
+    const years = Array.from({ length: 70 }, (_, idx) => new Date().getFullYear() - idx);
+    const activeYear = education.find((entry) => entry.id === entryId)?.graduationYear?.trim() ?? "";
+    const filteredYears = !query ? years : years.filter((year) => String(year).includes(query));
+    if (!activeYear) return filteredYears;
+    return filteredYears.sort(
+      (a, b) => (String(b) === activeYear ? 1 : 0) - (String(a) === activeYear ? 1 : 0)
+    );
   }
 
   function getFilteredCountryCodeOptions() {
@@ -2301,7 +2356,8 @@ function BasicDetailsPageContent() {
                           value={form.salary}
                           onChange={(e) => setField("salary", e.target.value)}
                           inputMode="decimal"
-                          placeholder="Enter monthly salary"
+                          placeholder="Enter salary"
+                          maxLength={15}
                           className={fieldClass(Boolean(errors.salary))}
                         />
                         {errors.salary && <p className="text-xs text-red-500">{errors.salary}</p>}
@@ -2381,7 +2437,12 @@ function BasicDetailsPageContent() {
                   </div>
 
                   {education.map((entry, idx) => (
-                    <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                    <div
+                      key={entry.id}
+                      className={`relative border border-gray-200 rounded-xl p-4 space-y-3 ${
+                        openGraduationYearDropdownId === entry.id ? "z-40" : ""
+                      }`}
+                    >
                       <div className="flex items-center justify-between">
                         <p className="text-sm text-gray-600">Education {idx + 1}</p>
                         <button
@@ -2429,23 +2490,75 @@ function BasicDetailsPageContent() {
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Graduation Year</span>
-                          <select
-                            value={entry.graduationYear}
-                            onChange={(e) =>
-                              updateEducationEntry(entry.id, "graduationYear", e.target.value)
-                            }
-                            className={`${fieldClass(false)} bg-white`}
+                          <div
+                            className={`relative ${openGraduationYearDropdownId === entry.id ? "z-30" : ""}`}
+                            onBlur={(e) => {
+                              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : prev));
+                              }
+                            }}
                           >
-                            <option value="">Select year</option>
-                            {Array.from({ length: 70 }).map((_, idx) => {
-                              const year = new Date().getFullYear() - idx;
-                              return (
-                                <option key={year} value={String(year)}>
-                                  {year}
-                                </option>
-                              );
-                            })}
-                          </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenGraduationYearDropdownId((prev) =>
+                                  prev === entry.id ? null : entry.id
+                                );
+                                updateGraduationYearSearch(entry.id, "");
+                              }}
+                              className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                            >
+                              <span className={entry.graduationYear ? "text-gray-900" : "text-gray-400"}>
+                                {entry.graduationYear || "Select year"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 text-gray-400" />
+                            </button>
+                            {openGraduationYearDropdownId === entry.id ? (
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                <div className="border-b border-gray-100 p-2">
+                                  <div className="relative">
+                                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                      type="text"
+                                      value={graduationYearSearchById[entry.id] ?? ""}
+                                      onChange={(e) =>
+                                        updateGraduationYearSearch(entry.id, e.target.value)
+                                      }
+                                      placeholder="Search year"
+                                      inputMode="numeric"
+                                      maxLength={4}
+                                      className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-40 overflow-auto py-1">
+                                  {getFilteredGraduationYearOptions(entry.id).length ? (
+                                    getFilteredGraduationYearOptions(entry.id).map((year) => (
+                                      <button
+                                        key={`${entry.id}-graduation-${year}`}
+                                        type="button"
+                                        onClick={() => {
+                                          const yearValue = String(year);
+                                          updateEducationEntry(entry.id, "graduationYear", yearValue);
+                                          updateGraduationYearSearch(entry.id, yearValue);
+                                          setOpenGraduationYearDropdownId(null);
+                                        }}
+                                        className={`block w-full px-3 py-2 text-left text-sm ${
+                                          String(year) === entry.graduationYear
+                                            ? "bg-primary-50 text-primary-700 font-medium"
+                                            : "text-gray-700 hover:bg-gray-100"
+                                        }`}
+                                      >
+                                        {year}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <p className="px-3 py-2 text-sm text-gray-500">No years found</p>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Score</span>
@@ -2556,6 +2669,9 @@ function BasicDetailsPageContent() {
                             }
                             className={fieldClass(false)}
                           />
+                          {errors.certificationDateById?.[entry.id] ? (
+                            <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
+                          ) : null}
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">URL</span>
@@ -2703,7 +2819,7 @@ function BasicDetailsPageContent() {
                               type="button"
                               onClick={() => {
                                 setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
-                                updateLanguageSearch(entry.id, entry.language);
+                                updateLanguageSearch(entry.id, "");
                               }}
                               className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                             >
@@ -2714,7 +2830,7 @@ function BasicDetailsPageContent() {
                             </button>
 
                             {openLanguageDropdownId === entry.id ? (
-                              <div className="absolute bottom-full z-50 mb-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                                 <div className="border-b border-gray-100 p-2">
                                   <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2743,7 +2859,10 @@ function BasicDetailsPageContent() {
                                         className={`block w-full px-3 py-2 text-left text-sm ${
                                           alreadySelected
                                             ? "cursor-not-allowed text-gray-400 bg-gray-50"
-                                            : "text-gray-700 hover:bg-gray-100"
+                                            : normalizeLanguageValue(option) ===
+                                                normalizeLanguageValue(entry.language)
+                                              ? "bg-primary-50 text-primary-700 font-medium"
+                                              : "text-gray-700 hover:bg-gray-100"
                                         }`}
                                       >
                                         <span>{option}</span>
@@ -2821,7 +2940,7 @@ function BasicDetailsPageContent() {
           ) : (
             <>
           <div className="flex-1 min-w-0 space-y-5">
-            <section id="education-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section id="education-section" className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Basic Details</h2>
               </div>
@@ -2938,7 +3057,12 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section id="certifications-section" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <section
+              id="certifications-section"
+              className={`relative bg-white border border-gray-200 rounded-xl overflow-visible ${
+                openGraduationYearDropdownId ? "z-40" : ""
+              }`}
+            >
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Education</h3>
@@ -2954,7 +3078,12 @@ function BasicDetailsPageContent() {
               </div>
               <div className="p-4 sm:p-6 space-y-4">
                 {education.map((entry, idx) => (
-                  <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div
+                    key={entry.id}
+                    className={`relative border border-gray-200 rounded-xl p-4 space-y-3 ${
+                      openGraduationYearDropdownId === entry.id ? "z-40" : ""
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-gray-600">Education {idx + 1}</p>
                       <button
@@ -2998,21 +3127,71 @@ function BasicDetailsPageContent() {
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Graduation Year</span>
-                        <select
-                          value={entry.graduationYear}
-                          onChange={(e) => updateEducationEntry(entry.id, "graduationYear", e.target.value)}
-                          className={`${fieldClass(false)} bg-white`}
+                        <div
+                          className={`relative ${openGraduationYearDropdownId === entry.id ? "z-30" : ""}`}
+                          onBlur={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                              setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : prev));
+                            }
+                          }}
                         >
-                          <option value="">Select year</option>
-                          {Array.from({ length: 70 }).map((_, idx) => {
-                            const year = new Date().getFullYear() - idx;
-                            return (
-                              <option key={year} value={String(year)}>
-                                {year}
-                              </option>
-                            );
-                          })}
-                        </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : entry.id));
+                              updateGraduationYearSearch(entry.id, "");
+                            }}
+                            className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                          >
+                            <span className={entry.graduationYear ? "text-gray-900" : "text-gray-400"}>
+                              {entry.graduationYear || "Select year"}
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-gray-400" />
+                          </button>
+                          {openGraduationYearDropdownId === entry.id ? (
+                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                              <div className="border-b border-gray-100 p-2">
+                                <div className="relative">
+                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                  <input
+                                    type="text"
+                                    value={graduationYearSearchById[entry.id] ?? ""}
+                                    onChange={(e) => updateGraduationYearSearch(entry.id, e.target.value)}
+                                    placeholder="Search year"
+                                    inputMode="numeric"
+                                    maxLength={4}
+                                    className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-40 overflow-auto py-1">
+                                {getFilteredGraduationYearOptions(entry.id).length ? (
+                                  getFilteredGraduationYearOptions(entry.id).map((year) => (
+                                    <button
+                                      key={`${entry.id}-graduation-${year}`}
+                                      type="button"
+                                      onClick={() => {
+                                        const yearValue = String(year);
+                                        updateEducationEntry(entry.id, "graduationYear", yearValue);
+                                        updateGraduationYearSearch(entry.id, yearValue);
+                                        setOpenGraduationYearDropdownId(null);
+                                      }}
+                                      className={`block w-full px-3 py-2 text-left text-sm ${
+                                        String(year) === entry.graduationYear
+                                          ? "bg-primary-50 text-primary-700 font-medium"
+                                          : "text-gray-700 hover:bg-gray-100"
+                                      }`}
+                                    >
+                                      {year}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <p className="px-3 py-2 text-sm text-gray-500">No years found</p>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Score</span>
@@ -3108,6 +3287,9 @@ function BasicDetailsPageContent() {
                           onChange={(e) => updateCertificationEntry(entry.id, "expirationDate", e.target.value)}
                           className={fieldClass(false)}
                         />
+                        {errors.certificationDateById?.[entry.id] ? (
+                          <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
+                        ) : null}
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">URL</span>
@@ -3227,7 +3409,7 @@ function BasicDetailsPageContent() {
                             type="button"
                             onClick={() => {
                               setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
-                              updateLanguageSearch(entry.id, entry.language);
+                              updateLanguageSearch(entry.id, "");
                             }}
                             className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                           >
@@ -3238,7 +3420,7 @@ function BasicDetailsPageContent() {
                           </button>
 
                           {openLanguageDropdownId === entry.id ? (
-                            <div className="absolute bottom-full z-50 mb-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                               <div className="border-b border-gray-100 p-2">
                                 <div className="relative">
                                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3267,7 +3449,10 @@ function BasicDetailsPageContent() {
                                       className={`block w-full px-3 py-2 text-left text-sm ${
                                         alreadySelected
                                           ? "cursor-not-allowed text-gray-400 bg-gray-50"
-                                          : "text-gray-700 hover:bg-gray-100"
+                                          : normalizeLanguageValue(option) ===
+                                              normalizeLanguageValue(entry.language)
+                                            ? "bg-primary-50 text-primary-700 font-medium"
+                                            : "text-gray-700 hover:bg-gray-100"
                                       }`}
                                     >
                                       <span>{option}</span>

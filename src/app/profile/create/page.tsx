@@ -6,6 +6,7 @@ import AppNavbar from "@/components/profile/AppNavbar";
 import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { ResumeUploadArea } from "@/components/profile/ResumeUploadArea";
+import { RotatingLoadingQuote } from "@/components/ui/RotatingLoadingQuote";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
 import { clearProfileName, getUserDisplayName, setCandidateId, setProfileName } from "@/lib/authSession";
@@ -549,6 +550,7 @@ export default function CreateProfilePage() {
             <p className="text-sm font-medium text-gray-700 text-center">
               Generating your profile…
             </p>
+            <RotatingLoadingQuote className="max-w-lg" />
           </div>
         </div>
       ) : null}
@@ -737,7 +739,12 @@ function MobileResumeUploadCard({
 
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          if (inputRef.current) {
+            inputRef.current.value = "";
+            inputRef.current.click();
+          }
+        }}
         disabled={isUploading}
         className="mt-1 flex items-center gap-2 border border-[#CFD7E7] rounded px-6 py-2 text-xl leading-none font-medium text-gray-900 bg-[#F5F7FB] hover:bg-white disabled:opacity-60"
       >
@@ -750,7 +757,10 @@ function MobileResumeUploadCard({
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         className="hidden"
-        onChange={(e) => void handleFiles(e.target.files)}
+        onChange={(e) => {
+          void handleFiles(e.target.files);
+          e.target.value = "";
+        }}
       />
     </div>
   );

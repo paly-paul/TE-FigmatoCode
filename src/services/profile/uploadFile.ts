@@ -2,10 +2,12 @@ import { parseApiErrorMessage } from "@/services/signup/parseApiError";
 
 export async function uploadProfileFile(file: File): Promise<Record<string, unknown>> {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", file, file.name);
 
-  const res = await fetch("/api/method/upload_file/", {
+  const res = await fetch("/api/method/upload_file", {
     method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
     body: formData,
   });
 
