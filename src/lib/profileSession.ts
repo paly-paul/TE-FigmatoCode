@@ -4,6 +4,7 @@ const STORAGE_KEY = "resumeProfile";
 const RESUME_SKILLS_KEY = "resumeSkills";
 const UPLOADED_RESUME_META_KEY = "uploadedResumeMeta";
 const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
+const RESUME_UPLOAD_NEXT_KEY = "resumeUploadNext";
 const LOGIN_EMAIL_KEY = "te_login_email";
 const PERSISTED_DRAFT_KEY_PREFIX = "te_resume_profile_draft:";
 
@@ -90,6 +91,43 @@ export function clearResumeWizardSession() {
   window.sessionStorage.removeItem(RESUME_SKILLS_KEY);
   window.sessionStorage.removeItem(UPLOADED_RESUME_META_KEY);
   window.sessionStorage.removeItem(PROFILE_PIC_STORAGE_KEY);
+  window.sessionStorage.removeItem(RESUME_UPLOAD_NEXT_KEY);
+}
+
+export function hasProceededPastResumeUpload(): boolean {
+  if (typeof window === "undefined") return false;
+  const session = window.sessionStorage.getItem(RESUME_UPLOAD_NEXT_KEY);
+  if (session === "1") return true;
+
+  const email = getActiveDraftEmail();
+  if (!email) return false;
+  const persisted = window.localStorage.getItem(`${draftKeyForEmail(email)}:${RESUME_UPLOAD_NEXT_KEY}`);
+  return persisted === "1";
+}
+
+export function markProceededPastResumeUpload(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(RESUME_UPLOAD_NEXT_KEY, "1");
+  } catch {
+    // ignore
+  }
+
+  const email = getActiveDraftEmail();
+  if (!email) return;
+  try {
+    window.localStorage.setItem(`${draftKeyForEmail(email)}:${RESUME_UPLOAD_NEXT_KEY}`, "1");
+  } catch {
+    // ignore
+  }
+}
+
+export function clearProceededPastResumeUpload(): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(RESUME_UPLOAD_NEXT_KEY);
+  const email = getActiveDraftEmail();
+  if (!email) return;
+  window.localStorage.removeItem(`${draftKeyForEmail(email)}:${RESUME_UPLOAD_NEXT_KEY}`);
 }
 
 export function readResumeSkillsDraft<T = unknown>(): T | null {
