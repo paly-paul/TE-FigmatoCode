@@ -1,6 +1,7 @@
 "use client";
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
+import { isProfileComplete } from "@/lib/profileOnboarding";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
 type UnknownRecord = Record<string, unknown>;
@@ -87,13 +88,19 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
   if (typeof window === "undefined") return false;
 
   const sessionProfileGenerated = getProfileGenerated();
+  const localProfileComplete = isProfileComplete();
   console.log("[login-routing] start", {
     email: email.trim().toLowerCase(),
     sessionProfileGenerated,
+    localProfileComplete,
     sessionProfileName: getProfileName(),
   });
 
   if (!email.trim()) return false;
+  if (localProfileComplete) {
+    console.log("[login-routing] decision", { reason: "local-profile-complete", skipWizard: true });
+    return true;
+  }
 
   try {
     const profileName = await resolveProfileNameForLogin(email);

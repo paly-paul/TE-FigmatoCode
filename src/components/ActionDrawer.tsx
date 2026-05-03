@@ -235,10 +235,16 @@ export default function ActionDrawer({
 
   useEffect(() => {
     if (open) {
+      const normalized = action?.title.toLowerCase() ?? "";
+      const recruiterInterestReceived =
+        normalized === actionDrawerTitleMatchers.recruiterInterest || normalized.includes("interest");
+
       setActiveTab(
         isApplicationTimelineCard(action)
           ? "Job Description"
-          : isActionableStageCard(action)
+          : recruiterInterestReceived
+            ? "Job Description"
+            : isActionableStageCard(action)
             ? "Job Action"
           : shouldUseFirstTimeJobTabs(action)
             ? "Job Description"
@@ -1088,6 +1094,11 @@ export default function ActionDrawer({
       setActiveTab("Job Action");
       return;
     }
+    if (isRecruiterInterestReceived && activeTab !== "Job Action") {
+      setValidationMessage(null);
+      setActiveTab("Job Action");
+      return;
+    }
     if (isInterviewScheduled && interviewSubmitDisabled) {
       setValidationMessage("Please select an available interview slot to continue.");
       scrollToMissingField(interviewSlotsSectionRef.current);
@@ -1265,7 +1276,11 @@ export default function ActionDrawer({
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
         }`}
       >
-        {isDirectApply ? (activeTab === "Job Action" ? "Apply" : "Next") : actionDrawerFooter.submit}
+        {isDirectApply
+          ? (activeTab === "Job Action" ? "Apply" : "Next")
+          : isRecruiterInterestReceived
+            ? (activeTab === "Job Action" ? "Accept" : "Next")
+            : actionDrawerFooter.submit}
       </button>
     </div>
   );
