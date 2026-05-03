@@ -3,9 +3,34 @@
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
 import { isProfileComplete } from "@/lib/profileOnboarding";
 import { hasProceededPastResumeUpload } from "@/lib/profileSession";
+import { getCandidateProfileData } from "@/services/profile/getCandidateProfile";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
+import type { ResumeProfileData } from "@/types/profile";
 
 type UnknownRecord = Record<string, unknown>;
+
+/** True when the Profile document has substantive wizard data beyond a bare signup/upload shell. */
+function profileLooksEstablishedOnClient(data: ResumeProfileData): boolean {
+  if (data.professionalTitle?.trim()) return true;
+  if (data.summary?.trim()) return true;
+  const skills = data.keySkills?.length ?? 0;
+  const tools = data.tools?.length ?? 0;
+  if (skills > 0 || tools > 0) return true;
+  const work = data.workExperience?.length ?? 0;
+  const projects = data.projects?.length ?? 0;
+  if (work > 0 || projects > 0) return true;
+  const edu = data.education?.length ?? 0;
+  return edu > 0;
+}
+
+async function isProfileEstablishedOnServer(profileName: string): Promise<boolean> {
+  try {
+    const data = await getCandidateProfileData(profileName);
+    return profileLooksEstablishedOnClient(data);
+  } catch {
+    return false;
+  }
+}
 
 async function resolveProfileNameForLogin(email: string): Promise<string> {
   const normalized = email.trim().toLowerCase();
@@ -127,6 +152,12 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
       return true;
     }
+
+    const hasEstablishedWizardData = await isProfileEstablishedOnServer(profileName);
+    if (hasEstablishedWizardData) {
+      console.log("[login-routing] decision", { reason: "server-profile-established-progress", skipWizard: true });
+      return true;
+    }
     console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
     return false;
   } catch {
@@ -147,6 +178,12 @@ export async function getPostLoginDestination(email: string): Promise<string> {
     if (profileName) {
       const resumeUploaded = await hasUploadedResume(profileName);
       if (resumeUploaded) {
+        // New device may not have the local “clicked Next after upload” flag. If the server profile
+        // already looks established or complete, routing is handled via skipWizard above—but if those
+        // checks ever disagree, avoid sending established users back to resume upload here.
+        if ((await isProfileEstablishedOnServer(profileName)) || (await isProfileWizardCompleteOnServer(profileName))) {
+          return "/dashboard";
+        }
         // Only send users to basic-details if they already proceeded past the resume-upload step
         // on this device; otherwise keep them on the upload screen.
         if (hasProceededPastResumeUpload()) {
