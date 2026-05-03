@@ -2,6 +2,7 @@
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
 import { isProfileComplete } from "@/lib/profileOnboarding";
+import { hasProceededPastResumeUpload } from "@/lib/profileSession";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
 type UnknownRecord = Record<string, unknown>;
@@ -66,93 +67,15 @@ function extractExistingUploadedResumeRef(input: unknown, depth = 0): string {
   return "";
 }
 
-function hasMeaningfulValue(input: unknown): boolean {
-  if (input == null) return false;
-  if (typeof input === "string") return Boolean(input.trim());
-  if (typeof input === "number") return Number.isFinite(input) && input !== 0;
-  if (typeof input === "boolean") return input;
-  if (Array.isArray(input)) return input.some((v) => hasMeaningfulValue(v));
-  if (typeof input === "object") {
-    const record = input as UnknownRecord;
-    return Object.values(record).some((v) => hasMeaningfulValue(v));
-  }
-  return false;
-}
-
-function looksLikeBasicDetailsStarted(payload: unknown, depth = 0): boolean {
-  if (depth > 6 || payload == null) return false;
-  if (typeof payload !== "object") return false;
-
-  const record = payload as UnknownRecord;
-  const directKeys = [
-    // Basic-details page inputs / common backend fields
-    "first_name",
-    "firstName",
-    "last_name",
-    "lastName",
-    "full_name",
-    "fullName",
-    "contact_no",
-    "contact",
-    "phone",
-    "mobile_no",
-    "country_code",
-    "countryCode",
-    "dob",
-    "date_of_birth",
-    "gender",
-    "nationality",
-    "current_location",
-    "currentLocation",
-    "preferred_location",
-    "preferredLocation",
-    "professional_title",
-    "professionalTitle",
-    "total_experience",
-    "totalExperience",
-    "experience_years",
-    "experienceYears",
-    "experience_months",
-    "experienceMonths",
-    "key_skills",
-    "keySkills",
-    "skills_table",
-    "education_details",
-    "education",
-    "education_qualifications",
-  ];
-
-  for (const key of directKeys) {
-    if (key in record && hasMeaningfulValue(record[key])) return true;
-  }
-
-  // Common nesting from `get_data` response
-  const nestedRoots = [record.data, record.message, record.profile, record.profile_version];
-  for (const nested of nestedRoots) {
-    if (looksLikeBasicDetailsStarted(nested, depth + 1)) return true;
-  }
-
-  for (const value of Object.values(record)) {
-    if (looksLikeBasicDetailsStarted(value, depth + 1)) return true;
-  }
-  return false;
-}
-
-async function getServerOnboardingSignals(profileName: string): Promise<{
-  resumeUploaded: boolean;
-  basicDetailsStarted: boolean;
-}> {
-  if (typeof window === "undefined") return { resumeUploaded: false, basicDetailsStarted: false };
+async function hasUploadedResume(profileName: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   const profileUrl = new URL("/api/method/get_data/", window.location.origin);
   profileUrl.searchParams.set("doctype", "Profile");
   profileUrl.searchParams.set("name", profileName);
   const profileRes = await fetch(profileUrl.toString(), { method: "GET" });
-  if (!profileRes.ok) return { resumeUploaded: false, basicDetailsStarted: false };
+  if (!profileRes.ok) return false;
   const profileData = (await profileRes.json()) as UnknownRecord;
-  return {
-    resumeUploaded: Boolean(extractExistingUploadedResumeRef(profileData)),
-    basicDetailsStarted: looksLikeBasicDetailsStarted(profileData),
-  };
+  return Boolean(extractExistingUploadedResumeRef(profileData));
 }
 
 /**
@@ -222,11 +145,14 @@ export async function getPostLoginDestination(email: string): Promise<string> {
   try {
     const profileName = await resolveProfileNameForLogin(email);
     if (profileName) {
-      const signals = await getServerOnboardingSignals(profileName);
-      // Important: resume upload alone should NOT jump the user into basic-details.
-      // Only route to basic-details when the server indicates the user started that step.
-      if (signals.basicDetailsStarted) {
-        return `/profile/create/basic-details?profile=${encodeURIComponent(profileName)}`;
+      const resumeUploaded = await hasUploadedResume(profileName);
+      if (resumeUploaded) {
+        // Only send users to basic-details if they already proceeded past the resume-upload step
+        // on this device; otherwise keep them on the upload screen.
+        if (hasProceededPastResumeUpload()) {
+          return `/profile/create/basic-details?profile=${encodeURIComponent(profileName)}`;
+        }
+        return "/profile/create";
       }
       return "/profile/create";
     }

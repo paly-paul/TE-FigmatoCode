@@ -10,7 +10,13 @@ import { RotatingLoadingQuote } from "@/components/ui/RotatingLoadingQuote";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
 import { clearProfileName, getUserDisplayName, setCandidateId, setProfileName } from "@/lib/authSession";
-import { upsertResumeProfile, clearResumeProfile } from "@/lib/profileSession";
+import {
+  upsertResumeProfile,
+  clearResumeProfile,
+  clearProceededPastResumeUpload,
+  hasProceededPastResumeUpload,
+  markProceededPastResumeUpload,
+} from "@/lib/profileSession";
 import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import {
@@ -194,13 +200,14 @@ export default function CreateProfilePage() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   // Resolve initial entry step before rendering upload UI:
-  // if a resume already exists (session/local/server), jump straight to basic details.
+  // if the user already proceeded past this step earlier, restore them to basic details.
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
 
     (async () => {
       try {
+        const shouldAutoAdvance = hasProceededPastResumeUpload();
         const persistedKey = getPersistedUploadedResumeMetaKey();
         let raw = window.sessionStorage.getItem(UPLOADED_RESUME_META_KEY);
         if (!raw && persistedKey) {
@@ -217,7 +224,11 @@ export default function CreateProfilePage() {
             if (parsed?.name && parsed?.uploadDate) {
               if (cancelled) return;
               setUploadedFile(parsed);
-              router.replace("/profile/create/basic-details");
+              if (shouldAutoAdvance) {
+                router.replace("/profile/create/basic-details");
+              } else {
+                setIsResolvingEntryStep(false);
+              }
               return;
             }
           } catch {
@@ -263,7 +274,9 @@ export default function CreateProfilePage() {
         } catch {
           // ignore storage errors
         }
-        router.replace("/profile/create/basic-details");
+        if (shouldAutoAdvance) {
+          router.replace("/profile/create/basic-details");
+        }
       } catch {
         // best-effort fallback only
       } finally {
@@ -377,6 +390,7 @@ export default function CreateProfilePage() {
     setUploadedFile(null);
     clearProfileName();
     clearResumeProfile();
+    clearProceededPastResumeUpload();
     if (typeof window !== "undefined") {
       try {
         window.sessionStorage.removeItem(UPLOADED_RESUME_META_KEY);
@@ -606,6 +620,7 @@ export default function CreateProfilePage() {
         }
       }
 
+      markProceededPastResumeUpload();
       router.push("/profile/create/basic-details");
     } finally {
       setIsGeneratingProfile(false);
