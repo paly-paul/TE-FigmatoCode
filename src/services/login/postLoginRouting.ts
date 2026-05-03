@@ -142,7 +142,7 @@ async function getServerOnboardingSignals(profileName: string): Promise<{
   resumeUploaded: boolean;
   basicDetailsStarted: boolean;
 }> {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return { resumeUploaded: false, basicDetailsStarted: false };
   const profileUrl = new URL("/api/method/get_data/", window.location.origin);
   profileUrl.searchParams.set("doctype", "Profile");
   profileUrl.searchParams.set("name", profileName);
