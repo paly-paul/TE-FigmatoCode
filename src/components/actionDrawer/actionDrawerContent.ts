@@ -3,7 +3,7 @@
  * Edit this file to change labels, placeholders, and content without touching layout.
  */
 
-export const ACTION_DRAWER_TABS = ["Job Action", "Timeline", "Job Description"] as const;
+export const ACTION_DRAWER_TABS = ["Job Description", "Job Action", "Timeline"] as const;
 export type ActionDrawerTab = (typeof ACTION_DRAWER_TABS)[number];
 
 export const actionDrawerChrome = {

@@ -751,7 +751,6 @@ export default function MyProfilePage() {
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-start justify-between gap-2">
                                                 <p className="text-[16px] font-medium text-[#202939]">{item.title}</p>
-                                                <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
                                             </div>
                                             <p className="mt-2 text-[14px] text-[#5E7397]">{item.years} years experience</p>
                                         </div>

@@ -94,10 +94,12 @@ export function DetailTile({
   icon,
   title,
   subtitle,
+  externalHref,
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
+  externalHref?: string;
 }) {
   return (
     <div className="border border-[#dfe4ec] bg-white px-4 py-4">
@@ -106,7 +108,18 @@ export function DetailTile({
         <div>
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium text-[#111827] sm:text-[15px]">{title}</p>
-            <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
+            {externalHref ? (
+              <a
+                href={externalHref}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#66758a] transition hover:text-[#174ee7]"
+                aria-label="Open external link"
+                title="Open external link"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-[#66758a]">{subtitle}</p>
         </div>
