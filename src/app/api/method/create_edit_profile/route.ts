@@ -149,6 +149,13 @@ function withNestedProfileVersionMode(payload: JsonRecord, mode: unknown): JsonR
   return nestedPayload;
 }
 
+function normalizePublishedProfileStatus(value: unknown): string {
+  if (typeof value !== "string") return "Active";
+  const trimmed = value.trim();
+  if (!trimmed) return "Active";
+  return trimmed.toLowerCase() === "open" ? "Active" : trimmed;
+}
+
 function toCanonicalPayload(payload: JsonRecord, profileName: string): JsonRecord {
   const actionValue = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
   const versionName =
@@ -176,23 +183,17 @@ function toCanonicalPayload(payload: JsonRecord, profileName: string): JsonRecor
     // Align with backend state matrix:
     // submit + (new|edit) => state "Open" (published).
     profile.state = typeof profile.state === "string" && profile.state.trim() ? profile.state : "Open";
-    profile.profile_status =
-      typeof profile.profile_status === "string" && profile.profile_status.trim()
-        ? profile.profile_status
-        : "Open";
+    profile.profile_status = normalizePublishedProfileStatus(profile.profile_status);
     profileVersion.state =
       typeof profileVersion.state === "string" && profileVersion.state.trim()
         ? profileVersion.state
         : "Open";
-    profileVersion.profile_status =
-      typeof profileVersion.profile_status === "string" && profileVersion.profile_status.trim()
-        ? profileVersion.profile_status
-        : "Open";
+    profileVersion.profile_status = normalizePublishedProfileStatus(profileVersion.profile_status);
 
     canonical.profile = profile;
     canonical.profile_version = profileVersion;
     if (!("state" in canonical)) canonical.state = "Open";
-    if (!("profile_status" in canonical)) canonical.profile_status = "Open";
+    canonical.profile_status = normalizePublishedProfileStatus(canonical.profile_status);
   }
 
   return canonical;
