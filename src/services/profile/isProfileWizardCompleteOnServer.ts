@@ -7,6 +7,7 @@ function isSubmittedProfileState(value: string): boolean {
   if (!normalized) return false;
   return (
     normalized === "open" ||
+    normalized === "active" ||
     normalized === "submitted" ||
     normalized === "published" ||
     normalized === "completed"
