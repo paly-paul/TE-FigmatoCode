@@ -26,6 +26,7 @@ export default function AppNavbar() {
   const profileRef = useRef<HTMLDivElement>(null);
   // Keep the initial render deterministic (server + first client render must match).
   const [navDisplayName, setNavDisplayName] = useState("User");
+  const [navProfileId, setNavProfileId] = useState<string | null>(null);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string>("");
 
@@ -49,6 +50,7 @@ export default function AppNavbar() {
 
   useEffect(() => {
     setNavDisplayName(getResolvedNavDisplayName());
+    setNavProfileId(getProfileName());
   }, [pathname]);
 
   useEffect(() => {
@@ -224,11 +226,18 @@ export default function AppNavbar() {
                   <User className="w-4 h-4" />
                 </div>
               )}
-              <span className="text-sm font-medium text-gray-900 hidden md:block">
-                {navDisplayName}
-              </span>
+              <div className="hidden md:flex flex-col items-start min-w-0 max-w-[14rem]">
+                <span className="text-sm font-medium text-gray-900 leading-tight truncate w-full">
+                  {navDisplayName}
+                </span>
+                {navProfileId ? (
+                  <span className="text-xs text-gray-500 leading-tight truncate w-full" title={navProfileId}>
+                    {navProfileId}
+                  </span>
+                ) : null}
+              </div>
               <ChevronDown
-                className={`w-4 h-4 text-gray-500 hidden md:block transition-transform duration-200 ${
+                className={`w-4 h-4 text-gray-500 hidden md:block shrink-0 transition-transform duration-200 ${
                   profileOpen ? "rotate-180" : "rotate-0"
                 }`}
               />
@@ -281,6 +290,14 @@ export default function AppNavbar() {
         {mobileMenuOpen && (
           <div className="lg:hidden py-4 border-t">
             <nav className="flex flex-col gap-2">
+              <div className="px-4 pb-2">
+                <p className="text-sm font-semibold text-gray-900">{navDisplayName}</p>
+                {navProfileId ? (
+                  <p className="text-xs text-gray-500" title={navProfileId}>
+                    {navProfileId}
+                  </p>
+                ) : null}
+              </div>
               {!hideNavLinks
                 ? navItems.map((item) => (
                   <Link

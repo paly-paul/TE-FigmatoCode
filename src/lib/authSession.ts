@@ -9,7 +9,12 @@ export function isLikelyDocId(value: string | null | undefined) {
   if (!trimmed) return false;
   if (/\s/.test(trimmed)) return false;
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return false;
-  return /[A-Za-z]+-\d/.test(trimmed);
+  // Frappe doc names can be either:
+  // - Classic autoname formats like "PROFILE-0001"
+  // - Random/hash-like names such as "6hqbm6806r"
+  const isClassicDocName = /[A-Za-z]+-\d/.test(trimmed);
+  const isHashLikeDocName = /^[A-Za-z0-9_-]{6,}$/.test(trimmed) && /\d/.test(trimmed);
+  return isClassicDocName || isHashLikeDocName;
 }
 
 export function setCandidateId(candidateId: string) {

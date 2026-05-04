@@ -89,7 +89,9 @@ export async function isProfileWizardCompleteOnServer(
     const root =
       stateData.data && typeof stateData.data === "object"
         ? (stateData.data as UnknownRecord)
-        : stateData;
+        : stateData.message && typeof stateData.message === "object"
+          ? (stateData.message as UnknownRecord)
+          : stateData;
     const profile =
       root.profile && typeof root.profile === "object" ? (root.profile as UnknownRecord) : {};
     const profileVersion =
