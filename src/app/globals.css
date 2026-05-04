@@ -102,8 +102,6 @@
 
 /*
  * iOS Safari zooms the viewport when focusing inputs with computed font-size < 16px.
- * Tailwind `text-sm` on inputs loses cascade wars without !important here because
- * stacked utilities outweigh simple element selectors.
  */
 @media (max-width: 1023px) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
