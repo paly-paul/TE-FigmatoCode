@@ -115,7 +115,6 @@ export async function isProfileWizardCompleteOnServer(
       extractCompletionPercent(profileVersion) ??
       extractCompletionPercent(profile) ??
       extractCompletionPercent(root);
-    const isHighCompletion = completionPercent != null && completionPercent >= 80;
 
     console.log("[profile-check] server-data", {
       profileName,
@@ -129,11 +128,12 @@ export async function isProfileWizardCompleteOnServer(
       rootStatus: rootStatus || null,
       isSubmitted,
       completionPercent,
-      isHighCompletion,
       email: data.email,
       currentLocation: data.currentLocation,
     });
-    return Boolean(!isDraft && (isSubmitted || isHighCompletion || (title && skills > 0)));
+    // Only treat as complete after backend marks submitted/published/completed.
+    // This prevents upload/AI-prefill steps from routing to dashboard before Finish.
+    return Boolean(!isDraft && isSubmitted);
   } catch (error) {
     console.error("[profile-check] server-data:error", { profileName, error });
     return false;

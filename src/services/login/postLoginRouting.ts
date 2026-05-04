@@ -111,17 +111,6 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     }
     setProfileName(profileName);
 
-    // Backend contract: candidate_login marks existing generated profile users.
-    // Trust this first to avoid false negatives from secondary profile-shape checks.
-    if (sessionProfileGenerated === true) {
-      console.log("[login-routing] decision", {
-        reason: "profile-generated-per-login-response",
-        profileName,
-        destination: "/dashboard",
-      });
-      return "/dashboard";
-    }
-
     const isComplete = await isProfileWizardCompleteOnServer(profileName);
     console.log("[login-routing] profile-check:session", {
       profileName,
