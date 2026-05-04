@@ -45,13 +45,11 @@ export default function LoginPageClient() {
     prefetchDropdownDetailsAfterLogin();
 
     const destination = await getPostLoginDestination(email);
-    const skipWizard = destination === "/dashboard";
     console.log("[login-page] final-decision", {
       email: email.trim().toLowerCase(),
-      skipWizard,
       destination,
     });
-    if (skipWizard) {
+    if (destination === "/dashboard") {
       setDashboardWelcomePending();
     }
     router.replace(destination);

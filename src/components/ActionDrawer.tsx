@@ -183,6 +183,11 @@ function isActionableStageCard(action: ActionDrawerActionCard | null): boolean {
   return !isDirectJobApplyCard(action);
 }
 
+function isRecruiterInterestCard(action: ActionDrawerActionCard | null): boolean {
+  const title = action?.title.toLowerCase() ?? "";
+  return title === actionDrawerTitleMatchers.recruiterInterest || title.includes("interest");
+}
+
 export default function ActionDrawer({
   open,
   onClose,
@@ -242,9 +247,9 @@ export default function ActionDrawer({
       setActiveTab(
         isApplicationTimelineCard(action)
           ? "Job Description"
-          : recruiterInterestReceived
+          : isRecruiterInterestCard(action)
             ? "Job Description"
-            : isActionableStageCard(action)
+          : isActionableStageCard(action)
             ? "Job Action"
           : shouldUseFirstTimeJobTabs(action)
             ? "Job Description"
@@ -282,6 +287,8 @@ export default function ActionDrawer({
 
   const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
     ? ["Job Description", "Timeline"]
+    : isRecruiterInterestCard(action)
+      ? ["Job Description", "Job Action", "Timeline"]
     : isActionableStageCard(action)
       ? [...actionDrawerChrome.tabs]
     : shouldUseFirstTimeJobTabs(action)
@@ -298,9 +305,7 @@ export default function ActionDrawer({
   }, []);
 
   const normalizedTitle = action?.title.toLowerCase() ?? "";
-  const isRecruiterInterestReceived =
-    normalizedTitle === actionDrawerTitleMatchers.recruiterInterest ||
-    normalizedTitle.includes("interest");
+  const isRecruiterInterestReceived = isRecruiterInterestCard(action);
   const isFirstRecruiterInterestCard =
     isRecruiterInterestReceived && action?.id === actionDrawerFirstRecruiterCardId;
   const isInterviewScheduled =
@@ -1089,6 +1094,11 @@ export default function ActionDrawer({
   const runPrimaryAction = () => {
     if (!action) return;
     if (submitInFlightRef.current || isSubmitting || hasSubmitted) return;
+    if (isRecruiterInterestReceived && activeTab !== "Job Action") {
+      setValidationMessage(null);
+      setActiveTab("Job Action");
+      return;
+    }
     if (isDirectApply && activeTab !== "Job Action") {
       setValidationMessage(null);
       setActiveTab("Job Action");
@@ -1276,10 +1286,10 @@ export default function ActionDrawer({
           isMobileViewport ? "w-full px-5 py-3" : "px-5 py-2.5 sm:px-6"
         }`}
       >
-        {isDirectApply
-          ? (activeTab === "Job Action" ? "Apply" : "Next")
-          : isRecruiterInterestReceived
-            ? (activeTab === "Job Action" ? "Accept" : "Next")
+        {isRecruiterInterestReceived
+          ? (hasSubmitted ? "Interest sent by recruiter" : activeTab === "Job Action" ? "Accept" : "Next")
+          : isDirectApply
+            ? (activeTab === "Job Action" ? "Apply" : "Next")
             : actionDrawerFooter.submit}
       </button>
     </div>
