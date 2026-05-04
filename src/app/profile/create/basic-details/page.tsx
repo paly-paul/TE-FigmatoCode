@@ -2387,14 +2387,6 @@ function BasicDetailsPageContent() {
                   <div className="border-t border-gray-200 pt-5 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-semibold text-gray-900">Summary <span className="text-red-500">*</span></span>
-                      <button
-                        ref={generateButtonRef}
-                        type="button"
-                        onClick={openSummaryDrawer}
-                        className="text-sm font-semibold text-primary-600 hover:text-primary-700"
-                      >
-                        Generate
-                      </button>
                     </div>
 
                     <textarea
@@ -3892,7 +3884,7 @@ function BasicDetailsPageContent() {
             type="button"
             variant="outline"
             fullWidth={false}
-            className="px-5 py-2 text-xs sm:text-sm"
+            className="hidden sm:inline-flex px-5 py-2 text-xs sm:text-sm"
             disabled={!summaryPrompt.trim() || isGeneratingSummary}
             onClick={handleGenerateSummary}
           >
