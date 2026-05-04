@@ -10,6 +10,7 @@ export type PostLoginDestination = "/dashboard" | "/profile/create/basic-details
  * - completed/generated profile => dashboard
  * - existing but incomplete profile => basic-details (resume wizard)
  * - no profile found => upload-resume entry step
+ * -
  */
 export async function getPostLoginDestination(email: string): Promise<PostLoginDestination> {
   if (typeof window === "undefined") return "/profile/create";
