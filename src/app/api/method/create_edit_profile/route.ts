@@ -143,7 +143,8 @@ function withNestedProfileVersionMode(payload: JsonRecord, mode: unknown): JsonR
       : { mode };
 
   nestedPayload.profile_version = profileVersion;
-  delete nestedPayload.action;
+  // Preserve submit intent for backend state transitions.
+  // Dropping action here can cause "Finish" to be treated as save/edit.
   delete nestedPayload.mode;
   return nestedPayload;
 }
