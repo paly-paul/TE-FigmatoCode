@@ -2241,6 +2241,10 @@ function BasicDetailsPageContent() {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("currentLocation", option.label);
                                 }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                }}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
                                 {option.label}
@@ -2280,6 +2284,10 @@ function BasicDetailsPageContent() {
                                 key={`${option.id}-${option.label}`}
                                 type="button"
                                 onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("preferredLocation", option.label);
+                                }}
+                                onTouchStart={(e) => {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("preferredLocation", option.label);
                                 }}
@@ -3701,6 +3709,10 @@ function BasicDetailsPageContent() {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("currentLocation", option.label);
                                 }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                }}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
                                 {option.label}
@@ -3738,6 +3750,10 @@ function BasicDetailsPageContent() {
                               key={`${option.id}-${option.label}`}
                               type="button"
                               onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleLocationSuggestionPick("preferredLocation", option.label);
+                              }}
+                              onTouchStart={(e) => {
                                 e.preventDefault();
                                 handleLocationSuggestionPick("preferredLocation", option.label);
                               }}

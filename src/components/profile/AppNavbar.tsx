@@ -134,6 +134,7 @@ export default function AppNavbar() {
     { label: "Timesheet", href: "/timesheet" },
   ];
   const hideNavLinks = pathname.startsWith("/profile/create");
+  const profileNavigationDisabled = hideNavLinks && !navProfileId;
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
@@ -253,8 +254,16 @@ export default function AppNavbar() {
                 <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden py-1">
                   <button
                     type="button"
-                    onClick={() => navigateTo(getProfileHref())}
-                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      if (profileNavigationDisabled) return;
+                      navigateTo(getProfileHref());
+                    }}
+                    disabled={profileNavigationDisabled}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                      profileNavigationDisabled
+                        ? "cursor-not-allowed text-gray-400"
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
                   >
                     <User className="w-4 h-4 text-gray-500" />
                     Profile
@@ -325,8 +334,16 @@ export default function AppNavbar() {
               <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
                 <button
                   type="button"
-                  onClick={() => navigateTo(getProfileHref())}
-                  className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100 text-left text-sm"
+                  onClick={() => {
+                    if (profileNavigationDisabled) return;
+                    navigateTo(getProfileHref());
+                  }}
+                  disabled={profileNavigationDisabled}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-left text-sm ${
+                    profileNavigationDisabled
+                      ? "cursor-not-allowed text-gray-400"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
                 >
                   <User className="w-4 h-4 text-gray-500" />
                   Profile
