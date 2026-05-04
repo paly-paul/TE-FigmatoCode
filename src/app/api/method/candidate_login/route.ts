@@ -81,6 +81,12 @@ export async function POST(request: Request) {
       res.headers.append("set-cookie", normalizeCookieForThisApp(cookie));
     }
     res.headers.set("x-upstream-url", url);
+    // Temporary diagnostics for production cookie propagation debugging.
+    const joined = upstreamSetCookies.join("\n");
+    res.headers.set("x-debug-set-cookie-count", String(upstreamSetCookies.length));
+    res.headers.set("x-debug-set-cookie-has-sid", /\bsid=/i.test(joined) ? "1" : "0");
+    res.headers.set("x-debug-set-cookie-has-user-id", /\buser_id=/i.test(joined) ? "1" : "0");
+    res.headers.set("x-debug-set-cookie-has-csrf", /\bcsrf_token=/i.test(joined) ? "1" : "0");
     return res;
   };
 
