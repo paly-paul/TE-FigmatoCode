@@ -10,6 +10,7 @@ export interface ExperienceItem {
   id: string;
   title: string;
   years: number;
+  externalUrl?: string;
 }
 
 export interface ToolItem {

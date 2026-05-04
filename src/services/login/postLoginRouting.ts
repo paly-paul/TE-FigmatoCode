@@ -1,31 +1,29 @@
 "use client";
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
-import { isProfileComplete } from "@/lib/profileOnboarding";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
-/**
- * After a successful login (cookies set), decide if the user should skip the
- * create-profile wizard:
- * - true if they already completed the wizard on this device (localStorage), or
- * - true if the server has a Profile with a full skills-projects–style submission
- *   (professional title + key skills), not merely an empty/new Profile doc.
- */
-export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+export type PostLoginDestination = "/dashboard" | "/profile/create/basic-details" | "/profile/create";
 
-  const localProfileComplete = isProfileComplete();
+/**
+ * After successful login, route users by server state:
+ * - completed/generated profile => dashboard
+ * - existing but incomplete profile => basic-details (resume wizard)
+ * - no profile found => upload-resume entry step
+ */
+export async function getPostLoginDestination(email: string): Promise<PostLoginDestination> {
+  if (typeof window === "undefined") return "/profile/create";
+
   const sessionProfileGenerated = getProfileGenerated();
   const sessionProfileName = getProfileName();
   console.log("[login-routing] start", {
     email: email.trim().toLowerCase(),
-    localProfileComplete,
     sessionProfileGenerated,
     sessionProfileName,
   });
 
   const normalized = email.trim().toLowerCase();
-  if (!normalized) return false;
+  if (!normalized) return "/profile/create";
 
   try {
     let profileName = sessionProfileName?.trim() ?? "";
@@ -41,18 +39,11 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       }
     }
     if (!profileName) {
-      if (localProfileComplete) {
-        console.log("[login-routing] decision", {
-          reason: "local-profile-complete:fallback-missing-profile-name",
-          skipWizard: true,
-        });
-        return true;
-      }
       console.log("[login-routing] decision", {
         reason: "missing-profile-name",
-        skipWizard: false,
+        destination: "/profile/create",
       });
-      return false;
+      return "/profile/create";
     }
     if (isLikelyDocId(profileName)) {
       setCandidateId(profileName);
@@ -65,9 +56,9 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       console.log("[login-routing] decision", {
         reason: "profile-generated-per-login-response",
         profileName,
-        skipWizard: true,
+        destination: "/dashboard",
       });
-      return true;
+      return "/dashboard";
     }
 
     const isComplete = await isProfileWizardCompleteOnServer(profileName);
@@ -77,30 +68,26 @@ export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<
       sessionProfileGenerated,
     });
     if (isComplete) {
-      console.log("[login-routing] decision", { reason: "server-profile-complete:session", skipWizard: true });
-      return true;
-    }
-    if (localProfileComplete) {
       console.log("[login-routing] decision", {
-        reason: "local-profile-complete:fallback-server-incomplete",
-        skipWizard: true,
+        reason: "server-profile-complete:session",
+        destination: "/dashboard",
       });
-      return true;
+      return "/dashboard";
     }
-    console.log("[login-routing] decision", { reason: "server-profile-incomplete:session", skipWizard: false });
-    return false;
+    console.log("[login-routing] decision", {
+      reason: "server-profile-incomplete:session",
+      destination: "/profile/create/basic-details",
+    });
+    return "/profile/create/basic-details";
   } catch {
     /* treat as no server profile */
   }
 
-  if (localProfileComplete) {
-    console.log("[login-routing] decision", {
-      reason: "local-profile-complete:fallback-server-error",
-      skipWizard: true,
-    });
-    return true;
-  }
+  console.log("[login-routing] decision", { reason: "no-skip-signal", destination: "/profile/create" });
+  return "/profile/create";
+}
 
-  console.log("[login-routing] decision", { reason: "no-skip-signal", skipWizard: false });
-  return false;
+export async function shouldSkipProfileWizardAfterLogin(email: string): Promise<boolean> {
+  const destination = await getPostLoginDestination(email);
+  return destination === "/dashboard";
 }
