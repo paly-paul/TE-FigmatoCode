@@ -10,7 +10,11 @@ import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
-import { clearResumeWizardSession, readResumeProfile, upsertResumeProfile } from "@/lib/profileSession";
+import {
+  clearResumeWizardSession,
+  readResumeProfile,
+  upsertResumeProfile,
+} from "@/lib/profileSession";
 import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -34,6 +38,41 @@ interface ResumeSkillsData {
   }>;
   projectDescription?: string;
   responsibilities?: string;
+}
+
+function safeReadResumeSkillsDraft(): ResumeSkillsData | null {
+  if (typeof window === "undefined") return null;
+  const email = window.localStorage.getItem("te_login_email")?.trim().toLowerCase() || "";
+  const persistedKey = email ? `te_resume_profile_draft:${email}:resumeSkills` : "";
+  try {
+    const raw = window.sessionStorage.getItem("resumeSkills");
+    if (raw) return JSON.parse(raw) as ResumeSkillsData;
+    if (!persistedKey) return null;
+    const persistedRaw = window.localStorage.getItem(persistedKey);
+    if (!persistedRaw) return null;
+    window.sessionStorage.setItem("resumeSkills", persistedRaw);
+    return JSON.parse(persistedRaw) as ResumeSkillsData;
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteResumeSkillsDraft(payload: ResumeSkillsData): void {
+  if (typeof window === "undefined") return;
+  const email = window.localStorage.getItem("te_login_email")?.trim().toLowerCase() || "";
+  const persistedKey = email ? `te_resume_profile_draft:${email}:resumeSkills` : "";
+  const serialized = JSON.stringify(payload);
+  try {
+    window.sessionStorage.setItem("resumeSkills", serialized);
+  } catch {
+    // ignore storage errors
+  }
+  if (!persistedKey) return;
+  try {
+    window.localStorage.setItem(persistedKey, serialized);
+  } catch {
+    // ignore storage errors
+  }
 }
 
 const DEFAULT_SUGGESTED_SKILLS = [
@@ -431,9 +470,8 @@ function SkillsProjectsPageContent() {
     const effectiveProfileName = queryProfileName || getProfileName() || "";
     if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) return;
     try {
-      const raw = window.sessionStorage.getItem("resumeSkills");
-      if (!raw) return;
-      const data = JSON.parse(raw) as ResumeSkillsData;
+      const data = safeReadResumeSkillsDraft();
+      if (!data) return;
       if (Array.isArray(data.skills) && data.skills.length) {
         setSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
         setSuggestedSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
@@ -993,11 +1031,7 @@ function SkillsProjectsPageContent() {
       projectDescription: first?.projectDescription ?? "",
       responsibilities: first?.responsibilities ?? "",
     };
-    try {
-      window.sessionStorage.setItem("resumeSkills", JSON.stringify(payload));
-    } catch {
-      // ignore storage errors
-    }
+    safeWriteResumeSkillsDraft(payload);
   }, [skills, experiences, projects]);
 
   function updateExperience(id: string, patch: Partial<Omit<ExperienceEntry, "id">>) {

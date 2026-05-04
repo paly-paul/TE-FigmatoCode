@@ -240,6 +240,10 @@ export default function ActionDrawer({
 
   useEffect(() => {
     if (open) {
+      const normalized = action?.title.toLowerCase() ?? "";
+      const recruiterInterestReceived =
+        normalized === actionDrawerTitleMatchers.recruiterInterest || normalized.includes("interest");
+
       setActiveTab(
         isApplicationTimelineCard(action)
           ? "Job Description"
@@ -1096,6 +1100,11 @@ export default function ActionDrawer({
       return;
     }
     if (isDirectApply && activeTab !== "Job Action") {
+      setValidationMessage(null);
+      setActiveTab("Job Action");
+      return;
+    }
+    if (isRecruiterInterestReceived && activeTab !== "Job Action") {
       setValidationMessage(null);
       setActiveTab("Job Action");
       return;
