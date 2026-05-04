@@ -6,7 +6,7 @@ import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { setSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
 import { isLikelyDocId, setCandidateId, setProfileGenerated, setProfileName, setUserDisplayName } from "@/lib/authSession";
-import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
+import { getPostLoginDestination } from "@/services/login/postLoginRouting";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { prefetchDynamicKeySkills } from "@/services/profile/keySkills";
 
@@ -66,13 +66,12 @@ export default function GoogleCallbackPage() {
 
         prefetchDropdownDetailsAfterLogin();
 
-        const skipWizard = email ? await shouldSkipProfileWizardAfterLogin(email) : false;
+        const destination = email ? await getPostLoginDestination(email) : "/profile/create";
+        const skipWizard = destination === "/dashboard";
         if (skipWizard) {
           setDashboardWelcomePending();
-          router.replace("/dashboard");
-        } else {
-          router.replace("/profile/create");
         }
+        router.replace(destination);
       } catch {
         setErrorMessage("Something went wrong. Please try again.");
         setStatus("error");

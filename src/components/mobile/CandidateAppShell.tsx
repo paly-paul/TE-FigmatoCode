@@ -97,6 +97,16 @@ export default function CandidateAppShell({
     if (notifOpen && sessionEmail) void refreshNotifications();
   }, [notifOpen, sessionEmail, refreshNotifications]);
 
+  const shouldBlockNavigation = (href: string): boolean => {
+    if (!href) return false;
+    const navEvent = new CustomEvent<{ url: string }>("te:navigation-attempt", {
+      detail: { url: href },
+      cancelable: true,
+    });
+    window.dispatchEvent(navEvent);
+    return navEvent.defaultPrevented;
+  };
+
   const navigateTo = (href: string) => {
     if (!href) return;
     const current = (pathname || "/").replace(/\/$/, "") || "/";
@@ -105,6 +115,7 @@ export default function CandidateAppShell({
       setMenuOpen(false);
       return;
     }
+    if (shouldBlockNavigation(href)) return;
     setMenuOpen(false);
     router.push(href);
   };
@@ -141,7 +152,13 @@ export default function CandidateAppShell({
           <Link
             href="/dashboard/"
             className="flex items-center gap-2 min-w-0"
-            onClick={() => setMenuOpen(false)}
+            onClick={(event) => {
+              if (shouldBlockNavigation("/dashboard/")) {
+                event.preventDefault();
+                return;
+              }
+              setMenuOpen(false);
+            }}
           >
             <Image src="/icons/logo.jpeg" width={36} height={36} alt="SixFE Logo" />
             <span className="truncate text-base font-semibold text-gray-900">SixFE</span>
@@ -200,7 +217,13 @@ export default function CandidateAppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setMenuOpen(false)}
+                onClick={(event) => {
+                  if (shouldBlockNavigation(item.href)) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setMenuOpen(false);
+                }}
                 className={`text-lg font-medium ${
                   isMenuActive(item.href)
                     ? "text-gray-900"
@@ -216,7 +239,13 @@ export default function CandidateAppShell({
             <div className="grid grid-cols-2 gap-3">
               <Link
                 href="/profile/"
-                onClick={() => setMenuOpen(false)}
+                onClick={(event) => {
+                  if (shouldBlockNavigation("/profile/")) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setMenuOpen(false);
+                }}
                 className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white py-3 text-sm font-medium text-gray-900"
               >
                 <User className="h-4 w-4 text-gray-600" strokeWidth={1.5} />

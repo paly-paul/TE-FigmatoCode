@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 function getCookieValue(cookieHeader: string | null, key: string) {
   if (!cookieHeader) return "";
   const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${key}=([^;]+)`));

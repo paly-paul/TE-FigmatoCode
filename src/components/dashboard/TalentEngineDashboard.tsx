@@ -778,7 +778,7 @@ export default function TalentEngineDashboard() {
           .map((job, index) => ({
             id: 100000 + index,
             type: "General",
-            title: "New Matching Roles Added",
+            title: job.job_title || "New Matching Roles Added",
             subtitle: `${job.job_title} - ${job.location || job.job_id}`,
             timestamp: job.status || "Recommended",
             jobDocumentId: job.job_id,

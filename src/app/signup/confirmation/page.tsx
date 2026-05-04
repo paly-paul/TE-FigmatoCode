@@ -6,7 +6,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { EnvelopeCheckIllustration } from "@/components/icons";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
-import { shouldSkipProfileWizardAfterLogin } from "@/services/login/postLoginRouting";
+import { getPostLoginDestination } from "@/services/login/postLoginRouting";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import {
   completeSignupFromPending,
@@ -98,13 +98,12 @@ export default function ConfirmationPage() {
       await completeSignupFromPending();
       prefetchDropdownDetailsAfterLogin();
 
-      const skipWizard = await shouldSkipProfileWizardAfterLogin(email);
+      const destination = await getPostLoginDestination(email);
+      const skipWizard = destination === "/dashboard";
       if (skipWizard) {
         setDashboardWelcomePending({ force: true });
-        router.replace("/dashboard");
-      } else {
-        router.replace("/profile/create");
       }
+      router.replace(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify OTP.");
     } finally {
