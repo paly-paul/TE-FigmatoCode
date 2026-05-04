@@ -4,6 +4,7 @@ export interface Certification {
   issuer: string;
   issued: string;
   expiry: string | null;
+  externalUrl?: string;
 }
 
 export interface ExperienceItem {

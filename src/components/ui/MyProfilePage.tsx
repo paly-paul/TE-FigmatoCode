@@ -362,6 +362,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
                 issuer: cert.issuing || "Issuer",
                 issued: parseMaybeDate(cert.issueDate) || "Issued",
                 expiry: cert.expirationDate ? parseMaybeDate(cert.expirationDate) : null,
+                externalUrl: cert.url?.trim() || undefined,
             })) || fallback.certifications,
         experienceItems,
         tools: [],
@@ -388,6 +389,7 @@ export default function MyProfilePage() {
     const [isUpdatingProfileStatus, setIsUpdatingProfileStatus] = useState(false);
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
     const [isDownloadingResume, setIsDownloadingResume] = useState(false);
+    const [showRecommendedLearningSoon, setShowRecommendedLearningSoon] = useState(false);
     const [copiedKey, setCopiedKey] = useState("");
     const [mobileTab, setMobileTab] = useState<"about" | "professional" | "personal">("about");
     const [openSections, setOpenSections] = useState({
@@ -402,6 +404,7 @@ export default function MyProfilePage() {
     });
     const PROFILE = profileData;
     const profileImageSrc = PROFILE.profileImageUrl?.trim() || "";
+    const profileId = getProfileName()?.trim() || "";
     const formattedPhone = formatContactNumber(PROFILE.phone, PROFILE.countryCode);
 
     const copyText = async (value: string, key: string) => {
@@ -695,7 +698,11 @@ export default function MyProfilePage() {
                                     <p className="text-[14px] leading-6 text-[#202939]">
                                         Add certifications recruiters expect before your next deployment.
                                     </p>
-                                    <button type="button" className="mt-2 inline-flex items-center gap-1 text-[14px] font-semibold text-[#174EE7]">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowRecommendedLearningSoon(true)}
+                                        className="mt-2 inline-flex items-center gap-1 text-[14px] font-semibold text-[#174EE7]"
+                                    >
                                         Recommended Learning
                                         <ChevronRight className="h-4 w-4" />
                                     </button>
@@ -712,7 +719,9 @@ export default function MyProfilePage() {
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-start justify-between gap-2">
                                                     <p className="text-[16px] font-medium leading-6 text-[#202939]">{certification.name}</p>
-                                                    <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                                                    {certification.externalUrl ? (
+                                                        <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                                                    ) : null}
                                                 </div>
                                                 <p className="mt-2 text-[14px] text-[#5E7397]">{certification.issuer}</p>
                                                 <p className="mt-1 text-[14px] text-[#5E7397]">
@@ -939,10 +948,53 @@ export default function MyProfilePage() {
         return (
             <CandidateAppShell showBottomNav={false}>
                 <div className="min-h-full bg-[#EEF0F3] pb-[5.5rem]">
+                    {showRecommendedLearningSoon ? (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                            <div className="relative w-full max-w-[520px] rounded-2xl bg-white shadow-2xl animate-in fade-in zoom-in-95">
+                                <div className="relative rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-6 py-7 sm:px-8 sm:py-8">
+                                    {/* Decorative animation layer (kept outside clipping) */}
+                                    <div className="pointer-events-none absolute inset-0 overflow-visible">
+                                        <span className="absolute -left-2 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+                                        <span className="absolute -right-1 top-12 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
+                                        <span className="absolute bottom-14 left-8 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
+                                        <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
+                                        <span className="absolute left-1/2 top-12 h-28 w-28 -translate-x-1/2 rounded-full border-2 border-blue-200/70 animate-pulse" />
+                                        <span className="absolute left-1/2 top-10 h-36 w-36 -translate-x-1/2 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
+                                    </div>
+
+                                    <div className="relative flex flex-col items-center text-center">
+                                        <div className="mb-4 mt-1 rounded-full bg-blue-100 p-3 text-blue-600 shadow-sm animate-bounce">
+                                            <ChevronRight className="h-8 w-8 animate-in zoom-in-75 duration-300" />
+                                        </div>
+                                        <p className="text-xl font-semibold text-gray-900 animate-in slide-in-from-bottom-1 duration-300">
+                                            Coming soon
+                                        </p>
+                                        <p className="mt-2 max-w-[34ch] text-sm text-gray-600 animate-in slide-in-from-bottom-1 duration-500">
+                                            Recommended Learning will be available in a future update.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowRecommendedLearningSoon(false)}
+                                            className="mt-6 rounded-md border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
                     <main className="px-3.5 py-4">
-                        <h1 className="mb-4 text-[22px] font-semibold tracking-[-0.02em] text-[#202939]">
-                            My Profile
-                        </h1>
+                        <div className="mb-4 flex items-end justify-between gap-3">
+                            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#202939]">
+                                My Profile
+                            </h1>
+                            {profileId ? (
+                                <span className="shrink-0 text-xs font-semibold text-[#5E7397]" title={profileId}>
+                                    {profileId}
+                                </span>
+                            ) : null}
+                        </div>
 
                         {mobileTab === "about" ? (
                             <>
@@ -1019,6 +1071,42 @@ export default function MyProfilePage() {
 
     return (
         <div className="min-h-screen bg-[#eef1f5]">
+            {showRecommendedLearningSoon ? (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                    <div className="relative w-full max-w-[520px] rounded-2xl bg-white shadow-2xl animate-in fade-in zoom-in-95">
+                        <div className="relative rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-6 py-7 sm:px-8 sm:py-8">
+                            {/* Decorative animation layer (kept outside clipping) */}
+                            <div className="pointer-events-none absolute inset-0 overflow-visible">
+                                <span className="absolute -left-2 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+                                <span className="absolute -right-1 top-12 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
+                                <span className="absolute bottom-14 left-8 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
+                                <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
+                                <span className="absolute left-1/2 top-12 h-28 w-28 -translate-x-1/2 rounded-full border-2 border-blue-200/70 animate-pulse" />
+                                <span className="absolute left-1/2 top-10 h-36 w-36 -translate-x-1/2 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
+                            </div>
+
+                            <div className="relative flex flex-col items-center text-center">
+                                <div className="mb-4 mt-1 rounded-full bg-blue-100 p-3 text-blue-600 shadow-sm animate-bounce">
+                                    <ChevronRight className="h-8 w-8 animate-in zoom-in-75 duration-300" />
+                                </div>
+                                <p className="text-xl font-semibold text-gray-900 animate-in slide-in-from-bottom-1 duration-300">
+                                    Coming soon
+                                </p>
+                                <p className="mt-2 max-w-[34ch] text-sm text-gray-600 animate-in slide-in-from-bottom-1 duration-500">
+                                    Recommended Learning will be available in a future update.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowRecommendedLearningSoon(false)}
+                                    className="mt-6 rounded-md border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             <AppNavbar />
 
             <div className="mx-auto max-w-[1600px] px-3 py-3 sm:px-5 lg:px-6">
@@ -1081,59 +1169,68 @@ export default function MyProfilePage() {
                                             )}
                                         </div>
                                         <div className="pb-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <h1 className="text-2xl font-semibold leading-none text-[#111827] sm:text-[30px]">
-                                                    {PROFILE.name}
-                                                </h1>
-                                                {PROFILE.verified ? (
-                                                    <span className="inline-flex items-center gap-1 text-xs text-[#374151] sm:text-sm">
-                                                        <CircleCheck className="h-3.5 w-3.5 fill-[#19c37d] text-white" />
-                                                        Verified by SIXFE
-                                                    </span>
-                                                ) : null}
+                                            <div className="flex flex-wrap items-start gap-2">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                    <h1 className="text-2xl font-semibold leading-none text-[#111827] sm:text-[30px]">
+                                                        {PROFILE.name}
+                                                    </h1>
+                                                    {PROFILE.verified ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs text-[#374151] sm:text-sm">
+                                                            <CircleCheck className="h-3.5 w-3.5 fill-[#19c37d] text-white" />
+                                                            Verified by SIXFE
+                                                        </span>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                             <p className="mt-2 text-sm text-[#5f6b7d] sm:text-base">{PROFILE.title}</p>
                                         </div>
                                     </div>
 
-                                    <div className="relative flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowDownloadMenu(prev => !prev)}
-                                            className="flex h-9 w-9 items-center justify-center border border-[#d7dde7] bg-white text-[#4b5563] transition hover:bg-[#f8fafc] sm:h-10 sm:w-10"
-                                            aria-label="Download profile"
-                                            disabled={isDownloadingResume}
-                                        >
-                                            <Download className="h-4 w-4" />
-                                        </button>
+                                    <div className="flex flex-col items-start gap-2 md:items-end">
+                                        {profileId ? (
+                                            <span className="text-sm font-medium text-[#5f6b7d] sm:text-base" title={profileId}>
+                                                {profileId}
+                                            </span>
+                                        ) : null}
+                                        <div className="relative flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowDownloadMenu(prev => !prev)}
+                                                className="flex h-9 w-9 items-center justify-center border border-[#d7dde7] bg-white text-[#4b5563] transition hover:bg-[#f8fafc] sm:h-10 sm:w-10"
+                                                aria-label="Download profile"
+                                                disabled={isDownloadingResume}
+                                            >
+                                                <Download className="h-4 w-4" />
+                                            </button>
 
-                                        {showDownloadMenu && (
-                                            <div className="absolute top-full right-0 mt-2 w-40 bg-white border border-gray-200 shadow-lg z-50">
-                                                <button
-                                                    onClick={handleDownloadProfile}
-                                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
-                                                    disabled={isDownloadingResume}
-                                                >
-                                                    {isDownloadingResume ? "Preparing..." : "Download PDF"}
-                                                </button>
+                                            {showDownloadMenu && (
+                                                <div className="absolute top-full right-0 mt-2 w-40 bg-white border border-gray-200 shadow-lg z-50">
+                                                    <button
+                                                        onClick={handleDownloadProfile}
+                                                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                                                        disabled={isDownloadingResume}
+                                                    >
+                                                        {isDownloadingResume ? "Preparing..." : "Download PDF"}
+                                                    </button>
 
-                                                <button
-                                                    onClick={() => { setShowDownloadMenu(false) }}
-                                                    className="w-full text-left px-4 py-2 text-sm text-gray-400"
-                                                    disabled
-                                                >
-                                                    Download Word
-                                                </button>
-                                            </div>
-                                        )}
+                                                    <button
+                                                        onClick={() => { setShowDownloadMenu(false) }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-gray-400"
+                                                        disabled
+                                                    >
+                                                        Download Word
+                                                    </button>
+                                                </div>
+                                            )}
 
-                                        <button
-                                            type="button"
-                                            onClick={handleEditProfile}
-                                            className="bg-[#174ee7] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#103ec1] sm:px-5"
-                                        >
-                                            Edit Profile
-                                        </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleEditProfile}
+                                                className="bg-[#174ee7] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#103ec1] sm:px-5"
+                                            >
+                                                Edit Profile
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1200,7 +1297,11 @@ export default function MyProfilePage() {
                                         <Settings2 className="h-3.5 w-3.5 text-[#174ee7]" />
                                         <span>Add certifications recruiters expect before your next deployment.</span>
                                     </div>
-                                    <button type="button" className="text-sm font-semibold text-[#174ee7]">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowRecommendedLearningSoon(true)}
+                                        className="text-sm font-semibold text-[#174ee7]"
+                                    >
                                         Recommended Learning
                                     </button>
                                 </div>
@@ -1216,7 +1317,9 @@ export default function MyProfilePage() {
                                                             <p className="text-sm font-medium text-[#111827] sm:text-[15px]">
                                                                 {certification.name}
                                                             </p>
-                                                            <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
+                                                            {certification.externalUrl ? (
+                                                                <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
+                                                            ) : null}
                                                         </div>
                                                         <p className="mt-1 text-sm text-[#66758a]">{certification.issuer}</p>
                                                         <p className="mt-1 text-sm text-[#7790c7]">
