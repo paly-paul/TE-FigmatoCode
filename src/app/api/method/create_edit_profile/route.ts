@@ -161,7 +161,41 @@ function toCanonicalPayload(payload: JsonRecord, profileName: string): JsonRecor
       : profileName || versionName
         ? "edit"
         : "new";
-  return withNestedProfileVersionMode(payload, mode);
+  const canonical = withNestedProfileVersionMode(payload, mode);
+
+  if (actionValue === "submit") {
+    const profile =
+      canonical.profile && typeof canonical.profile === "object" && !Array.isArray(canonical.profile)
+        ? { ...(canonical.profile as JsonRecord) }
+        : {};
+    const profileVersion =
+      canonical.profile_version && typeof canonical.profile_version === "object" && !Array.isArray(canonical.profile_version)
+        ? { ...(canonical.profile_version as JsonRecord) }
+        : {};
+
+    // Align with backend state matrix:
+    // submit + (new|edit) => state "Open" (published).
+    profile.state = typeof profile.state === "string" && profile.state.trim() ? profile.state : "Open";
+    profile.profile_status =
+      typeof profile.profile_status === "string" && profile.profile_status.trim()
+        ? profile.profile_status
+        : "Open";
+    profileVersion.state =
+      typeof profileVersion.state === "string" && profileVersion.state.trim()
+        ? profileVersion.state
+        : "Open";
+    profileVersion.profile_status =
+      typeof profileVersion.profile_status === "string" && profileVersion.profile_status.trim()
+        ? profileVersion.profile_status
+        : "Open";
+
+    canonical.profile = profile;
+    canonical.profile_version = profileVersion;
+    if (!("state" in canonical)) canonical.state = "Open";
+    if (!("profile_status" in canonical)) canonical.profile_status = "Open";
+  }
+
+  return canonical;
 }
 
 export async function POST(request: Request) {

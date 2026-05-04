@@ -5,7 +5,12 @@ type UnknownRecord = Record<string, unknown>;
 function isSubmittedProfileState(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return false;
-  return normalized === "submitted" || normalized === "published" || normalized === "completed";
+  return (
+    normalized === "open" ||
+    normalized === "submitted" ||
+    normalized === "published" ||
+    normalized === "completed"
+  );
 }
 
 function parseCompletionPercent(value: unknown): number | null {
