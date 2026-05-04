@@ -10,6 +10,7 @@ import type { SignupFormValues } from "./types";
 import { clearAuthSession, setCandidateId, setProfileName, setUserDisplayName } from "@/lib/authSession";
 import { clearSessionLoginEmail, setSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
+import { candidateLogin } from "@/services/login/candidateLogin";
 
 export function useSignupSubmit() {
   const router = useRouter();
@@ -70,7 +71,11 @@ export async function completeSignupFromPending(): Promise<void> {
 
   clearAuthSession();
   clearSessionLoginEmail();
+  const normalizedEmail = form.email.trim().toLowerCase();
   const data = await createUserAndCandidate(form);
+  // Ensure backend session cookies (sid/csrf) are established before navigating
+  // into profile flow; upload APIs depend on authenticated cookie context.
+  await candidateLogin({ email: normalizedEmail, password: form.password });
   const msg = data.message;
   const candidateId =
     (msg && typeof msg === "object" && typeof (msg as { user?: unknown }).user === "string"
@@ -82,7 +87,7 @@ export async function completeSignupFromPending(): Promise<void> {
   if (profileName) setProfileName(profileName);
   const displayName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
   if (displayName) setUserDisplayName(displayName);
-  setSessionLoginEmail(form.email.trim().toLowerCase());
+  setSessionLoginEmail(normalizedEmail);
   if (typeof window !== "undefined") {
     // Prevent immediate inactivity logout after signup due to stale prior-session timestamp.
     window.localStorage.setItem("te_last_activity_at", String(Date.now()));
