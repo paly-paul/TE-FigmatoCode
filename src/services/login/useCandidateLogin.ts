@@ -36,10 +36,6 @@ export function useCandidateLogin() {
       const profileId = extractProfileId(data);
       let profileName = extractProfileName(data, values.email.trim());
       let isProfileGenerated = extractIsProfileGenerated(data);
-
-      if (profileName) {
-        isProfileGenerated = true;
-      }
       const effectiveProfileId = [profileId, profileName].find(
         (value): value is string => typeof value === "string" && isLikelyDocId(value)
       ) ?? null;
