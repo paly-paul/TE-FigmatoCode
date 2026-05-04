@@ -724,6 +724,7 @@ export default function CreateProfilePage() {
                 <MobileResumeUploadCard
                   uploadedFile={uploadedFile}
                   onUpload={handleUpload}
+                  onDelete={handleDelete}
                 />
               </div>
             </div>
@@ -853,9 +854,11 @@ function MobileUploadStepper() {
 function MobileResumeUploadCard({
   uploadedFile,
   onUpload,
+  onDelete,
 }: {
   uploadedFile: UploadedFile | null;
   onUpload: (file: File) => Promise<void>;
+  onDelete: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -906,8 +909,19 @@ function MobileResumeUploadCard({
         className="mt-1 flex items-center gap-2 border border-[#CFD7E7] rounded px-6 py-2 text-xl leading-none font-medium text-gray-900 bg-[#F5F7FB] hover:bg-white disabled:opacity-60"
       >
         <SmallUploadIcon />
-        {isUploading ? "Uploading..." : "Upload"}
+        {isUploading ? "Uploading..." : uploadedFile ? "Re-upload" : "Upload"}
       </button>
+
+      {uploadedFile ? (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={isUploading}
+          className="text-sm font-medium text-[#D14343] underline underline-offset-2 disabled:opacity-60"
+        >
+          Remove
+        </button>
+      ) : null}
 
       <input
         ref={inputRef}
