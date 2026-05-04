@@ -3,6 +3,8 @@
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
+type UnknownRecord = Record<string, unknown>;
+
 async function resolveProfileNameForLogin(email: string): Promise<string> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return "";
@@ -17,6 +19,60 @@ async function resolveProfileNameForLogin(email: string): Promise<string> {
   const resolverData = (await resolverResponse.json()) as { profile_name?: string };
   profileName = typeof resolverData.profile_name === "string" ? resolverData.profile_name.trim() : "";
   return profileName;
+}
+
+function extractResumeRef(input: unknown, depth = 0): string {
+  if (depth > 6 || input == null) return "";
+  if (typeof input === "string") {
+    const value = input.trim();
+    if (!value) return "";
+    const lower = value.toLowerCase();
+    if (lower.includes(".pdf") || lower.includes("/files/") || lower.includes("resume")) return value;
+    return "";
+  }
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = extractResumeRef(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof input !== "object") return "";
+
+  const record = input as UnknownRecord;
+  const keys = [
+    "updated_resume",
+    "updatedResume",
+    "resume",
+    "resume_file",
+    "resumeFile",
+    "resume_url",
+    "resumeUrl",
+    "profile_resume",
+    "profileResume",
+    "profile_doc",
+    "profileDoc",
+  ];
+
+  for (const key of keys) {
+    const found = extractResumeRef(record[key], depth + 1);
+    if (found) return found;
+  }
+  for (const value of Object.values(record)) {
+    const found = extractResumeRef(value, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+async function hasUploadedResume(profileName: string): Promise<boolean> {
+  const profileUrl = new URL("/api/method/get_data/", window.location.origin);
+  profileUrl.searchParams.set("doctype", "Profile");
+  profileUrl.searchParams.set("name", profileName);
+  const res = await fetch(profileUrl.toString(), { method: "GET" });
+  if (!res.ok) return false;
+  const data = (await res.json()) as UnknownRecord;
+  return Boolean(extractResumeRef(data));
 }
 
 export type PostLoginDestination = "/dashboard" | "/profile/create/basic-details" | "/profile/create";
@@ -79,11 +135,12 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
       });
       return "/dashboard";
     }
+    const resumeUploaded = await hasUploadedResume(profileName);
     console.log("[login-routing] decision", {
-      reason: "server-profile-incomplete:session",
-      destination: "/profile/create/basic-details",
+      reason: resumeUploaded ? "server-profile-incomplete:resume-uploaded" : "server-profile-incomplete:no-resume",
+      destination: resumeUploaded ? "/profile/create/basic-details" : "/profile/create",
     });
-    return "/profile/create/basic-details";
+    return resumeUploaded ? "/profile/create/basic-details" : "/profile/create";
   } catch {
     /* treat as no server profile */
   }
