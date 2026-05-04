@@ -895,7 +895,7 @@ function BasicDetailsPageContent() {
   function filterByPrefix(rows: LocationSuggestion[], query: string): LocationSuggestion[] {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return rows;
-    return rows.filter((row) => row.label.toLowerCase().startsWith(normalizedQuery));
+    return rows.filter((row) => row.label.toLowerCase().includes(normalizedQuery));
   }
 
   useEffect(() => {
@@ -915,7 +915,7 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     const query = form.currentLocation.trim();
-    if (query.length < 2) {
+    if (query.length < 1) {
       setCurrentLocationSuggestions([]);
       setIsCurrentLocationLoading(false);
       return;
@@ -955,7 +955,7 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     const query = form.preferredLocation.trim();
-    if (query.length < 2) {
+    if (query.length < 1) {
       setPreferredLocationSuggestions([]);
       setIsPreferredLocationLoading(false);
       return;
@@ -1778,6 +1778,12 @@ function BasicDetailsPageContent() {
     });
   }
 
+  function handleCountryCodePick(code: string) {
+    setField("countryCode", code);
+    setOpenCountryCodeDropdown(false);
+    setCountryCodeSearch("");
+  }
+
   function openSummaryDrawer() {
     setSummaryPrompt("");
     setGeneratedSummary("");
@@ -2124,10 +2130,13 @@ function BasicDetailsPageContent() {
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
-                                    onClick={() => {
-                                      setField("countryCode", code);
-                                      setOpenCountryCodeDropdown(false);
-                                      setCountryCodeSearch("");
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      handleCountryCodePick(code);
+                                    }}
+                                    onTouchStart={(e) => {
+                                      e.preventDefault();
+                                      handleCountryCodePick(code);
                                     }}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                       form.countryCode === code
@@ -2219,7 +2228,7 @@ function BasicDetailsPageContent() {
                         autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 2 && (
+                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 1 && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -2261,7 +2270,7 @@ function BasicDetailsPageContent() {
                         autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 2 && (
+                      {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 1 && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isPreferredLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -3679,7 +3688,7 @@ function BasicDetailsPageContent() {
                         className={fieldClass(Boolean(errors.currentLocation))}
                         autoComplete="off"
                       />
-                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 2 && (
+                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 1 && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -3719,7 +3728,7 @@ function BasicDetailsPageContent() {
                       className={fieldClass(false)}
                       autoComplete="off"
                     />
-                    {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 2 && (
+                    {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 1 && (
                       <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                         {isPreferredLocationLoading ? (
                           <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -3789,10 +3798,13 @@ function BasicDetailsPageContent() {
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
-                                  onClick={() => {
-                                    setField("countryCode", code);
-                                    setOpenCountryCodeDropdown(false);
-                                    setCountryCodeSearch("");
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleCountryCodePick(code);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.preventDefault();
+                                    handleCountryCodePick(code);
                                   }}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                     form.countryCode === code
