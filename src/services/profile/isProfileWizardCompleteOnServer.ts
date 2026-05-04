@@ -133,10 +133,7 @@ export async function isProfileWizardCompleteOnServer(
       email: data.email,
       currentLocation: data.currentLocation,
     });
-    // Do not treat “title + key skills” alone as complete — resume/AI prefill often sets those
-    // before the candidate finishes the wizard. Require submitted/published/completed workflow
-    // state or a high backend completion metric instead.
-    return Boolean(!isDraft && (isSubmitted || isHighCompletion));
+    return Boolean(!isDraft && (isSubmitted || isHighCompletion || (title && skills > 0)));
   } catch (error) {
     console.error("[profile-check] server-data:error", { profileName, error });
     return false;
