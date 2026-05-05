@@ -720,7 +720,7 @@ function SkillsProjectsPageContent() {
         // (Our mapped getters intentionally normalize to ResumeProfileData.)
         try {
           const rawRes = await (async () => {
-            if (isLikelyDocId(profileName) && wizardComplete) {
+            if (isEditMode) {
               return fetch("/api/method/get_data/", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
