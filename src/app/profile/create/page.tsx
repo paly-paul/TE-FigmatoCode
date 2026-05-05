@@ -389,60 +389,6 @@ export default function CreateProfilePage() {
       // Store immediately so downstream steps have basic identity, even if AI generation fails.
       upsertResumeProfile(identityData);
 
-      // Best-effort: parse resume now and persist Skills/Projects draft so the user can
-      // save Basic Details as Draft without losing the Skills & Projects prefill later.
-      try {
-        const form = new FormData();
-        form.append("file", file);
-        const parsedRes = await fetch("/api/parse-resume", {
-          method: "POST",
-          body: form,
-        });
-        if (parsedRes.ok) {
-          const parsed = (await parsedRes.json()) as Partial<ResumeProfileData>;
-          if (parsed && typeof parsed === "object") {
-            // Merge parsed fields into session profile without clobbering identity.
-            upsertResumeProfile({
-              ...parsed,
-              ...(identityData.email ? { email: identityData.email } : {}),
-              ...(identityData.firstName ? { firstName: identityData.firstName } : {}),
-              ...(identityData.lastName ? { lastName: identityData.lastName } : {}),
-            });
-          }
-
-          if (typeof window !== "undefined") {
-            const skills = Array.isArray(parsed?.keySkills) ? parsed.keySkills : [];
-            const tools = Array.isArray(parsed?.tools) ? parsed.tools : [];
-            const projects = Array.isArray(parsed?.projects) ? parsed.projects : [];
-            const experienceEntries = tools.map((tool) => ({
-              experience: tool,
-              experienceYears: "",
-              experienceReference: "",
-            }));
-
-            const resumeSkillsDraft = {
-              ...(skills.length ? { skills } : {}),
-              ...(experienceEntries.length ? { experienceEntries } : {}),
-              ...(projects.length ? { projects } : {}),
-            };
-
-            try {
-              const serialized = JSON.stringify(resumeSkillsDraft);
-              window.sessionStorage.setItem("resumeSkills", serialized);
-              const email = window.localStorage.getItem("te_login_email")?.trim().toLowerCase() || "";
-              const persistedKey = email ? `te_resume_profile_draft:${email}:resumeSkills` : "";
-              if (persistedKey) {
-                window.localStorage.setItem(persistedKey, serialized);
-              }
-            } catch {
-              // ignore storage errors
-            }
-          }
-        }
-      } catch {
-        // Resume parsing is best-effort only.
-      }
-
       const storedMeta: UploadedFile = updatedResumeRef ? { ...meta, updated_resume: updatedResumeRef } : meta;
       setUploadedFile(storedMeta);
 
