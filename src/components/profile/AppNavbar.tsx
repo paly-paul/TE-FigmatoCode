@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
@@ -17,7 +17,6 @@ import { getCandidateProfileData } from "@/services/profile";
 export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -30,10 +29,9 @@ export default function AppNavbar() {
   const [navProfileId, setNavProfileId] = useState<string | null>(null);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string>("");
+  const [queryProfileName, setQueryProfileName] = useState("");
+  const [queryProfileVersion, setQueryProfileVersion] = useState("");
 
-  const queryProfileName = searchParams.get("profile")?.trim() || searchParams.get("profile_name")?.trim() || "";
-  const queryProfileVersion =
-    searchParams.get("profile_version")?.trim() || searchParams.get("profile_version_name")?.trim() || "";
   const isProfileCreateRoute = pathname.startsWith("/profile/create");
   const isNewProfileCreateFlow = isProfileCreateRoute && !queryProfileName && !queryProfileVersion;
   const notificationsEnabled = !isNewProfileCreateFlow;
@@ -64,6 +62,17 @@ export default function AppNavbar() {
 
   useEffect(() => {
     setSessionEmail(getSessionLoginEmail());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setQueryProfileName(
+      params.get("profile")?.trim() || params.get("profile_name")?.trim() || ""
+    );
+    setQueryProfileVersion(
+      params.get("profile_version")?.trim() || params.get("profile_version_name")?.trim() || ""
+    );
   }, [pathname]);
 
   useEffect(() => {
