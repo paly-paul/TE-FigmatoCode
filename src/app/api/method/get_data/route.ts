@@ -61,7 +61,9 @@ async function tryProfileByEmailFallback(
   const email = await getLoggedInEmail(backendBase, headers, cookieHeader);
   if (!email) return null;
 
-  const lookupUrl = `${backendBase}/api/method/get_profile_by_email?email=${encodeURIComponent(email)}`;
+  const lookupUrl = `${backendBase}/api/method/te_frappe_6fe.api.profile.get_profile_by_email?email=${encodeURIComponent(
+    email
+  )}`;
   const response = await fetch(lookupUrl, { method: "GET", headers });
   const data = await parseJson(response);
   if (!response.ok) return null;

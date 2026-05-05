@@ -30,7 +30,6 @@ export function ResumeUploadArea({
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFileName, setUploadingFileName] = useState("");
-  const MIN_LOADER_MS = 5200;
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -49,20 +48,14 @@ export function ResumeUploadArea({
       return;
     }
 
-    // Start upload animation and keep it visible long enough to read quotes.
+    // Keep loader strictly in sync with upload API duration.
     setIsUploading(true);
     setUploadingFileName(file.name);
-    const startedAt = Date.now();
     try {
       await onUpload(file);
     } catch {
       alert("We couldn't parse that resume. Please try again.");
     } finally {
-      const elapsed = Date.now() - startedAt;
-      const remaining = Math.max(0, MIN_LOADER_MS - elapsed);
-      if (remaining > 0) {
-        await new Promise((resolve) => window.setTimeout(resolve, remaining));
-      }
       setIsUploading(false);
       if (inputRef.current) inputRef.current.value = "";
     }

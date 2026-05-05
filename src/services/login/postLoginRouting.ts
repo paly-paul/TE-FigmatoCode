@@ -12,12 +12,22 @@ async function resolveProfileNameForLogin(email: string): Promise<string> {
   let profileName = getProfileName()?.trim() ?? "";
   if (profileName) return profileName;
 
-  const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+  const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
   resolverUrl.searchParams.set("email", normalized);
   const resolverResponse = await fetch(resolverUrl.toString(), { method: "GET" });
   if (!resolverResponse.ok) return "";
-  const resolverData = (await resolverResponse.json()) as { profile_name?: string };
-  profileName = typeof resolverData.profile_name === "string" ? resolverData.profile_name.trim() : "";
+  const resolverData = (await resolverResponse.json()) as Record<string, unknown>;
+  const root =
+    resolverData.data && typeof resolverData.data === "object"
+      ? (resolverData.data as Record<string, unknown>)
+      : resolverData.message && typeof resolverData.message === "object"
+        ? (resolverData.message as Record<string, unknown>)
+        : resolverData;
+  const profile =
+    root.profile && typeof root.profile === "object"
+      ? (root.profile as Record<string, unknown>)
+      : {};
+  profileName = typeof profile.name === "string" ? profile.name.trim() : "";
   return profileName;
 }
 

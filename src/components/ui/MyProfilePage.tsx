@@ -43,7 +43,7 @@ import { useIsMobile } from "@/lib/useResponsive";
 import { getCandidateProfileData } from "@/services/profile/getCandidateProfile";
 import { downloadProfileResume } from "@/services/profile/downloadProfileResume";
 import { setProfileStatus } from "@/services/profile/setProfileStatus";
-import { getProfileName, setProfileName } from "@/lib/authSession";
+import { getProfileName } from "@/lib/authSession";
 import { readResumeProfile } from "@/lib/profileSession";
 import type { ResumeProfileData } from "@/types/profile";
 
@@ -479,25 +479,7 @@ export default function MyProfilePage() {
     const resolveProfileIdForActions = async (): Promise<string | null> => {
         const fromSession = getProfileName()?.trim();
         if (fromSession) return fromSession;
-
-        try {
-            const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-            const resolverRes = await fetch(resolverUrl.toString(), {
-                method: "GET",
-                credentials: "same-origin",
-                cache: "no-store",
-            });
-            if (!resolverRes.ok) return null;
-            const resolverData = (await resolverRes.json()) as { profile_name?: unknown };
-            if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
-                const resolved = resolverData.profile_name.trim();
-                setProfileName(resolved);
-                return resolved;
-            }
-            return null;
-        } catch {
-            return null;
-        }
+        return null;
     };
 
     const handleToggleActiveProfile = async () => {

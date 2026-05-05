@@ -2,6 +2,14 @@
 export function parseApiErrorMessage(data: Record<string, unknown>): string {
   if (typeof data.error === "string" && data.error) return data.error;
 
+  // Many of our Next.js proxy routes wrap upstream errors as:
+  // { error: "...", detail: <upstream payload> }
+  const detail = data.detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const nested = parseApiErrorMessage(detail as Record<string, unknown>);
+    if (nested && nested !== "Request failed.") return nested;
+  }
+
   const msg = data.message;
   if (typeof msg === "string" && msg) return msg;
   if (msg && typeof msg === "object" && msg !== null) {
@@ -12,6 +20,12 @@ export function parseApiErrorMessage(data: Record<string, unknown>): string {
   if (typeof data.exc === "string" && data.exc) {
     const lines = data.exc.trim().split("\n");
     return lines[lines.length - 1] || data.exc;
+  }
+
+  // Some Frappe endpoints return { exception: "...", exc_type: "...", ... }
+  if (typeof (data as { exception?: unknown }).exception === "string") {
+    const exception = (data as { exception?: string }).exception?.trim() ?? "";
+    if (exception) return exception;
   }
 
   if (typeof data._server_messages === "string") {

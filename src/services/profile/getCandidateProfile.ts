@@ -1096,3 +1096,40 @@ export async function getCandidateProfileData(candidateId: string): Promise<Resu
   return mapToResumeProfileData(extractDataRoot(data));
 }
 
+export async function getCandidateProfileDataByEmail(email: string): Promise<ResumeProfileData> {
+  const normalized = email.trim();
+  if (!normalized) {
+    throw new Error("Email is required to load profile.");
+  }
+
+  const url = new URL("/api/method/get_profile_by_email", window.location.origin);
+  url.searchParams.set("email", normalized);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+
+  let data: UnknownRecord = {};
+  try {
+    data = (await res.json()) as UnknownRecord;
+  } catch {
+    // ignore
+  }
+
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+
+  if (data.status === "error" || data.code === "UNAUTHORIZED") {
+    throw new Error(parseApiErrorMessage(data) || "Unable to load profile data.");
+  }
+
+  if (typeof data.exc === "string" && data.exc) {
+    throw new Error(parseApiErrorMessage(data));
+  }
+
+  return mapToResumeProfileData(extractDataRoot(data));
+}
+

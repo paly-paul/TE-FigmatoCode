@@ -9,13 +9,15 @@ import { Button } from "@/components/ui/Button";
 import { BaseDrawer } from "@/components/ui/BaseDrawer";
 import { SmallUploadIcon, TrashIcon } from "@/components/icons";
 import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
-import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
+import { getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { getCandidateProfileData, uploadProfileFile } from "@/services/profile";
+import { getCandidateProfileDataByEmail, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
+import { getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { StatusPopup } from "@/components/ui/StatusPopup";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fallbackNationalityOptions = [
@@ -880,6 +882,12 @@ function BasicDetailsPageContent() {
   const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
   const [isPreferredLocationLoading, setIsPreferredLocationLoading] = useState(false);
   const [activeLocationField, setActiveLocationField] = useState<"currentLocation" | "preferredLocation" | null>(null);
+  const [draftPopup, setDraftPopup] = useState<{
+    open: boolean;
+    variant: "success" | "error";
+    title: string;
+    message?: string;
+  }>({ open: false, variant: "success", title: "" });
 
   const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
 
@@ -1233,23 +1241,40 @@ function BasicDetailsPageContent() {
           setProfileName(queryProfileName);
         }
 
-        if (!profileName && candidateId && isLikelyDocId(candidateId)) {
-          const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-          resolverUrl.searchParams.set("candidate_id", candidateId);
-          const resolverRes = await fetch(resolverUrl.toString());
-          if (resolverRes.ok) {
-            const resolverData = (await resolverRes.json()) as { profile_name?: string };
-            const resolvedProfileName = resolverData.profile_name?.trim() || "";
-            if (resolvedProfileName) {
-              profileName = resolvedProfileName;
-              setProfileName(resolvedProfileName);
+        if (!profileName) {
+          const sessionEmail = getSessionLoginEmail()?.trim() || "";
+          if (sessionEmail) {
+            const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
+            resolverUrl.searchParams.set("email", sessionEmail);
+            const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
+            if (resolverRes.ok) {
+              const resolverData = (await resolverRes.json()) as Record<string, unknown>;
+              const root =
+                resolverData.data && typeof resolverData.data === "object"
+                  ? (resolverData.data as Record<string, unknown>)
+                  : resolverData.message && typeof resolverData.message === "object"
+                    ? (resolverData.message as Record<string, unknown>)
+                    : resolverData;
+              const profile =
+                root.profile && typeof root.profile === "object"
+                  ? (root.profile as Record<string, unknown>)
+                  : {};
+              const resolvedProfileName = typeof profile.name === "string" ? profile.name.trim() : "";
+              if (resolvedProfileName) {
+                profileName = resolvedProfileName;
+                setProfileName(resolvedProfileName);
+              }
             }
           }
         }
 
         if (!profileName) return;
 
-        const backendProfile = await getCandidateProfileData(profileName);
+        const sessionEmail = getSessionLoginEmail()?.trim() || "";
+        // In create flow, hydrate only via email/session context.
+        // Profile-id based loading is reserved for explicit edit-profile entry points.
+        const backendProfile = sessionEmail ? await getCandidateProfileDataByEmail(sessionEmail) : null;
+        if (!backendProfile) return;
         if (cancelled) return;
 
         const existingSessionProfile = readResumeProfile() ?? {};
@@ -1489,7 +1514,9 @@ function BasicDetailsPageContent() {
   }
 
   function handleLocationSuggestionPick(field: "currentLocation" | "preferredLocation", value: string) {
-    setField(field, value);
+    // Suggestions can use backend key format "City--Country". Display as "City, Country".
+    const displayValue = value.includes("--") ? value.split("--").join(", ") : value;
+    setField(field, displayValue);
     if (field === "currentLocation") {
       setCurrentLocationSuggestions([]);
     } else {
@@ -1950,6 +1977,154 @@ function BasicDetailsPageContent() {
     router.push(nextUrl);
   }
 
+  async function handleSaveDraft() {
+    const stored = readResumeProfile() ?? {};
+    const firstName = (form.firstName || stored.firstName || "").trim();
+    const lastName = (form.lastName || stored.lastName || "").trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    const email = (form.email || stored.email || "").trim();
+    if (!fullName || !email) {
+      alert("Please fill Full Name and Email before saving a draft.");
+      return;
+    }
+
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
+    const profileName = queryProfileName || getProfileName() || "";
+    const inferredCountryCode = inferCountryCodeFromContact(form.contact);
+    const countryCodeForPayload = normalizeCountryCode(form.countryCode.trim()) || inferredCountryCode;
+    const dialCodeForPayload = normalizeDialCode(getDialCode(countryCodeForPayload));
+    const contactDigits = form.contact.trim();
+    const contactNumberForPayload = contactDigits ? `${dialCodeForPayload}${contactDigits}` : "";
+    const hasContactPair = Boolean(contactNumberForPayload && countryCodeForPayload);
+
+    const draftSkills = Array.isArray(stored.keySkills) ? stored.keySkills.filter((s) => typeof s === "string" && s.trim()) : [];
+    const draftTools = Array.isArray(stored.tools) ? stored.tools.filter((t) => typeof t === "string" && t.trim()) : [];
+    const draftProjects = Array.isArray(stored.projects) ? stored.projects : [];
+    const draftCertifications = Array.isArray(stored.certifications) ? stored.certifications : [];
+    const draftEducation = Array.isArray(stored.education) ? stored.education : [];
+
+    const draftSkillsTable = draftTools.map((tool) => ({
+      key_skills: tool.trim(),
+    }));
+
+    const draftProjectsTable = draftProjects
+      .map((project) => {
+        const title = project.projectTitle?.trim() || "";
+        const customerCompany = project.customerCompany?.trim() || "";
+        const description = project.projectDescription?.trim() || "";
+        const rolesResponsibilities = project.responsibilities?.trim() || "";
+        const startDate = project.projectStartDate?.trim() || "";
+        const endDate = project.inProgress ? "" : project.projectEndDate?.trim() || "";
+        if (!title && !customerCompany && !description && !rolesResponsibilities) return null;
+        return {
+          title: title || undefined,
+          customer_company: customerCompany || undefined,
+          description: description || undefined,
+          roles_responsibilities: rolesResponsibilities || undefined,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+        };
+      })
+      .filter(Boolean);
+
+    const draftCertificationTable = draftCertifications
+      .map((certification) => {
+        const certificate = certification.name?.trim() || "";
+        const issuedBy = certification.issuing?.trim() || "";
+        const issuedDate = certification.issueDate?.trim() || "";
+        const expiryDate = certification.expirationDate?.trim() || "";
+        const certificateNumber = certification.certificateNumber?.trim() || "";
+        const url = certification.url?.trim() || "";
+        if (!certificate && !issuedBy && !url) return null;
+        return {
+          certificate: certificate || undefined,
+          issued_by: issuedBy || undefined,
+          issued_date: issuedDate || undefined,
+          expiry_date: expiryDate || undefined,
+          certificate_number: certificateNumber || undefined,
+          url: url || undefined,
+        };
+      })
+      .filter(Boolean);
+
+    const draftEducationQualifications = draftEducation
+      .map((education) => {
+        const title = education.title?.trim() || "";
+        const institution = education.institute?.trim() || "";
+        const specialization = education.specialization?.trim() || "";
+        const graduationYear = education.graduationYear?.trim() || "";
+        const score = education.score?.trim() || "";
+        if (!title && !institution && !specialization && !graduationYear && !score) return null;
+        return {
+          title: title || undefined,
+          institution: institution || undefined,
+          specialization: specialization || undefined,
+          graduation_year: graduationYear || undefined,
+          score: score || undefined,
+        };
+      })
+      .filter(Boolean);
+
+    try {
+      await saveProfile({
+        profile: profileName || undefined,
+        full_name: fullName,
+        email,
+        profile_doc: {
+          full_name: fullName,
+          email,
+          alternative_email: form.altEmail.trim(),
+          ...(hasContactPair
+            ? {
+                contact_no: contactNumberForPayload,
+                country_code: countryCodeForPayload,
+              }
+            : {}),
+          date_of_birth: form.dob || "",
+          gender: form.gender || "",
+          current_location: form.currentLocation.trim(),
+          state: "Draft",
+        },
+        profile_version: {
+          mode: profileName ? "edit" : "new",
+          professional_title: form.professionalTitle.trim(),
+          professional_summary: form.summary.trim(),
+          experience_years: form.expYears || "",
+          experience_months: form.expMonths || "",
+          current_salary_currency: form.salaryCurrency || "",
+          current_salary: form.salary.trim() || "",
+          nationality: form.nationality || "",
+          preferred_location: form.preferredLocation.trim() || "",
+          ...(draftSkills.length ? { key_skills: draftSkills } : {}),
+          ...(draftSkillsTable.length ? { skills_table: draftSkillsTable } : {}),
+          ...(draftProjectsTable.length ? { projects_table: draftProjectsTable } : {}),
+          ...(draftCertificationTable.length ? { certification_table: draftCertificationTable } : {}),
+          ...(draftEducationQualifications.length
+            ? { education_qualifications: draftEducationQualifications }
+            : {}),
+        },
+        action: "save",
+        mode: profileName ? "edit" : "new",
+      });
+      setDraftPopup({
+        open: true,
+        variant: "success",
+        title: "Draft saved",
+        message: "Your latest changes have been saved.",
+      });
+    } catch (error) {
+      setDraftPopup({
+        open: true,
+        variant: "error",
+        title: "Unable to save draft",
+        message: error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#F3F4F6]">
       <AppNavbar />
@@ -2177,9 +2352,9 @@ function BasicDetailsPageContent() {
                     <input
                       type="email"
                       value={form.email}
-                      readOnly
+                      onChange={(e) => setField("email", e.target.value)}
                       placeholder="Enter email"
-                      className={`${fieldClass(Boolean(errors.email))} bg-gray-100 cursor-not-allowed`}
+                      className={fieldClass(Boolean(errors.email))}
                     />
                     {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                   </label>
@@ -2239,11 +2414,11 @@ function BasicDetailsPageContent() {
                                 type="button"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
                                 onTouchStart={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
@@ -2285,11 +2460,11 @@ function BasicDetailsPageContent() {
                                 type="button"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("preferredLocation", option.label);
+                                  handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                                 }}
                                 onTouchStart={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("preferredLocation", option.label);
+                                  handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                                 }}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
@@ -3012,7 +3187,7 @@ function BasicDetailsPageContent() {
                         value={form.salary}
                         onChange={(e) => setField("salary", e.target.value)}
                         inputMode="decimal"
-                        placeholder="Enter monthly salary"
+                        placeholder="Enter hourly salary"
                         className={fieldClass(Boolean(errors.salary))}
                       />
                       {errors.salary && <p className="text-xs text-red-500">{errors.salary}</p>}
@@ -3647,9 +3822,9 @@ function BasicDetailsPageContent() {
                   <input
                     type="email"
                     value={form.email}
-                    readOnly
+                    onChange={(e) => setField("email", e.target.value)}
                     placeholder="Enter email"
-                    className={`${fieldClass(Boolean(errors.email))} bg-gray-100 cursor-not-allowed`}
+                    className={fieldClass(Boolean(errors.email))}
                   />
                   {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                 </label>
@@ -3707,11 +3882,11 @@ function BasicDetailsPageContent() {
                                 type="button"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
                                 onTouchStart={(e) => {
                                   e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.label);
+                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
@@ -3751,11 +3926,11 @@ function BasicDetailsPageContent() {
                               type="button"
                               onMouseDown={(e) => {
                                 e.preventDefault();
-                                handleLocationSuggestionPick("preferredLocation", option.label);
+                                handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                               }}
                               onTouchStart={(e) => {
                                 e.preventDefault();
-                                handleLocationSuggestionPick("preferredLocation", option.label);
+                                handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                               }}
                               className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                             >
@@ -3864,6 +4039,14 @@ function BasicDetailsPageContent() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-3">
+        <Button
+          variant="outline"
+          fullWidth={false}
+          className="px-6 sm:px-8"
+          onClick={() => void handleSaveDraft()}
+        >
+          Save Draft
+        </Button>
         <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext}>
           Next
         </Button>
@@ -3927,6 +4110,14 @@ function BasicDetailsPageContent() {
           </div>
         </div>
       </BaseDrawer>
+
+      <StatusPopup
+        open={draftPopup.open}
+        variant={draftPopup.variant}
+        title={draftPopup.title}
+        message={draftPopup.message}
+        onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

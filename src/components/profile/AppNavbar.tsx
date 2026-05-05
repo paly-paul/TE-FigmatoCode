@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { Bell, Menu, X, User, LogOut, ChevronDown } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
@@ -17,6 +17,7 @@ import { getCandidateProfileData } from "@/services/profile";
 export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -30,6 +31,14 @@ export default function AppNavbar() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string>("");
 
+  const queryProfileName = searchParams.get("profile")?.trim() || searchParams.get("profile_name")?.trim() || "";
+  const queryProfileVersion =
+    searchParams.get("profile_version")?.trim() || searchParams.get("profile_version_name")?.trim() || "";
+  const isProfileCreateRoute = pathname.startsWith("/profile/create");
+  const isNewProfileCreateFlow = isProfileCreateRoute && !queryProfileName && !queryProfileVersion;
+  const notificationsEnabled = !isNewProfileCreateFlow;
+  const notificationUserEmail = notificationsEnabled ? sessionEmail : null;
+
   const {
     notifications,
     unreadCount,
@@ -40,7 +49,7 @@ export default function AppNavbar() {
     markOneRead,
     markingAll,
     markingItemId,
-  } = useUserNotifications(sessionEmail);
+  } = useUserNotifications(notificationUserEmail);
 
   const getProfileHref = () => {
     const profileName = getProfileName();
@@ -84,8 +93,12 @@ export default function AppNavbar() {
   }, [pathname]);
 
   useEffect(() => {
-    if (notifOpen && sessionEmail) void refreshNotifications();
-  }, [notifOpen, sessionEmail, refreshNotifications]);
+    if (!notificationsEnabled && notifOpen) {
+      setNotifOpen(false);
+      return;
+    }
+    if (notifOpen && notificationUserEmail) void refreshNotifications();
+  }, [notifOpen, notificationUserEmail, notificationsEnabled, refreshNotifications]);
 
   const shouldBlockNavigation = (href: string): boolean => {
     if (!href) return false;
@@ -197,17 +210,19 @@ export default function AppNavbar() {
           <div className="flex items-center gap-2 sm:gap-4">
 
             {/* Bell Icon — toggles NotificationDrawer */}
-            <button
-              ref={bellRef}
-              onClick={() => setNotifOpen((prev) => !prev)}
-              className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Toggle notifications"
-            >
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-              {sessionEmail && unreadCount > 0 ? (
-                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500" aria-hidden />
-              ) : null}
-            </button>
+            {notificationsEnabled ? (
+              <button
+                ref={bellRef}
+                onClick={() => setNotifOpen((prev) => !prev)}
+                className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Toggle notifications"
+              >
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                {notificationUserEmail && unreadCount > 0 ? (
+                  <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500" aria-hidden />
+                ) : null}
+              </button>
+            ) : null}
 
             {/* Profile Section — hover dropdown */}
             <div
@@ -371,8 +386,8 @@ export default function AppNavbar() {
         notifications={notifications}
         loading={notifLoading}
         error={notifError}
-        onMarkAllRead={sessionEmail ? markAllRead : undefined}
-        onMarkItemRead={sessionEmail ? markOneRead : undefined}
+        onMarkAllRead={notificationUserEmail ? markAllRead : undefined}
+        onMarkItemRead={notificationUserEmail ? markOneRead : undefined}
         markingAll={markingAll}
         markingItemId={markingItemId}
       />

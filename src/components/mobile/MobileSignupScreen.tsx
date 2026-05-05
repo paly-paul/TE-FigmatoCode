@@ -9,6 +9,7 @@ import {
   SocialLoginButtons,
 } from "@/components/auth/SocialButtons";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { useSignupSubmit } from "@/services/signup";
 
@@ -20,6 +21,8 @@ export function MobileSignupScreen() {
     lastName: "",
     password: "",
   });
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -27,6 +30,11 @@ export function MobileSignupScreen() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreeToTerms) {
+      setLocalError("Please agree to the Terms & Conditions to continue.");
+      return;
+    }
+    setLocalError(null);
     void submit(form);
   }
 
@@ -88,9 +96,36 @@ export function MobileSignupScreen() {
             required
           />
 
+          <Checkbox
+            checked={agreeToTerms}
+            onChange={(e) => {
+              setAgreeToTerms(e.target.checked);
+              if (e.target.checked) setLocalError(null);
+            }}
+            label={
+              <span>
+                I agree to{" "}
+                <Link
+                  href="/terms"
+                  className="font-semibold text-primary-600 hover:text-primary-700"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Terms &amp; Conditions
+                </Link>
+              </span>
+            }
+          />
+
           {error ? (
             <p className="text-sm text-red-600" role="alert">
               {error}
+            </p>
+          ) : null}
+
+          {localError ? (
+            <p className="text-sm text-red-600" role="alert">
+              {localError}
             </p>
           ) : null}
 

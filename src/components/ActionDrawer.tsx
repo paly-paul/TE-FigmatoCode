@@ -70,6 +70,8 @@ interface ActionDrawerProps {
   open: boolean;
   onClose: () => void;
   action: ActionDrawerActionCard | null;
+  /** Optional success text to surface in the Job Action panel (e.g., "Already marked as interested"). */
+  successMessage?: string | null;
   /**
    * Profile document id for `profile_id` on interview APIs.
    * When omitted, the drawer falls back to `getProfileName()` from session (same as actionables).
@@ -192,6 +194,7 @@ export default function ActionDrawer({
   open,
   onClose,
   action,
+  successMessage,
   profileId,
   onPrimaryAction,
   onRequestClarification,
@@ -680,6 +683,9 @@ export default function ActionDrawer({
         <p className="mt-2 text-xs text-red-600">
           {validationMessage}
         </p>
+      ) : null}
+      {!validationMessage && successMessage ? (
+        <p className="mt-2 text-xs text-green-700">{successMessage}</p>
       ) : null}
     </div>
   );
@@ -1202,7 +1208,15 @@ export default function ActionDrawer({
           const result = await Promise.resolve(onPrimaryAction?.(action));
           ok = result !== false;
         }
-        if (ok) setHasSubmitted(true);
+        if (ok) {
+          setHasSubmitted(true);
+        } else {
+          setValidationMessage((prev) => prev || "Could not submit your response. Please try again.");
+        }
+      } catch (e) {
+        setValidationMessage(
+          e instanceof Error ? e.message : "Could not submit your response. Please try again."
+        );
       } finally {
         setIsSubmitting(false);
         submitInFlightRef.current = false;

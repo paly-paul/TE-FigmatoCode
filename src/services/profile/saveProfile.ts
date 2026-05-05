@@ -25,6 +25,7 @@ export interface SaveProfilePayload {
   profile_doc?: Record<string, unknown>;
   profile_version?: Record<string, unknown>;
   action?: "save" | "submit";
+  mode?: "new" | "edit";
   [key: string]: unknown;
 }
 
@@ -61,6 +62,16 @@ function sanitizeProfileImageField(value: unknown): unknown {
   return resolved ? resolved : undefined;
 }
 
+function sanitizeCurrentLocationValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  // UI may display locations as "City, Country", but backend expects the key format "City--Country".
+  // Also support values that already contain `--`.
+  if (trimmed.includes("--")) return trimmed;
+  return trimmed.replace(/\s*,\s*/g, "--").trim();
+}
+
 function sanitizePayloadObject(input: Record<string, unknown>): Record<string, unknown> {
   const output: Record<string, unknown> = {};
 
@@ -72,6 +83,14 @@ function sanitizePayloadObject(input: Record<string, unknown>): Record<string, u
       const sanitizedImage = sanitizeProfileImageField(rawValue);
       if (sanitizedImage !== undefined) {
         output[key] = sanitizedImage;
+      }
+      continue;
+    }
+
+    if (key === "current_location" && typeof rawValue === "string") {
+      const sanitizedCurrentLocation = sanitizeCurrentLocationValue(rawValue);
+      if (sanitizedCurrentLocation) {
+        output[key] = sanitizedCurrentLocation;
       }
       continue;
     }
@@ -98,6 +117,7 @@ function sanitizePayloadObject(input: Record<string, unknown>): Record<string, u
 export async function saveProfile(payload: SaveProfilePayload): Promise<Record<string, unknown>> {
   const normalizedPayload = sanitizePayloadObject({
     ...normalizeContactFields(payload),
+    ...(payload.mode ? { mode: payload.mode } : {}),
     profile:
       payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile)
         ? normalizeContactFields(payload.profile as Record<string, unknown>)

@@ -33,7 +33,7 @@ import {
   type LocationOption,
 } from "../ui/LocationDrawer";
 import { useIsBelowLg } from "@/lib/useResponsive";
-import { getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
+import { getCandidateId, getProfileName } from "@/lib/authSession";
 import {
   readRecommendedJobsCache,
   writeRecommendedJobsCache,
@@ -721,6 +721,7 @@ export default function TalentEngineJobsPage() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
+  const [drawerSuccessMessage, setDrawerSuccessMessage] = useState<string | null>(null);
   const [baseSkills, setBaseSkills] = useState<string[]>([]);
   const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
@@ -766,24 +767,6 @@ export default function TalentEngineJobsPage() {
     let active = true;
     void (async () => {
       let profileName = getProfileName()?.trim() || "";
-      if (!profileName) {
-        try {
-          const resolverUrl = new URL("/api/method/resolve_profile_name", window.location.origin);
-          const resolverRes = await fetch(resolverUrl.toString(), {
-            method: "GET",
-            credentials: "same-origin",
-          });
-          if (resolverRes.ok) {
-            const resolverData = (await resolverRes.json()) as { profile_name?: string };
-            if (typeof resolverData.profile_name === "string" && resolverData.profile_name.trim()) {
-              profileName = resolverData.profile_name.trim();
-              setProfileName(profileName);
-            }
-          }
-        } catch {
-          // ignore resolver failures; empty state will be shown.
-        }
-      }
 
       if (!profileName) {
         if (!active) return;
@@ -1146,6 +1129,7 @@ export default function TalentEngineJobsPage() {
       jobDocumentId: job.jobDocumentId,
     };
 
+    setDrawerSuccessMessage(null);
     const isSameJobAlreadyOpen =
       isDrawerOpen &&
       selectedAction?.type === "Job" &&
@@ -1163,14 +1147,16 @@ export default function TalentEngineJobsPage() {
   const handleDrawerPrimaryAction = async (action: ActionCard): Promise<boolean> => {
     const jobDocumentId = action.jobDocumentId?.trim() || "";
     const cid = candidateId?.trim() || "";
-    if (!jobDocumentId || !cid) return false;
-    try {
-      await markInterestedInJob(cid, jobDocumentId);
-      setIsDrawerOpen(false);
-      return true;
-    } catch {
-      return false;
+    if (!cid) {
+      throw new Error("Missing candidate session. Please log in again and retry.");
     }
+    if (!jobDocumentId) {
+      throw new Error("This job is missing an id, so it can’t be applied to yet.");
+    }
+    const res = await markInterestedInJob(cid, jobDocumentId);
+    const msg = res?.message?.message?.trim();
+    setDrawerSuccessMessage(msg || "Applied successfully.");
+    return true;
   };
 
   const isCompactJobsLayout = useIsBelowLg();
@@ -1433,6 +1419,7 @@ export default function TalentEngineJobsPage() {
         action={selectedAction}
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
+        successMessage={drawerSuccessMessage}
       />
       <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
     </>

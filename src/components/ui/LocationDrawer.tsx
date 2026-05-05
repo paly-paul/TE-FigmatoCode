@@ -52,6 +52,17 @@ export function LocationDrawer({
     location.label.toLowerCase().includes(search.toLowerCase())
   );
 
+  const selectedOrder = new Map(selected.map((id, index) => [id, index]));
+  const orderedLocations = [...filtered].sort((a, b) => {
+    const aSelected = selectedOrder.has(a.id);
+    const bSelected = selectedOrder.has(b.id);
+    if (aSelected !== bSelected) return aSelected ? -1 : 1;
+    if (aSelected && bSelected) {
+      return (selectedOrder.get(a.id) ?? 0) - (selectedOrder.get(b.id) ?? 0);
+    }
+    return 0;
+  });
+
   return (
     <BaseDrawer
       open={open}
@@ -116,7 +127,7 @@ export function LocationDrawer({
         </p>
 
         <div className="space-y-3">
-          {filtered.map((location) => (
+          {orderedLocations.map((location) => (
             <label
               key={location.id}
               className="flex items-center gap-2.5 cursor-pointer group"
