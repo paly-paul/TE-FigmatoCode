@@ -9,7 +9,7 @@ import { MobileResetPasswordSentScreen } from "@/components/mobile/MobileResetPa
 import { Button } from "@/components/ui/Button";
 import { EnvelopeCheckIllustration } from "@/components/icons";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { sendCandidateSignupOtp, verifyCandidateSignupOtp } from "@/services/signup";
+import { sendResetPasswordOtp, verifyResetPasswordOtp } from "@/services/resetPassword";
 
 export default function ResetPasswordSentPageClient() {
   const OTP_LENGTH = 5;
@@ -89,7 +89,7 @@ export default function ResetPasswordSentPageClient() {
     }
     setIsSubmittingOtp(true);
     try {
-      await verifyCandidateSignupOtp(email, otpValue);
+      await verifyResetPasswordOtp(email, otpValue);
       router.push(`/new-password/?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify OTP.");
@@ -107,7 +107,7 @@ export default function ResetPasswordSentPageClient() {
     }
     setIsResendingOtp(true);
     try {
-      const otpResponse = await sendCandidateSignupOtp(email, { allowExistingUser: true });
+      const otpResponse = await sendResetPasswordOtp(email);
       setInfo(otpResponse.message || "A new OTP has been sent to your email.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to resend OTP.");

@@ -110,6 +110,37 @@ function isLogicalFailure(data: JsonRecord) {
   );
 }
 
+function extractServerMessages(data: JsonRecord): string[] {
+  const raw = data._server_messages;
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => {
+        if (typeof entry !== "string") return "";
+        try {
+          const inner = JSON.parse(entry) as { message?: unknown };
+          return typeof inner.message === "string" ? inner.message.trim() : entry.trim();
+        } catch {
+          return entry.trim();
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function hasBenignAlreadyLinkedMessage(data: JsonRecord): boolean {
+  const serverMessages = extractServerMessages(data);
+  if (!serverMessages.length) return false;
+  return serverMessages.some((message) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("already linked to profile");
+  });
+}
+
 async function postJson(url: string, headers: HeadersInit, payload: JsonRecord) {
   const payloadMeta = {
     has_profile: Boolean(payload.profile && typeof payload.profile === "object"),
@@ -244,6 +275,16 @@ function toCanonicalPayload(payload: JsonRecord, profileName: string): JsonRecor
   return canonical;
 }
 
+function omitProfileVersionField(payload: JsonRecord, fieldName: string): JsonRecord {
+  const next: JsonRecord = { ...payload };
+  if (next.profile_version && typeof next.profile_version === "object" && !Array.isArray(next.profile_version)) {
+    const version = { ...(next.profile_version as JsonRecord) };
+    delete version[fieldName];
+    next.profile_version = version;
+  }
+  return next;
+}
+
 export async function POST(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -314,6 +355,64 @@ export async function POST(request: Request) {
   }
 
   if (!upstream.ok || isLogicalFailure(data)) {
+    const actionValue = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
+    const message = parseApiErrorMessage(data).toLowerCase();
+    const shouldRetryWithoutWorkAuthorization =
+      actionValue === "submit" &&
+      message.includes("internal server error") &&
+      payload.profile_version &&
+      typeof payload.profile_version === "object" &&
+      !Array.isArray(payload.profile_version) &&
+      Object.prototype.hasOwnProperty.call(
+        payload.profile_version as Record<string, unknown>,
+        "work_authorized_countries"
+      );
+
+    if (shouldRetryWithoutWorkAuthorization) {
+      console.info("create_edit_profile retry", {
+        reason: "submit internal error with work authorization",
+        retry: "omit work_authorized_countries",
+      });
+      const payloadWithoutWorkAuthorization = omitProfileVersionField(
+        payload,
+        "work_authorized_countries"
+      );
+      const canonicalWithoutWorkAuthorization = toCanonicalPayload(
+        payloadWithoutWorkAuthorization,
+        profileName
+      );
+      ({ upstream, data } = await postJson(url, headers, canonicalWithoutWorkAuthorization));
+    }
+  }
+
+  if (!upstream.ok || isLogicalFailure(data)) {
+    if (hasBenignAlreadyLinkedMessage(data)) {
+      console.info("create_edit_profile proxy treating benign warning as success", {
+        warning: "candidate already linked to profile",
+      });
+      const fallbackProfileName =
+        profileName ||
+        (typeof payload.profile === "string" ? payload.profile : "") ||
+        (typeof payload.profile_name === "string" ? payload.profile_name : "");
+      const successPayload: JsonRecord = normalizeSuccessData({
+        ...data,
+        status: "success",
+        error: "",
+        message: {
+          status: "success",
+          action:
+            typeof payload.action === "string" && payload.action.trim()
+              ? payload.action.trim()
+              : "save",
+          profile: fallbackProfileName || undefined,
+          message: extractServerMessages(data)[0] || "Profile save completed.",
+        },
+      });
+      const res = NextResponse.json(successPayload, { status: 200 });
+      res.headers.set("x-upstream-url", url);
+      return res;
+    }
+
     const message = parseApiErrorMessage(data).toLowerCase();
     if (message.includes("no existing profile version to edit")) {
       console.info("create_edit_profile retry", {

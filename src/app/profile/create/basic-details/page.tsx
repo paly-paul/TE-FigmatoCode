@@ -8,16 +8,27 @@ import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { Button } from "@/components/ui/Button";
 import { BaseDrawer } from "@/components/ui/BaseDrawer";
 import { SmallUploadIcon, TrashIcon } from "@/components/icons";
-import { upsertResumeProfile, readResumeProfile } from "@/lib/profileSession";
-import { getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
+import {
+  upsertResumeProfile,
+  readResumeProfile,
+  readResumeSkillsDraft,
+  clearResumeWizardSession,
+} from "@/lib/profileSession";
+import { clearAuthSession, getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { getCandidateProfileDataByEmail, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
-import { getSessionLoginEmail } from "@/lib/profileOnboarding";
+import {
+  clearSessionLoginEmail,
+  getLoginIdentityPrefill,
+  getSessionLoginEmail,
+} from "@/lib/profileOnboarding";
+import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import { StatusPopup } from "@/components/ui/StatusPopup";
+import UnsavedChangesModal from "@/components/timesheet/UnsavedChangesModal";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fallbackNationalityOptions = [
@@ -343,6 +354,7 @@ interface BasicDetailsForm {
   nationality: string;
   currentLocation: string;
   preferredLocation: string;
+  workAuthorization: string;
 }
 
 type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
@@ -455,6 +467,12 @@ function normalizeDateForInput(value: string | undefined): string {
   return "";
 }
 
+function getMaxDobDate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
 function withCurrentOption(options: string[], currentValue: string) {
   const value = currentValue.trim();
   return value && !options.includes(value) ? [value, ...options] : options;
@@ -504,6 +522,7 @@ const initialForm: BasicDetailsForm = {
   nationality: "",
   currentLocation: "",
   preferredLocation: "",
+  workAuthorization: "",
 };
 
 const fieldClass = (hasError: boolean) =>
@@ -869,7 +888,10 @@ function BasicDetailsPageContent() {
   const [openCountryCodeDropdown, setOpenCountryCodeDropdown] = useState(false);
   const [countryCodeSearch, setCountryCodeSearch] = useState("");
   const [nationalityOptions, setNationalityOptions] = useState<string[]>(fallbackNationalityOptions);
+  const [workAuthorizationOptions, setWorkAuthorizationOptions] = useState<string[]>([]);
   const [currencyOptions, setCurrencyOptions] = useState<string[]>(fallbackCurrencyOptions);
+  const [openWorkAuthorizationDropdown, setOpenWorkAuthorizationDropdown] = useState(false);
+  const [workAuthorizationSearch, setWorkAuthorizationSearch] = useState("");
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [isLanguageOptionsLoading, setIsLanguageOptionsLoading] = useState(true);
   const [languageOptionsError, setLanguageOptionsError] = useState("");
@@ -882,6 +904,30 @@ function BasicDetailsPageContent() {
   const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
   const [isPreferredLocationLoading, setIsPreferredLocationLoading] = useState(false);
   const [activeLocationField, setActiveLocationField] = useState<"currentLocation" | "preferredLocation" | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      form: initialForm,
+      education: [{ title: "", institute: "", specialization: "", graduationYear: "", score: "" }],
+      certifications: [
+        {
+          name: "",
+          issuing: "",
+          certificateNumber: "",
+          issueDate: "",
+          expirationDate: "",
+          url: "",
+        },
+      ],
+      externalLinks: [],
+      languages: [{ language: "", read: "", write: "", speak: "" }],
+    })
+  );
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const backLogoutInProgressRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -890,6 +936,61 @@ function BasicDetailsPageContent() {
   }>({ open: false, variant: "success", title: "" });
 
   const PROFILE_PIC_STORAGE_KEY = "resumeProfilePic";
+  const LOCATION_SUGGESTION_LIMIT = "1000";
+
+  function buildCurrentSnapshot(): string {
+    return JSON.stringify({
+      form: {
+        professionalTitle: form.professionalTitle.trim(),
+        expYears: form.expYears,
+        expMonths: form.expMonths,
+        salary: form.salary.trim(),
+        salaryCurrency: form.salaryCurrency,
+        summary: form.summary.trim(),
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        dob: form.dob,
+        gender: form.gender,
+        countryCode: form.countryCode.trim(),
+        contact: form.contact.trim(),
+        email: form.email.trim(),
+        altEmail: form.altEmail.trim(),
+        nationality: form.nationality,
+        currentLocation: form.currentLocation.trim(),
+        preferredLocation: form.preferredLocation.trim(),
+        workAuthorization: form.workAuthorization.trim(),
+      },
+      education: education.map((entry) => ({
+        title: entry.title.trim(),
+        institute: entry.institute.trim(),
+        specialization: entry.specialization.trim(),
+        graduationYear: entry.graduationYear.trim(),
+        score: entry.score.trim(),
+      })),
+      certifications: certifications.map((entry) => ({
+        name: entry.name.trim(),
+        issuing: entry.issuing.trim(),
+        certificateNumber: entry.certificateNumber.trim(),
+        issueDate: entry.issueDate,
+        expirationDate: entry.expirationDate,
+        url: entry.url.trim(),
+      })),
+      externalLinks: externalLinks.map((entry) => ({
+        label: entry.label.trim(),
+        url: entry.url.trim(),
+      })),
+      languages: languages.map((entry) => ({
+        language: entry.language.trim(),
+        read: entry.read.trim(),
+        write: entry.write.trim(),
+        speak: entry.speak.trim(),
+      })),
+    });
+  }
+
+  function markCurrentAsSaved() {
+    setSnapshotRevision((prev) => prev + 1);
+  }
 
   function normalizeLocationSuggestions(rows: Array<{ id?: string; label?: string }>): LocationSuggestion[] {
     return rows
@@ -903,7 +1004,35 @@ function BasicDetailsPageContent() {
   function filterByPrefix(rows: LocationSuggestion[], query: string): LocationSuggestion[] {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return rows;
-    return rows.filter((row) => row.label.toLowerCase().includes(normalizedQuery));
+    const matched = rows.filter((row) => row.label.toLowerCase().includes(normalizedQuery));
+    return matched.sort((a, b) => {
+      const aLabel = a.label.toLowerCase();
+      const bLabel = b.label.toLowerCase();
+      const aStarts = aLabel.startsWith(normalizedQuery) ? 1 : 0;
+      const bStarts = bLabel.startsWith(normalizedQuery) ? 1 : 0;
+      if (aStarts !== bStarts) return bStarts - aStarts;
+      return aLabel.localeCompare(bLabel);
+    });
+  }
+
+  async function fetchLocationSuggestions(query: string, signal: AbortSignal): Promise<LocationSuggestion[]> {
+    const normalizedQuery = query.trim();
+    const url = new URL("/api/method/get_location_details", window.location.origin);
+    url.searchParams.set("page", "1");
+    url.searchParams.set("limit", LOCATION_SUGGESTION_LIMIT);
+    if (normalizedQuery) {
+      url.searchParams.set("name", normalizedQuery);
+    }
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      signal,
+    });
+    if (!res.ok) throw new Error("Failed to fetch location suggestions.");
+    const json = (await res.json()) as LocationSuggestionsResponse;
+    const rows = Array.isArray(json.data) ? json.data : [];
+    return filterByPrefix(normalizeLocationSuggestions(rows), normalizedQuery);
   }
 
   useEffect(() => {
@@ -923,31 +1052,12 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     const query = form.currentLocation.trim();
-    if (query.length < 1) {
-      setCurrentLocationSuggestions([]);
-      setIsCurrentLocationLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
     (async () => {
       try {
         setIsCurrentLocationLoading(true);
-        const url = new URL("/api/method/get_location_details", window.location.origin);
-        url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "100");
-        url.searchParams.set("name", query);
-        const res = await fetch(url.toString(), {
-          method: "GET",
-          credentials: "same-origin",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error("Failed to fetch current location suggestions.");
-        const json = (await res.json()) as LocationSuggestionsResponse;
-        const rows = Array.isArray(json.data) ? json.data : [];
-        const normalized = normalizeLocationSuggestions(rows);
-        setCurrentLocationSuggestions(filterByPrefix(normalized, query));
+        const suggestions = await fetchLocationSuggestions(query, controller.signal);
+        setCurrentLocationSuggestions(suggestions);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setCurrentLocationSuggestions([]);
@@ -963,31 +1073,12 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     const query = form.preferredLocation.trim();
-    if (query.length < 1) {
-      setPreferredLocationSuggestions([]);
-      setIsPreferredLocationLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
     (async () => {
       try {
         setIsPreferredLocationLoading(true);
-        const url = new URL("/api/method/get_location_details", window.location.origin);
-        url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "100");
-        url.searchParams.set("name", query);
-        const res = await fetch(url.toString(), {
-          method: "GET",
-          credentials: "same-origin",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error("Failed to fetch preferred location suggestions.");
-        const json = (await res.json()) as LocationSuggestionsResponse;
-        const rows = Array.isArray(json.data) ? json.data : [];
-        const normalized = normalizeLocationSuggestions(rows);
-        setPreferredLocationSuggestions(filterByPrefix(normalized, query));
+        const suggestions = await fetchLocationSuggestions(query, controller.signal);
+        setPreferredLocationSuggestions(suggestions);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setPreferredLocationSuggestions([]);
@@ -1007,7 +1098,7 @@ function BasicDetailsPageContent() {
     (async () => {
       setIsLanguageOptionsLoading(true);
       setLanguageOptionsError("");
-      const [nationalityResult, currencyResult, languageResult] = await Promise.allSettled([
+      const [nationalityResult, currencyResult, languageResult, workAuthorizationResult] = await Promise.allSettled([
           getDropdownDetailsOptions({
             doctype: "Profile Version",
             fieldName: "nationality",
@@ -1021,6 +1112,21 @@ function BasicDetailsPageContent() {
             page: 1,
             limit: 200,
           }),
+          (async () => {
+            const primary = await getDropdownDetailsOptions({
+              doctype: "ProfileVersion",
+              fieldName: "work_authorized_countries",
+              page: 1,
+              limit: 1000,
+            });
+            if (primary.length > 0) return primary;
+            return getDropdownDetailsOptions({
+              doctype: "Profile Version",
+              fieldName: "work_authorized_countries",
+              page: 1,
+              limit: 1000,
+            });
+          })(),
       ]);
 
       if (cancelled) return;
@@ -1041,6 +1147,10 @@ function BasicDetailsPageContent() {
         setLanguageOptionsError("Could not load languages. Please refresh and try again.");
       } else {
         setLanguageOptionsError("No languages found.");
+      }
+
+      if (workAuthorizationResult.status === "fulfilled" && workAuthorizationResult.value.length > 0) {
+        setWorkAuthorizationOptions(workAuthorizationResult.value);
       }
       setIsLanguageOptionsLoading(false);
     })();
@@ -1156,6 +1266,7 @@ function BasicDetailsPageContent() {
       nationality: preferExistingFormValue(prev.nationality, profile.nationality ?? ""),
       currentLocation: preferExistingFormValue(prev.currentLocation, profile.currentLocation ?? ""),
       preferredLocation: preferExistingFormValue(prev.preferredLocation, profile.preferredLocation ?? ""),
+      workAuthorization: preferExistingFormValue(prev.workAuthorization, profile.workAuthorization ?? ""),
     }));
 
     if (profile.education && profile.education.length) {
@@ -1210,20 +1321,40 @@ function BasicDetailsPageContent() {
         )
       );
     }
+    markCurrentAsSaved();
   }
 
   useEffect(() => {
-    const queryProfileName =
-      searchParams.get("profile")?.trim() ||
-      searchParams.get("profile_name")?.trim() ||
-      "";
-    const effectiveProfileName = queryProfileName || getProfileName() || "";
+    setSavedSnapshot(buildCurrentSnapshot());
+  }, [snapshotRevision]);
+
+  useEffect(() => {
+    setHasUnsavedChanges(buildCurrentSnapshot() !== savedSnapshot);
+  }, [form, education, certifications, externalLinks, languages, savedSnapshot]);
+
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
     const stored = readResumeProfile();
+    const login = getLoginIdentityPrefill();
+    const mergedSeed: ResumeProfileData = { ...(stored ?? {}) };
+    if (!mergedSeed.email?.trim() && login.email) mergedSeed.email = login.email;
+    if (!mergedSeed.firstName?.trim() && login.firstName) mergedSeed.firstName = login.firstName;
+    if (!mergedSeed.lastName?.trim() && login.lastName) mergedSeed.lastName = login.lastName;
+
     console.log("Data from session storage:", stored);
-    if (!stored) return;
+    const hasSeedData =
+      !!stored ||
+      !!mergedSeed.email?.trim() ||
+      !!mergedSeed.firstName?.trim() ||
+      !!mergedSeed.lastName?.trim();
+    if (!hasSeedData) return;
     // Even in edit mode, restore latest in-session draft first so back/next navigation
     // does not clear fields like Languages before API hydration completes.
-    applyProfileToForm(stored);
+    applyProfileToForm(mergedSeed);
+    upsertResumeProfile(mergedSeed);
   }, [searchParams.toString()]);
 
   useEffect(() => {
@@ -1504,6 +1635,9 @@ function BasicDetailsPageContent() {
       case "preferredLocation":
         patch.preferredLocation = trimmed || undefined;
         break;
+      case "workAuthorization":
+        patch.workAuthorization = trimmed || undefined;
+        break;
       default:
         break;
     }
@@ -1555,7 +1689,22 @@ function BasicDetailsPageContent() {
 
     if (!form.firstName.trim()) nextErrors.firstName = "First name is required.";
     if (!form.lastName.trim()) nextErrors.lastName = "Last name is required.";
-    if (!form.dob) nextErrors.dob = "Date of birth is required.";
+    if (!form.dob) {
+      nextErrors.dob = "Date of birth is required.";
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const dob = new Date(form.dob);
+      if (dob > today) {
+        nextErrors.dob = "Date of birth cannot be in the future.";
+      } else {
+        const maxAllowedDob = new Date(today);
+        maxAllowedDob.setFullYear(maxAllowedDob.getFullYear() - 18);
+        if (dob > maxAllowedDob) {
+          nextErrors.dob = "You must be at least 18 years old.";
+        }
+      }
+    }
     if (!form.gender) nextErrors.gender = "Select gender.";
     const inferredCountryCode = !form.countryCode ? inferCountryCodeFromContact(form.contact) : undefined;
     if (!form.countryCode && !inferredCountryCode) nextErrors.countryCode = "Select country code.";
@@ -1811,6 +1960,40 @@ function BasicDetailsPageContent() {
     setCountryCodeSearch("");
   }
 
+  function getFilteredWorkAuthorizationOptions() {
+    const query = workAuthorizationSearch.trim().toLowerCase();
+    const options = withCurrentOption(workAuthorizationOptions, form.workAuthorization);
+    const selected = form.workAuthorization.trim();
+    const prioritizedOptions =
+      selected && options.includes(selected)
+        ? [selected, ...options.filter((option) => option !== selected)]
+        : options;
+    const matched = !query
+      ? prioritizedOptions
+      : prioritizedOptions.filter((option) => option.toLowerCase().includes(query));
+    const sortedMatches = matched.sort((a, b) => {
+      const aLabel = a.toLowerCase();
+      const bLabel = b.toLowerCase();
+      const aStarts = aLabel.startsWith(query) ? 1 : 0;
+      const bStarts = bLabel.startsWith(query) ? 1 : 0;
+      if (aStarts !== bStarts) return bStarts - aStarts;
+      return aLabel.localeCompare(bLabel);
+    });
+    if (!selected) return sortedMatches;
+    const selectedIndex = sortedMatches.findIndex((option) => option === selected);
+    if (selectedIndex <= 0) return sortedMatches;
+    const next = [...sortedMatches];
+    const [picked] = next.splice(selectedIndex, 1);
+    next.unshift(picked);
+    return next;
+  }
+
+  function handleWorkAuthorizationPick(option: string) {
+    setField("workAuthorization", option);
+    setOpenWorkAuthorizationDropdown(false);
+    setWorkAuthorizationSearch("");
+  }
+
   function openSummaryDrawer() {
     setSummaryPrompt("");
     setGeneratedSummary("");
@@ -1836,6 +2019,7 @@ function BasicDetailsPageContent() {
         experienceMonths: form.expMonths || profileSnapshot.experienceMonths,
         currentLocation: form.currentLocation.trim() || profileSnapshot.currentLocation,
         preferredLocation: form.preferredLocation.trim() || profileSnapshot.preferredLocation,
+        workAuthorization: form.workAuthorization.trim() || profileSnapshot.workAuthorization,
         nationality: form.nationality || profileSnapshot.nationality,
         education: education
           .map(({ title, institute, specialization, graduationYear, score }) => ({
@@ -1938,6 +2122,7 @@ function BasicDetailsPageContent() {
       nationality: form.nationality,
       currentLocation: form.currentLocation.trim(),
       preferredLocation: form.preferredLocation.trim(),
+      workAuthorization: form.workAuthorization.trim(),
       profileImageUrl: existingProfile.profileImageUrl?.trim() || undefined,
       education: trimmedEducation,
       certifications: trimmedCertifications,
@@ -1974,18 +2159,29 @@ function BasicDetailsPageContent() {
     const nextUrl = queryProfileName
       ? `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/skills-projects";
+    markCurrentAsSaved();
     router.push(nextUrl);
   }
 
-  async function handleSaveDraft() {
+  async function handleSaveDraft(): Promise<boolean> {
     const stored = readResumeProfile() ?? {};
+    const skillsDraft = readResumeSkillsDraft<{
+      skills?: string[];
+      tools?: string[];
+      projects?: ResumeProfileData["projects"];
+    }>();
     const firstName = (form.firstName || stored.firstName || "").trim();
     const lastName = (form.lastName || stored.lastName || "").trim();
     const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
     const email = (form.email || stored.email || "").trim();
     if (!fullName || !email) {
-      alert("Please fill Full Name and Email before saving a draft.");
-      return;
+      setDraftPopup({
+        open: true,
+        variant: "error",
+        title: "Unable to save draft",
+        message: "Please fill Full Name and Email before saving a draft.",
+      });
+      return false;
     }
 
     const queryProfileName =
@@ -2000,9 +2196,26 @@ function BasicDetailsPageContent() {
     const contactNumberForPayload = contactDigits ? `${dialCodeForPayload}${contactDigits}` : "";
     const hasContactPair = Boolean(contactNumberForPayload && countryCodeForPayload);
 
-    const draftSkills = Array.isArray(stored.keySkills) ? stored.keySkills.filter((s) => typeof s === "string" && s.trim()) : [];
-    const draftTools = Array.isArray(stored.tools) ? stored.tools.filter((t) => typeof t === "string" && t.trim()) : [];
-    const draftProjects = Array.isArray(stored.projects) ? stored.projects : [];
+    const rawSkills = Array.isArray(stored.keySkills)
+      ? stored.keySkills.filter((s) => typeof s === "string" && s.trim())
+      : [];
+    const draftSkills = rawSkills.length
+      ? rawSkills
+      : (skillsDraft?.skills ?? []).filter((s) => typeof s === "string" && s.trim());
+
+    const rawTools = Array.isArray(stored.tools)
+      ? stored.tools.filter((t) => typeof t === "string" && t.trim())
+      : [];
+    const draftTools = rawTools.length
+      ? rawTools
+      : (skillsDraft?.tools ?? []).filter((t) => typeof t === "string" && t.trim());
+
+    const rawProjects = Array.isArray(stored.projects) ? stored.projects : [];
+    const draftProjects = rawProjects.length
+      ? rawProjects
+      : Array.isArray(skillsDraft?.projects)
+      ? skillsDraft.projects
+      : [];
     const draftCertifications = Array.isArray(stored.certifications) ? stored.certifications : [];
     const draftEducation = Array.isArray(stored.education) ? stored.education : [];
 
@@ -2098,6 +2311,7 @@ function BasicDetailsPageContent() {
           current_salary: form.salary.trim() || "",
           nationality: form.nationality || "",
           preferred_location: form.preferredLocation.trim() || "",
+          work_authorized_countries: form.workAuthorization.trim() || "",
           ...(draftSkills.length ? { key_skills: draftSkills } : {}),
           ...(draftSkillsTable.length ? { skills_table: draftSkillsTable } : {}),
           ...(draftProjectsTable.length ? { projects_table: draftProjectsTable } : {}),
@@ -2115,6 +2329,8 @@ function BasicDetailsPageContent() {
         title: "Draft saved",
         message: "Your latest changes have been saved.",
       });
+      markCurrentAsSaved();
+      return true;
     } catch (error) {
       setDraftPopup({
         open: true,
@@ -2122,7 +2338,121 @@ function BasicDetailsPageContent() {
         title: "Unable to save draft",
         message: error instanceof Error ? error.message : "Please try again.",
       });
+      return false;
     }
+  }
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onNavigationAttempt = (event: Event) => {
+      const customEvent = event as CustomEvent<{ url?: string }>;
+      const destinationUrl = customEvent.detail?.url?.trim();
+      if (!destinationUrl) return;
+      const destination = new URL(destinationUrl, window.location.href);
+      const current = new URL(window.location.href);
+      if (destination.href === current.href) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.href);
+      setShowUnsavedModal(true);
+    };
+    window.addEventListener("te:navigation-attempt", onNavigationAttempt as EventListener);
+    return () =>
+      window.removeEventListener("te:navigation-attempt", onNavigationAttempt as EventListener);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const rawHref = anchor.getAttribute("href");
+      if (!rawHref || rawHref.startsWith("#")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      const current = new URL(window.location.href);
+      if (destination.href === current.href) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.href);
+      setShowUnsavedModal(true);
+    };
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = { teBasicDetailsHistoryTrap: true };
+    window.history.pushState(state, document.title, window.location.href);
+
+    const onPopState = () => {
+      if (hasUnsavedChangesRef.current) {
+        window.history.pushState(state, document.title, window.location.href);
+        setPendingNavigationUrl("/profile/create");
+        setShowUnsavedModal(true);
+        return;
+      }
+
+      // No draft changes: hardware / browser "back" (or double-back) must not rewind to signup.
+      if (backLogoutInProgressRef.current) {
+        window.history.pushState(state, document.title, window.location.href);
+        return;
+      }
+      backLogoutInProgressRef.current = true;
+      window.history.pushState(state, document.title, window.location.href);
+
+      void (async () => {
+        try {
+          await fetch("/api/method/logout", { method: "POST" });
+        } catch {
+          // Mirror AppNavbar: still clear local session.
+        }
+        clearAuthSession();
+        clearSessionLoginEmail();
+        clearResumeWizardSession();
+        clearAllRecommendedJobsCache();
+        window.location.replace("/login");
+      })();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function continueNavigation(target: string | null) {
+    if (!target) return;
+    window.location.assign(target);
+  }
+
+  async function handleSaveDraftAndContinueNavigation() {
+    const saved = await handleSaveDraft();
+    if (!saved) return;
+    const target = pendingNavigationUrl;
+    setShowUnsavedModal(false);
+    setPendingNavigationUrl(null);
+    continueNavigation(target);
+  }
+
+  function handleLeaveWithoutSaving() {
+    const target = pendingNavigationUrl;
+    setHasUnsavedChanges(false);
+    setShowUnsavedModal(false);
+    setPendingNavigationUrl(null);
+    continueNavigation(target);
   }
 
   return (
@@ -2235,6 +2565,7 @@ function BasicDetailsPageContent() {
                         type="date"
                         value={form.dob}
                         onChange={(e) => setField("dob", e.target.value)}
+                        max={getMaxDobDate()}
                         className={fieldClass(Boolean(errors.dob))}
                       />
                       {errors.dob && <p className="text-xs text-red-500">{errors.dob}</p>}
@@ -2348,13 +2679,85 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Work Authorization</span>
+                    <div
+                      className="relative"
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                          setOpenWorkAuthorizationDropdown(false);
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenWorkAuthorizationDropdown((prev) => !prev);
+                          setWorkAuthorizationSearch("");
+                        }}
+                        className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                      >
+                        <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
+                          {form.workAuthorization || "Select work authorization"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {openWorkAuthorizationDropdown ? (
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="border-b border-gray-100 p-2">
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={workAuthorizationSearch}
+                                onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
+                                placeholder="Search work authorization"
+                                className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-48 overflow-auto py-1">
+                            {getFilteredWorkAuthorizationOptions().length ? (
+                              getFilteredWorkAuthorizationOptions().map((option) => (
+                                <button
+                                  key={`work-auth-mobile-${option}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleWorkAuthorizationPick(option);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.preventDefault();
+                                    handleWorkAuthorizationPick(option);
+                                  }}
+                                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
+                                    form.workAuthorization === option
+                                      ? "bg-primary-50 text-primary-700"
+                                      : "text-gray-700"
+                                  }`}
+                                >
+                                  {option}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </label>
+
+                  <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Email <span className="text-red-500">*</span></span>
                     <input
                       type="email"
                       value={form.email}
-                      onChange={(e) => setField("email", e.target.value)}
-                      placeholder="Enter email"
-                      className={fieldClass(Boolean(errors.email))}
+                      readOnly
+                      autoComplete="email"
+                      aria-readonly="true"
+                      title="Taken from your login and cannot be changed here."
+                      placeholder="From your login"
+                      className={`${fieldClass(Boolean(errors.email))} bg-gray-50 cursor-default`}
                     />
                     {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                   </label>
@@ -2403,7 +2806,7 @@ function BasicDetailsPageContent() {
                         autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 1 && (
+                      {activeLocationField === "currentLocation" && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -2449,7 +2852,7 @@ function BasicDetailsPageContent() {
                         autoComplete="off"
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 1 && (
+                      {activeLocationField === "preferredLocation" && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isPreferredLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -3794,6 +4197,7 @@ function BasicDetailsPageContent() {
                       type="date"
                       value={form.dob}
                       onChange={(e) => setField("dob", e.target.value)}
+                      max={getMaxDobDate()}
                       className={fieldClass(Boolean(errors.dob))}
                     />
                     {errors.dob && <p className="text-xs text-red-500">{errors.dob}</p>}
@@ -3822,9 +4226,12 @@ function BasicDetailsPageContent() {
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
-                    placeholder="Enter email"
-                    className={fieldClass(Boolean(errors.email))}
+                    readOnly
+                    autoComplete="email"
+                    aria-readonly="true"
+                    title="Taken from your login and cannot be changed here."
+                    placeholder="From your login"
+                    className={`${fieldClass(Boolean(errors.email))} bg-gray-50 cursor-default`}
                   />
                   {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
                 </label>
@@ -3871,7 +4278,7 @@ function BasicDetailsPageContent() {
                         className={fieldClass(Boolean(errors.currentLocation))}
                         autoComplete="off"
                       />
-                      {activeLocationField === "currentLocation" && form.currentLocation.trim().length >= 1 && (
+                      {activeLocationField === "currentLocation" && (
                         <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -3915,7 +4322,7 @@ function BasicDetailsPageContent() {
                       className={fieldClass(false)}
                       autoComplete="off"
                     />
-                    {activeLocationField === "preferredLocation" && form.preferredLocation.trim().length >= 1 && (
+                    {activeLocationField === "preferredLocation" && (
                       <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
                         {isPreferredLocationLoading ? (
                           <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
@@ -4030,6 +4437,75 @@ function BasicDetailsPageContent() {
                     <p className="text-xs text-red-500">{errors.countryCode ?? errors.contact}</p>
                   )}
                 </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-gray-800">Work Authorization</span>
+                  <div
+                    className="relative"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                        setOpenWorkAuthorizationDropdown(false);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenWorkAuthorizationDropdown((prev) => !prev);
+                        setWorkAuthorizationSearch("");
+                      }}
+                      className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                    >
+                      <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
+                        {form.workAuthorization || "Select work authorization"}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                    </button>
+                    {openWorkAuthorizationDropdown ? (
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="border-b border-gray-100 p-2">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={workAuthorizationSearch}
+                              onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
+                              placeholder="Search work authorization"
+                              className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-48 overflow-auto py-1">
+                          {getFilteredWorkAuthorizationOptions().length ? (
+                            getFilteredWorkAuthorizationOptions().map((option) => (
+                              <button
+                                key={`work-auth-desktop-${option}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleWorkAuthorizationPick(option);
+                                }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  handleWorkAuthorizationPick(option);
+                                }}
+                                className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
+                                  form.workAuthorization === option
+                                    ? "bg-primary-50 text-primary-700"
+                                    : "text-gray-700"
+                                }`}
+                              >
+                                {option}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
               </div>
             </section>
           </div>
@@ -4044,6 +4520,7 @@ function BasicDetailsPageContent() {
           fullWidth={false}
           className="px-6 sm:px-8"
           onClick={() => void handleSaveDraft()}
+          disabled={!hasUnsavedChanges}
         >
           Save Draft
         </Button>
@@ -4117,6 +4594,18 @@ function BasicDetailsPageContent() {
         title={draftPopup.title}
         message={draftPopup.message}
         onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+      />
+      <UnsavedChangesModal
+        open={showUnsavedModal}
+        submitBusy={false}
+        onSaveDraftAndContinue={() => {
+          void handleSaveDraftAndContinueNavigation();
+        }}
+        onLeaveWithoutSaving={handleLeaveWithoutSaving}
+        onStay={() => {
+          setShowUnsavedModal(false);
+          setPendingNavigationUrl(null);
+        }}
       />
     </div>
   );

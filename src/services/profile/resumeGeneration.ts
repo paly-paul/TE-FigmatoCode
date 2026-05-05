@@ -121,6 +121,12 @@ function extractProfilePayload(payload: UnknownRecord) {
       nationality: pickString(profileVersion, "nationality", "country"),
       currentLocation: pickString(profile, "current_location", "currentLocation"),
       preferredLocation: pickString(profileVersion, "preferred_location", "preferredLocation"),
+      workAuthorization: pickString(
+        profileVersion,
+        "work_authorized_countries",
+        "work_authorization",
+        "workAuthorization"
+      ),
       keySkills: mapKeySkills(profileVersion.key_skills),
       education: mapEducationDetails(profileVersion.education_details),
     },

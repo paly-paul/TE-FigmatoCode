@@ -14,8 +14,10 @@ interface VisibilityScoreCardProps {
 
 export default function VisibilityScoreCard({
   value,
-  title = "Visibility Score",
-  description = "You're well-positioned for relevant opportunities",
+  // title = "Visibility Score",
+  title = "Boost Your Visibility",
+  // description = "You're well-positioned for relevant opportunities",
+  description = "Track your visibility score and discover ways to improve it.",
   className = "",
   compact = false,
   ctaLabel = "Improve Score",

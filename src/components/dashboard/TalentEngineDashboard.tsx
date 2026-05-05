@@ -24,6 +24,10 @@ import ActionDrawer from "../ActionDrawer";
 import PauseJobSearchModal from "../PauseJobSearchModal";
 import ReferFriendModal from "../ReferFriendModal";
 import VisibilityScoreCard from "./VisibilityScoreCard";
+import {
+  InterviewActionCardsSection,
+  type UpcomingInterviewDisplay,
+} from "./InterviewActionCardsSection";
 import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
@@ -59,6 +63,7 @@ import {
   mapRecommendedToDashboardJob,
 } from "@/services/jobs/mapApiJobsToUi";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
+import { getAllLocationOptions } from "@/services/jobs/locationOptions";
 
 interface ActionCard {
   id: number;
@@ -191,6 +196,19 @@ const ACTION_CARDS: ActionCard[] = [
     timestamp: "5 days ago",
   },
 ];
+
+/** Action Center › Interviews tab (display-only until interviews API is wired). */
+const UPCOMING_INTERVIEWS_FOR_ACTION_CENTER: UpcomingInterviewDisplay[] = [];
+// Example:
+// [{
+//   id: "demo-1",
+//   title: "Frontend Developer Interview",
+//   company: "Google",
+//   location: "Bangalore, India",
+//   scheduleLabel: "Today, 3:00 PM",
+//   modalityLabel: "Virtual (Zoom)",
+//   status: "Scheduled",
+// }];
 
 /** Max Action Center cards shown before "See All" (per tab). */
 const ACTION_CENTER_PAGE_SIZE = 4;
@@ -458,7 +476,9 @@ export default function TalentEngineDashboard() {
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
   const [mobileApplicationSource, setMobileApplicationSource] = useState<"Applied By You" | "Recruiter Added">("Applied By You");
   const [mobileApplicationStage, setMobileApplicationStage] = useState("Stage");
-  const [activeActionTab, setActiveActionTab] = useState<"Job" | "Profile" | "General">("Job");
+  const [activeActionTab, setActiveActionTab] = useState<
+    "Job" | "Interviews" | "Profile" | "General"
+  >("Job");
   const [actionCenterSeeAll, setActionCenterSeeAll] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
@@ -482,49 +502,10 @@ export default function TalentEngineDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const byId = new Map<string, string>();
-        const maxPages = 20;
-        const perPage = 200;
-
-        for (let page = 1; page <= maxPages; page += 1) {
-          const url = new URL("/api/method/get_location_details", window.location.origin);
-          url.searchParams.set("page", String(page));
-          url.searchParams.set("limit", String(perPage));
-          const res = await fetch(url.toString(), {
-            method: "GET",
-            credentials: "same-origin",
-            cache: "no-store",
-          });
-          if (!res.ok) break;
-          const json = (await res.json()) as { data?: Array<{ id?: string; label?: string }> };
-          const rows = Array.isArray(json.data) ? json.data : [];
-          if (rows.length === 0) break;
-
-          for (const row of rows) {
-            const id = (row.id ?? "").trim();
-            const label = (row.label ?? "").trim();
-            if (!id || !label) continue;
-            byId.set(id, label);
-          }
-
-          if (rows.length < perPage) break;
-        }
-
-        if (cancelled) return;
-        const next = Array.from(byId.entries())
-          .map(([id, label]) => ({ id, label }))
-          .sort((a, b) => a.label.localeCompare(b.label));
-        setAllLocationOptions(next);
-      } catch {
-        if (!cancelled) setAllLocationOptions([]);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    void getAllLocationOptions()
+      .then((options) => { if (!cancelled) setAllLocationOptions(options); })
+      .catch(() => { if (!cancelled) setAllLocationOptions([]); });
+    return () => { cancelled = true; };
   }, []);
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
@@ -1086,30 +1067,41 @@ export default function TalentEngineDashboard() {
     (card) => card.type === activeActionTab
   );
 
-  const hasMoreActions = filteredActions.length > ACTION_CENTER_PAGE_SIZE;
+  const hasMoreActions =
+    activeActionTab !== "Interviews" && filteredActions.length > ACTION_CENTER_PAGE_SIZE;
   const displayedActions = actionCenterSeeAll
     ? filteredActions
     : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
 
+  const upcomingInterviews = UPCOMING_INTERVIEWS_FOR_ACTION_CENTER;
+
   const actionTabCounts = useMemo(() => {
     return {
       Job: resolvedActionCards.filter((c) => c.type === "Job").length,
+      Interviews: upcomingInterviews.length,
       Profile: resolvedActionCards.filter((c) => c.type === "Profile").length,
       General: resolvedActionCards.filter((c) => c.type === "General").length,
     };
-  }, [resolvedActionCards]);
+  }, [resolvedActionCards, upcomingInterviews.length]);
 
-  const orderedActionTabs = useMemo(() => {
-    const allTabs: ("Job" | "Profile" | "General")[] = ["Job", "Profile", "General"];
-
-    if (actionTabCounts.Job > 0) {
-      const nonJobTabs = allTabs
-        .filter((tab) => tab !== "Job")
-        .sort((a, b) => actionTabCounts[b] - actionTabCounts[a]);
-      return ["Job", ...nonJobTabs] as const;
-    }
-
-    return [...allTabs].sort((a, b) => actionTabCounts[b] - actionTabCounts[a]);
+  const orderedActionTabs = useMemo((): ("Job" | "Interviews" | "Profile" | "General")[] => {
+    const all = ["Job", "Interviews", "Profile", "General"] as const;
+    /** When counts tie, preserve Job → Interviews → Profile → General. */
+    const canonicalOrder: Record<(typeof all)[number], number> = {
+      Job: 0,
+      Interviews: 1,
+      Profile: 2,
+      General: 3,
+    };
+    return [...all].sort((a, b) => {
+      const ca = actionTabCounts[a];
+      const cb = actionTabCounts[b];
+      const aHas = ca > 0;
+      const bHas = cb > 0;
+      if (aHas !== bHas) return (bHas ? 1 : 0) - (aHas ? 1 : 0);
+      if (aHas && bHas && ca !== cb) return cb - ca;
+      return canonicalOrder[a] - canonicalOrder[b];
+    });
   }, [actionTabCounts]);
 
   const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
@@ -1571,19 +1563,16 @@ export default function TalentEngineDashboard() {
     }
   };
 
-  const handlePauseSave = (duration: string) => {
+  const handlePauseSave = async (duration: string): Promise<boolean> => {
     const durationMonths = Number.parseInt(duration, 10);
-    if (!Number.isFinite(durationMonths) || durationMonths <= 0) return;
-    void (async () => {
-      try {
-        await sendPausedJobSearchStatus(durationMonths);
-      } catch {
-        // Keep UX responsive even if backend update fails.
-      } finally {
-        setIsLookingForJob(false);
-        setShowPauseModal(false);
-      }
-    })();
+    if (!Number.isFinite(durationMonths) || durationMonths <= 0) return false;
+    try {
+      await sendPausedJobSearchStatus(durationMonths);
+    } catch {
+      // Backend may not be ready yet; still update local state and show success.
+    }
+    setIsLookingForJob(false);
+    return true;
   };
 
   const renderEmptyJobs = (message: string) => (
@@ -1776,39 +1765,43 @@ export default function TalentEngineDashboard() {
         <div className="mb-4">{actionTabsRow}</div>
 
         <div className="flex flex-col gap-3">
-          {displayedActions.length === 0 ? (
+          {activeActionTab === "Interviews" ? (
+            <InterviewActionCardsSection items={upcomingInterviews} />
+          ) : displayedActions.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
               <p className="text-sm font-medium text-gray-900">No actionables right now</p>
               <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
             </div>
-          ) : displayedActions.map((card) => {
-            const badge = getActionBadge(card.type);
-            return (
-              <button
-                key={getActionCardKey(card)}
-                type="button"
-                onClick={() => {
-                  setSelectedAction(card);
-                  setIsDrawerOpen(true);
-                }}
-                className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
-              >
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
-                  >
-                    {badge.icon}
-                    {badge.label}
+          ) : (
+            displayedActions.map((card) => {
+              const badge = getActionBadge(card.type);
+              return (
+                <button
+                  key={getActionCardKey(card)}
+                  type="button"
+                  onClick={() => {
+                    setSelectedAction(card);
+                    setIsDrawerOpen(true);
+                  }}
+                  className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+                    >
+                      {badge.icon}
+                      {badge.label}
+                    </div>
+                    <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
                   </div>
-                  <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
-                </div>
-                <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
-                <p className="text-sm text-slate-500">
-                  {formatActionSubtitleForMobile(card.subtitle)}
-                </p>
-              </button>
-            );
-          })}
+                  <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
+                  <p className="text-sm text-slate-500">
+                    {formatActionSubtitleForMobile(card.subtitle)}
+                  </p>
+                </button>
+              );
+            })
+          )}
         </div>
       </main>
     );
@@ -2180,44 +2173,50 @@ export default function TalentEngineDashboard() {
           <div className="mb-6 [&_button]:rounded-md">{actionTabsRow}</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {displayedActions.length === 0 ? (
+            {activeActionTab === "Interviews" ? (
+              <div className="col-span-full w-full">
+                <InterviewActionCardsSection items={upcomingInterviews} />
+              </div>
+            ) : displayedActions.length === 0 ? (
               <div className="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
                 <p className="text-sm font-medium text-gray-900">No actionables right now</p>
                 <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
               </div>
-            ) : displayedActions.map((card) => {
-              const badge = getActionBadge(card.type);
+            ) : (
+              displayedActions.map((card) => {
+                const badge = getActionBadge(card.type);
 
-              return (
-                <div
-                  key={getActionCardKey(card)}
-                  className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
-                >
-                  <div className="flex justify-between mb-3">
-                    <div
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
-                    >
-                      {badge.icon}
-                      {badge.label}
-                    </div>
-                    <span className="text-xs text-gray-500">{card.timestamp}</span>
-                  </div>
-
-                  <h3 className="text-sm font-semibold mb-1">{card.title}</h3>
-                  <p className="text-xs text-gray-600 mb-4">{card.subtitle}</p>
-
-                  <button
-                    onClick={() => {
-                      setSelectedAction(card);
-                      setIsDrawerOpen(true);
-                    }}
-                    className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
+                return (
+                  <div
+                    key={getActionCardKey(card)}
+                    className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
                   >
-                    Take Action
-                  </button>
-                </div>
-              );
-            })}
+                    <div className="flex justify-between mb-3">
+                      <div
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
+                      >
+                        {badge.icon}
+                        {badge.label}
+                      </div>
+                      <span className="text-xs text-gray-500">{card.timestamp}</span>
+                    </div>
+
+                    <h3 className="text-sm font-semibold mb-1">{card.title}</h3>
+                    <p className="text-xs text-gray-600 mb-4">{card.subtitle}</p>
+
+                    <button
+                      onClick={() => {
+                        setSelectedAction(card);
+                        setIsDrawerOpen(true);
+                      }}
+                      className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
+                    >
+                      Take Action
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -2550,7 +2549,7 @@ export default function TalentEngineDashboard() {
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <div className="hidden md:block">
                     <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
-                      <span>Job/Title / Location</span>
+                      <span>Job/Title & Location</span>
                       <span>Company</span>
                       <span className="text-center">Match Score %</span>
                       <span>Stage</span>

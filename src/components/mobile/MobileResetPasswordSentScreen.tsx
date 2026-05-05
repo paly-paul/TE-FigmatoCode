@@ -7,7 +7,7 @@ import { MobileAuthHeader } from "@/components/mobile/MobileAuthHeader";
 import { MobileSuccessStoriesSection } from "@/components/mobile/MobileSuccessStories";
 import { Button } from "@/components/ui/Button";
 import { EnvelopeCheckIllustration } from "@/components/icons";
-import { sendCandidateSignupOtp, verifyCandidateSignupOtp } from "@/services/signup";
+import { sendResetPasswordOtp, verifyResetPasswordOtp } from "@/services/resetPassword";
 
 type MobileResetPasswordSentScreenProps = {
   email?: string;
@@ -80,7 +80,7 @@ export function MobileResetPasswordSentScreen({ email = "" }: MobileResetPasswor
     }
     setIsSubmittingOtp(true);
     try {
-      await verifyCandidateSignupOtp(normalizedEmail, otpValue);
+      await verifyResetPasswordOtp(normalizedEmail, otpValue);
       router.push(`/new-password/?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify OTP.");
@@ -98,7 +98,7 @@ export function MobileResetPasswordSentScreen({ email = "" }: MobileResetPasswor
     }
     setIsResendingOtp(true);
     try {
-      const otpResponse = await sendCandidateSignupOtp(normalizedEmail, { allowExistingUser: true });
+      const otpResponse = await sendResetPasswordOtp(normalizedEmail);
       setInfo(otpResponse.message || "A new OTP has been sent to your email.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to resend OTP.");

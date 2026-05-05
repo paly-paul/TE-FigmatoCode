@@ -63,6 +63,7 @@ export interface ResumeProfileData {
   nationality?: string;
   currentLocation?: string;
   preferredLocation?: string;
+  workAuthorization?: string;
   profileImageUrl?: string;
   profileStrength?: number;
   visibilityScore?: number;

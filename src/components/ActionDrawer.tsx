@@ -149,6 +149,9 @@ function shouldUseFirstTimeJobTabs(action: ActionDrawerActionCard | null): boole
 
 function isDirectJobApplyCard(action: ActionDrawerActionCard | null): boolean {
   if (!action) return false;
+  // General tab cards represent recommended jobs and should follow
+  // the same first-time apply flow as Jobs section cards.
+  if (action.type === "General") return true;
   if (action.type !== "Job") return false;
   const title = action.title.toLowerCase();
   const isActionableStage =
@@ -214,7 +217,7 @@ export default function ActionDrawer({
   const [clarificationRemark, setClarificationRemark] = useState("");
   const [isClarificationSubmitting, setIsClarificationSubmitting] = useState(false);
   const [showAcceptConfirmation, setShowAcceptConfirmation] = useState(false);
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [interviewSlots, setInterviewSlots] = useState<InterviewSlotOptionApi[]>([]);
   const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
   const [interviewSlotsError, setInterviewSlotsError] = useState<string | null>(null);
@@ -269,7 +272,7 @@ export default function ActionDrawer({
       setClarificationRemark("");
       setIsClarificationSubmitting(false);
       setShowAcceptConfirmation(false);
-      setHasAcceptedTerms(true);
+      setHasAcceptedTerms(false);
       setInterviewSlots([]);
       setInterviewSlotsLoading(false);
       setInterviewSlotsError(null);
@@ -566,6 +569,7 @@ export default function ActionDrawer({
   const directApplyDateInvalid = isDirectApply && (!availableDate || availableDate < minAvailableDate);
   const directApplySalaryInvalid =
     isDirectApply && (!Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0);
+  const directApplyTermsInvalid = isDirectApply && !hasAcceptedTerms;
   const recruiterSubmitDisabled =
     isRecruiterInterestReceived && (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms);
   const primarySubmitDisabled = Boolean(
@@ -1120,14 +1124,20 @@ export default function ActionDrawer({
       scrollToMissingField(interviewSlotsSectionRef.current);
       return;
     }
-    if (isDirectApply && (directApplyDateInvalid || directApplySalaryInvalid)) {
-      setValidationMessage("Please enter a valid available date and expected salary to continue.");
+    if (isDirectApply && (directApplyDateInvalid || directApplySalaryInvalid || directApplyTermsInvalid)) {
+      setValidationMessage(
+        "Please enter a valid available date, expected salary greater than 0, and accept the terms to continue."
+      );
       if (directApplyDateInvalid) {
         scrollToMissingField(availableDateFieldRef.current);
         return;
       }
       if (directApplySalaryInvalid) {
         scrollToMissingField(expectedSalaryFieldRef.current);
+        return;
+      }
+      if (directApplyTermsInvalid) {
+        scrollToMissingField(termsFieldRef.current);
         return;
       }
     }
@@ -1201,6 +1211,7 @@ export default function ActionDrawer({
             onPrimaryAction?.(action, {
               availabilityDate: availableDate,
               expectedSalary,
+              acceptTerms: hasAcceptedTerms,
             })
           );
           ok = result !== false;
