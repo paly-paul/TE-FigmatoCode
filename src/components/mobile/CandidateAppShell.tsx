@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -62,16 +62,14 @@ export default function CandidateAppShell({
 }: CandidateAppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [queryProfileName, setQueryProfileName] = useState("");
+  const [queryProfileVersion, setQueryProfileVersion] = useState("");
   const bellRef = useRef<HTMLButtonElement>(null);
 
-  const queryProfileName = searchParams.get("profile")?.trim() || searchParams.get("profile_name")?.trim() || "";
-  const queryProfileVersion =
-    searchParams.get("profile_version")?.trim() || searchParams.get("profile_version_name")?.trim() || "";
   const isProfileCreateRoute = pathname.startsWith("/profile/create");
   const isNewProfileCreateFlow = isProfileCreateRoute && !queryProfileName && !queryProfileVersion;
   const notificationsEnabled = !isNewProfileCreateFlow;
@@ -100,6 +98,17 @@ export default function CandidateAppShell({
 
   useEffect(() => {
     setSessionEmail(getSessionLoginEmail());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setQueryProfileName(
+      params.get("profile")?.trim() || params.get("profile_name")?.trim() || ""
+    );
+    setQueryProfileVersion(
+      params.get("profile_version")?.trim() || params.get("profile_version_name")?.trim() || ""
+    );
   }, [pathname]);
 
   useEffect(() => {
