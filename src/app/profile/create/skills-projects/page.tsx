@@ -717,7 +717,6 @@ function SkillsProjectsPageContent() {
         }
 
         // Also fetch raw profile payload so we can map skills_table/tools + projects_table fully.
-        // (Our mapped getters intentionally normalize to ResumeProfileData.)
         try {
           const rawRes = await (async () => {
             if (isEditMode) {
