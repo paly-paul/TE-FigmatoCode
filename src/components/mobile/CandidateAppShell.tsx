@@ -66,13 +66,9 @@ export default function CandidateAppShell({
   const [notifOpen, setNotifOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [queryProfileName, setQueryProfileName] = useState("");
-  const [queryProfileVersion, setQueryProfileVersion] = useState("");
   const bellRef = useRef<HTMLButtonElement>(null);
 
-  const isProfileCreateRoute = pathname.startsWith("/profile/create");
-  const isNewProfileCreateFlow = isProfileCreateRoute && !queryProfileName && !queryProfileVersion;
-  const notificationsEnabled = !isNewProfileCreateFlow;
+  const notificationsEnabled = !pathname.startsWith("/profile/create");
   const notificationUserEmail = notificationsEnabled ? sessionEmail : null;
 
   const {
@@ -98,17 +94,6 @@ export default function CandidateAppShell({
 
   useEffect(() => {
     setSessionEmail(getSessionLoginEmail());
-  }, [pathname]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    setQueryProfileName(
-      params.get("profile")?.trim() || params.get("profile_name")?.trim() || ""
-    );
-    setQueryProfileVersion(
-      params.get("profile_version")?.trim() || params.get("profile_version_name")?.trim() || ""
-    );
   }, [pathname]);
 
   useEffect(() => {

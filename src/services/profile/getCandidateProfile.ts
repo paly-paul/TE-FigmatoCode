@@ -949,6 +949,20 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
         "preferredLocationText"
       )
     ),
+    workAuthorization:
+      pickString(
+        profileVersion,
+        "work_authorized_countries",
+        "work_authorization",
+        "workAuthorization"
+      ) ??
+      pickString(
+        profileRecord,
+        "work_authorized_countries",
+        "work_authorization",
+        "workAuthorization"
+      ) ??
+      pickString(root, "work_authorized_countries", "work_authorization", "workAuthorization"),
     profileImageUrl:
       pickNestedImageUrl(
         profileRecord,

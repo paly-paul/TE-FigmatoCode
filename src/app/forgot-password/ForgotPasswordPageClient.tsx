@@ -8,7 +8,7 @@ import { MobileForgotPasswordScreen } from "@/components/mobile/MobileForgotPass
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { sendCandidateSignupOtp } from "@/services/signup";
+import { sendResetPasswordOtp } from "@/services/resetPassword";
 
 export default function ForgotPasswordPageClient() {
   const router = useRouter();
@@ -32,7 +32,7 @@ export default function ForgotPasswordPageClient() {
     if (!normalizedEmail) return;
     setIsSubmitting(true);
     try {
-      await sendCandidateSignupOtp(normalizedEmail, { allowExistingUser: true });
+      await sendResetPasswordOtp(normalizedEmail);
       router.push(`/reset-password/sent/?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to send OTP.";

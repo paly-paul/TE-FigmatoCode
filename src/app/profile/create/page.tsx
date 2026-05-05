@@ -9,7 +9,7 @@ import { ResumeUploadArea } from "@/components/profile/ResumeUploadArea";
 import { RotatingLoadingQuote } from "@/components/ui/RotatingLoadingQuote";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icons";
-import { clearProfileName, getUserDisplayName, setCandidateId, setProfileName } from "@/lib/authSession";
+import { clearProfileName, setCandidateId, setProfileName } from "@/lib/authSession";
 import {
   upsertResumeProfile,
   clearResumeProfile,
@@ -17,7 +17,7 @@ import {
   hasProceededPastResumeUpload,
   markProceededPastResumeUpload,
 } from "@/lib/profileSession";
-import { getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { getLoginIdentityPrefill, getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import {
   createPreProfile,
@@ -359,21 +359,10 @@ export default function CreateProfilePage() {
       }
 
       // Prefill identity from the user session (instead of parsing the resume client-side).
-      const sessionEmail = getSessionLoginEmail()?.trim() || "";
-      const displayName = getUserDisplayName()?.trim() || "";
-      const derivedFullNameFromDisplayOrEmail =
-        displayName ||
-        (sessionEmail
-          ? sessionEmail
-              .split("@")[0]
-              .replace(/[._-]+/g, " ")
-              .split(/\s+/)
-              .filter(Boolean)
-              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-              .join(" ")
-          : "");
+      const login = getLoginIdentityPrefill();
       const derivedFullNameFromFileName = [baseData.firstName, baseData.lastName].filter(Boolean).join(" ").trim();
-      const derivedFullName = derivedFullNameFromDisplayOrEmail || derivedFullNameFromFileName;
+      const derivedFullName =
+        [login.firstName, login.lastName].filter(Boolean).join(" ").trim() || derivedFullNameFromFileName;
 
       const nameParts = derivedFullName.split(/\s+/).filter(Boolean);
       const firstName = nameParts[0] || "";
@@ -381,7 +370,7 @@ export default function CreateProfilePage() {
 
       const identityData: ResumeProfileData = {
         ...baseData,
-        ...(sessionEmail ? { email: sessionEmail } : {}),
+        ...(login.email ? { email: login.email } : {}),
         ...(firstName ? { firstName } : {}),
         ...(lastName ? { lastName } : {}),
       };
@@ -457,7 +446,7 @@ export default function CreateProfilePage() {
     setIsGeneratingProfile(true);
     try {
       const sessionEmail = getSessionLoginEmail()?.trim() || "";
-      const displayName = getUserDisplayName()?.trim() || "";
+      const login = getLoginIdentityPrefill();
 
       if (!sessionEmail) {
         alert("Session email is missing. Please login again.");
@@ -467,17 +456,9 @@ export default function CreateProfilePage() {
       const baseData = deriveFallbackResumeData(input.resumeFileName);
       const updatedResumeRef = input.updatedResumeRef || "";
       const hasResume = Boolean(updatedResumeRef);
-      const derivedFullNameFromDisplayOrEmail =
-        displayName ||
-        sessionEmail
-          .split("@")[0]
-          .replace(/[._-]+/g, " ")
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-          .join(" ");
       const derivedFullNameFromFileName = [baseData.firstName, baseData.lastName].filter(Boolean).join(" ").trim();
-      const derivedFullName = derivedFullNameFromDisplayOrEmail || derivedFullNameFromFileName;
+      const derivedFullName =
+        [login.firstName, login.lastName].filter(Boolean).join(" ").trim() || derivedFullNameFromFileName;
       const nameParts = derivedFullName.split(/\s+/).filter(Boolean);
       const firstName = nameParts[0] || "";
       const lastName = nameParts.slice(1).join(" ");
@@ -495,8 +476,13 @@ export default function CreateProfilePage() {
         };
         upsertResumeProfile(identityData);
       } else {
-        // Continue-without-resume flow should start with empty fields on Basic Details.
-        clearResumeProfile();
+        const identityData: ResumeProfileData = {
+          ...baseData,
+          ...(sessionEmail ? { email: sessionEmail } : {}),
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+        };
+        upsertResumeProfile(identityData);
       }
 
       let effectiveProfileId = "";
@@ -576,23 +562,12 @@ export default function CreateProfilePage() {
       let backendProfile: ResumeProfileData | null = null;
       if (hasResume && effectiveProfileId) {
         try {
-          // Prefer the resolved profile id so we hydrate the exact generated profile version.
-          backendProfile = await getCandidateProfileData(effectiveProfileId);
+          backendProfile = await getCandidateProfileDataByEmail(sessionEmail);
         } catch {
           try {
-            backendProfile = await getCandidateProfileDataByEmail(sessionEmail);
+            backendProfile = await getCandidateProfileData(effectiveProfileId);
           } catch {
-            const resolved = await tryResolveProfileNameByEmail(sessionEmail);
-            if (resolved && resolved !== effectiveProfileId) {
-              effectiveProfileId = resolved;
-              setProfileName(resolved);
-              setCandidateId(resolved);
-              try {
-                backendProfile = await getCandidateProfileData(resolved);
-              } catch {
-                backendProfile = null;
-              }
-            }
+            backendProfile = null;
           }
         }
       }
@@ -618,7 +593,13 @@ export default function CreateProfilePage() {
         }
       }
 
-      markProceededPastResumeUpload();
+      // Resume path only: trap browser "back" to /profile/create by auto-forwarding to Basic Details.
+      // Continue-without-resume leaves this unset so users can go back and upload a resume if they choose.
+      if (hasResume) {
+        markProceededPastResumeUpload();
+      } else {
+        clearProceededPastResumeUpload();
+      }
       router.push("/profile/create/basic-details");
     } finally {
       setIsGeneratingProfile(false);

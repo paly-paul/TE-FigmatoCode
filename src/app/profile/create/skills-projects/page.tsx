@@ -20,6 +20,7 @@ import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import type { ResumeProfileData } from "@/types/profile";
 import { StatusPopup } from "@/components/ui/StatusPopup";
+import UnsavedChangesModal from "@/components/timesheet/UnsavedChangesModal";
 
 interface ResumeSkillsData {
   skills?: string[];
@@ -314,12 +315,57 @@ function SkillsProjectsPageContent() {
     message?: string;
   }>({ open: false, variant: "success", title: "" });
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      skills: [],
+      experiences: [{ experience: "", experienceYears: "", experienceReference: "" }],
+      projects: [
+        {
+          projectTitle: "",
+          customerCompany: "",
+          projectStartDate: "",
+          projectEndDate: "",
+          inProgress: false,
+          projectDescription: "",
+          responsibilities: "",
+        },
+      ],
+    })
+  );
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
     experiences: false,
     projects: false,
   });
+
+  function buildCurrentSnapshot(): string {
+    return JSON.stringify({
+      skills: [...skills].map((s) => s.trim()),
+      experiences: experiences.map((entry) => ({
+        experience: entry.experience.trim(),
+        experienceYears: entry.experienceYears.trim(),
+        experienceReference: entry.experienceReference.trim(),
+      })),
+      projects: projects.map((project) => ({
+        projectTitle: project.projectTitle.trim(),
+        customerCompany: project.customerCompany.trim(),
+        projectStartDate: project.projectStartDate,
+        projectEndDate: project.projectEndDate,
+        inProgress: project.inProgress,
+        projectDescription: project.projectDescription.trim(),
+        responsibilities: project.responsibilities.trim(),
+      })),
+    });
+  }
+
+  function markCurrentAsSaved() {
+    setSnapshotRevision((prev) => prev + 1);
+  }
 
   function scrollToFirstValidationErrorField(nextErrors: FormErrors): void {
     if (typeof window === "undefined") return;
@@ -403,11 +449,19 @@ function SkillsProjectsPageContent() {
     const sectionErrors: ProjectFieldErrors = {};
     if (!entry.projectTitle.trim()) sectionErrors.projectTitle = "Project title is required.";
     if (!entry.customerCompany.trim()) sectionErrors.customerCompany = "Customer/company is required.";
-    if (!entry.projectStartDate) sectionErrors.projectStartDate = "Start date is required.";
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    if (!entry.projectStartDate) {
+      sectionErrors.projectStartDate = "Start date is required.";
+    } else if (entry.projectStartDate > todayStr) {
+      sectionErrors.projectStartDate = "Start date cannot be in the future.";
+    }
 
     if (!entry.inProgress) {
       if (!entry.projectEndDate) {
         sectionErrors.projectEndDate = "End date is required, or mark In progress.";
+      } else if (entry.projectEndDate > todayStr) {
+        sectionErrors.projectEndDate = "End date cannot be in the future.";
       }
     }
 
@@ -537,6 +591,14 @@ function SkillsProjectsPageContent() {
       // ignore invalid JSON
     }
   }, [searchParamsKey]);
+
+  useEffect(() => {
+    setSavedSnapshot(buildCurrentSnapshot());
+  }, [snapshotRevision]);
+
+  useEffect(() => {
+    setHasUnsavedChanges(buildCurrentSnapshot() !== savedSnapshot);
+  }, [skills, experiences, projects, savedSnapshot]);
 
   useEffect(() => {
     const queryProfileName =
@@ -1339,6 +1401,7 @@ function SkillsProjectsPageContent() {
       professional_summary: storedProfile?.summary?.trim() || "",
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      work_authorized_countries: storedProfile?.workAuthorization?.trim() || "",
       ...(profileImageRef ? { profile_image: profileImageRef } : {}),
       skills_table: skillsTable,
       key_skills: keySkills,
@@ -1479,6 +1542,7 @@ function SkillsProjectsPageContent() {
       "current_location",
       "nationality",
       "preferred_location",
+      "work_authorized_countries",
       "profile_image",
       "skills_table",
       "key_skills",
@@ -1569,6 +1633,7 @@ function SkillsProjectsPageContent() {
         setProfileName(profileName);
       }
 
+      markCurrentAsSaved();
       markProfileComplete();
       setIsFinishModalOpen(true);
     } catch (error) {
@@ -1578,7 +1643,7 @@ function SkillsProjectsPageContent() {
     }
   }
 
-  async function handleSaveDraft() {
+  async function handleSaveDraft(): Promise<boolean> {
     const storedProfile = readResumeProfile();
     const queryProfileName =
       searchParams.get("profile")?.trim() ||
@@ -1591,8 +1656,13 @@ function SkillsProjectsPageContent() {
     const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
     const email = storedProfile?.email?.trim() || "";
     if (!fullName || !email) {
-      alert("Missing profile basics. Please complete Basic Details before saving a draft.");
-      return;
+      setDraftPopup({
+        open: true,
+        variant: "error",
+        title: "Unable to save draft",
+        message: "Missing profile basics. Please complete Basic Details before saving a draft.",
+      });
+      return false;
     }
 
     if (!profileName) {
@@ -1705,6 +1775,7 @@ function SkillsProjectsPageContent() {
       professional_summary: storedProfile?.summary?.trim() || "",
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      work_authorized_countries: storedProfile?.workAuthorization?.trim() || "",
       ...(profileImageRef ? { profile_image: profileImageRef } : {}),
       skills_table: skillsTable,
       key_skills: keySkills,
@@ -1846,6 +1917,7 @@ function SkillsProjectsPageContent() {
       "current_location",
       "nationality",
       "preferred_location",
+      "work_authorized_countries",
       "profile_image",
       "skills_table",
       "key_skills",
@@ -1919,6 +1991,8 @@ function SkillsProjectsPageContent() {
         title: "Draft saved",
         message: "Your latest changes have been saved.",
       });
+      markCurrentAsSaved();
+      return true;
     } catch (error) {
       setDraftPopup({
         open: true,
@@ -1926,9 +2000,97 @@ function SkillsProjectsPageContent() {
         title: "Unable to save draft",
         message: error instanceof Error ? error.message : "Please try again.",
       });
+      return false;
     } finally {
       setIsSubmittingProfile(false);
     }
+  }
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onNavigationAttempt = (event: Event) => {
+      const customEvent = event as CustomEvent<{ url?: string }>;
+      const destinationUrl = customEvent.detail?.url?.trim();
+      if (!destinationUrl) return;
+      const destination = new URL(destinationUrl, window.location.href);
+      const current = new URL(window.location.href);
+      if (destination.href === current.href) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.href);
+      setShowUnsavedModal(true);
+    };
+    window.addEventListener("te:navigation-attempt", onNavigationAttempt as EventListener);
+    return () =>
+      window.removeEventListener("te:navigation-attempt", onNavigationAttempt as EventListener);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const rawHref = anchor.getAttribute("href");
+      if (!rawHref || rawHref.startsWith("#")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      const current = new URL(window.location.href);
+      if (destination.href === current.href) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.href);
+      setShowUnsavedModal(true);
+    };
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const state = { teUnsavedProfileChanges: true };
+    window.history.pushState(state, document.title, window.location.href);
+    const onPopState = () => {
+      window.history.pushState(state, document.title, window.location.href);
+      setPendingNavigationUrl("/profile");
+      setShowUnsavedModal(true);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hasUnsavedChanges]);
+
+  function continueNavigation(target: string | null) {
+    if (!target) return;
+    window.location.assign(target);
+  }
+
+  async function handleSaveDraftAndContinueNavigation() {
+    const saved = await handleSaveDraft();
+    if (!saved) return;
+    const target = pendingNavigationUrl;
+    setShowUnsavedModal(false);
+    setPendingNavigationUrl(null);
+    continueNavigation(target);
+  }
+
+  function handleLeaveWithoutSaving() {
+    const target = pendingNavigationUrl;
+    setHasUnsavedChanges(false);
+    setShowUnsavedModal(false);
+    setPendingNavigationUrl(null);
+    continueNavigation(target);
   }
 
   function handleContinueToDashboard() {
@@ -2202,6 +2364,7 @@ function SkillsProjectsPageContent() {
                                 onChange={(e) =>
                                   updateProject(entry.id, { projectStartDate: e.target.value })
                                 }
+                                max={new Date().toISOString().slice(0, 10)}
                                 className={fieldClass(Boolean(fe?.projectStartDate))}
                               />
                               {fe?.projectStartDate && (
@@ -2218,6 +2381,7 @@ function SkillsProjectsPageContent() {
                                   updateProject(entry.id, { projectEndDate: e.target.value })
                                 }
                                 disabled={entry.inProgress}
+                                max={new Date().toISOString().slice(0, 10)}
                                 className={`${fieldClass(Boolean(fe?.projectEndDate))} ${
                                   entry.inProgress ? "bg-gray-100 text-gray-500" : ""
                                 }`}
@@ -2508,6 +2672,7 @@ function SkillsProjectsPageContent() {
                             type="date"
                             value={entry.projectStartDate}
                             onChange={(e) => updateProject(entry.id, { projectStartDate: e.target.value })}
+                            max={new Date().toISOString().slice(0, 10)}
                             className={fieldClass(Boolean(fe?.projectStartDate))}
                           />
                           {fe?.projectStartDate && <p className="text-xs text-red-500">{fe.projectStartDate}</p>}
@@ -2520,6 +2685,7 @@ function SkillsProjectsPageContent() {
                             value={entry.projectEndDate}
                             onChange={(e) => updateProject(entry.id, { projectEndDate: e.target.value })}
                             disabled={entry.inProgress}
+                            max={new Date().toISOString().slice(0, 10)}
                             className={`${fieldClass(Boolean(fe?.projectEndDate))} ${entry.inProgress ? "bg-gray-100 text-gray-500" : ""}`}
                           />
                           {fe?.projectEndDate && <p className="text-xs text-red-500">{fe.projectEndDate}</p>}
@@ -2640,7 +2806,7 @@ function SkillsProjectsPageContent() {
           fullWidth={false}
           className="px-6 sm:px-8"
           onClick={() => void handleSaveDraft()}
-          disabled={isSubmittingProfile}
+          disabled={isSubmittingProfile || !hasUnsavedChanges}
         >
           {isSubmittingProfile ? "Saving..." : "Save Draft"}
         </Button>
@@ -2702,6 +2868,18 @@ function SkillsProjectsPageContent() {
         title={draftPopup.title}
         message={draftPopup.message}
         onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+      />
+      <UnsavedChangesModal
+        open={showUnsavedModal}
+        submitBusy={isSubmittingProfile}
+        onSaveDraftAndContinue={() => {
+          void handleSaveDraftAndContinueNavigation();
+        }}
+        onLeaveWithoutSaving={handleLeaveWithoutSaving}
+        onStay={() => {
+          setShowUnsavedModal(false);
+          setPendingNavigationUrl(null);
+        }}
       />
     </div>
   );
