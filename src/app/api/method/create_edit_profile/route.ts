@@ -3,6 +3,54 @@ import { parseApiErrorMessage } from "@/services/signup/parseApiError";
 
 type JsonRecord = Record<string, unknown>;
 
+function normalizeCurrentLocationValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  // UI may send "City, Country" but backend expects "City--Country".
+  // Keep backend keys as-is.
+  if (trimmed.includes("--")) return trimmed;
+  return trimmed.replace(/\s*,\s*/g, "--").trim();
+}
+
+function normalizeCurrentLocationFields(payload: JsonRecord): JsonRecord {
+  const normalized: JsonRecord = { ...payload };
+
+  if (typeof normalized.current_location === "string") {
+    normalized.current_location = normalizeCurrentLocationValue(normalized.current_location);
+  }
+
+  if (normalized.profile && typeof normalized.profile === "object" && !Array.isArray(normalized.profile)) {
+    const profile = { ...(normalized.profile as JsonRecord) };
+    if (typeof profile.current_location === "string") {
+      profile.current_location = normalizeCurrentLocationValue(profile.current_location);
+    }
+    if (typeof profile.currentLocation === "string" && profile.current_location === undefined) {
+      profile.current_location = normalizeCurrentLocationValue(profile.currentLocation);
+      delete profile.currentLocation;
+    }
+    normalized.profile = profile;
+  }
+
+  if (
+    normalized.profile_doc &&
+    typeof normalized.profile_doc === "object" &&
+    !Array.isArray(normalized.profile_doc)
+  ) {
+    const profileDoc = { ...(normalized.profile_doc as JsonRecord) };
+    if (typeof profileDoc.current_location === "string") {
+      profileDoc.current_location = normalizeCurrentLocationValue(profileDoc.current_location);
+    }
+    if (typeof profileDoc.currentLocation === "string" && profileDoc.current_location === undefined) {
+      profileDoc.current_location = normalizeCurrentLocationValue(profileDoc.currentLocation);
+      delete profileDoc.currentLocation;
+    }
+    normalized.profile_doc = profileDoc;
+  }
+
+  return normalized;
+}
+
 function extractStatus(data: Record<string, unknown>) {
   if (typeof data.status === "string") return data.status;
   const message = data.message;
@@ -160,14 +208,11 @@ function toCanonicalPayload(payload: JsonRecord, profileName: string): JsonRecor
   const actionValue = typeof payload.action === "string" ? payload.action.trim().toLowerCase() : "";
   const versionName =
     typeof payload.profile_version_name === "string" ? payload.profile_version_name.trim() : "";
+  const hasExistingVersion = Boolean(versionName);
   const mode =
-    actionValue === "submit"
-      ? versionName
-        ? "edit"
-        : "new"
-      : profileName || versionName
-        ? "edit"
-        : "new";
+    hasExistingVersion
+      ? "edit"
+      : "new";
   const canonical = withNestedProfileVersionMode(payload, mode);
 
   if (actionValue === "submit") {
@@ -222,7 +267,7 @@ export async function POST(request: Request) {
     return "";
   })();
 
-  const payload = { ...body } as JsonRecord;
+  const payload = normalizeCurrentLocationFields({ ...body } as JsonRecord);
   if (typeof payload.action === "string") {
     payload.action = payload.action.trim().toLowerCase();
   }
@@ -265,6 +310,18 @@ export async function POST(request: Request) {
       console.info("create_edit_profile retry", { reason: "missing profile/profile_version", retry: "nested" });
       const nestedPayload = toNestedPayload(payload);
       ({ upstream, data } = await postJson(url, headers, nestedPayload));
+    }
+  }
+
+  if (!upstream.ok || isLogicalFailure(data)) {
+    const message = parseApiErrorMessage(data).toLowerCase();
+    if (message.includes("no existing profile version to edit")) {
+      console.info("create_edit_profile retry", {
+        reason: "no existing profile version to edit",
+        retry: "force new mode",
+      });
+      const newModePayload = withNestedProfileVersionMode(payload, "new");
+      ({ upstream, data } = await postJson(url, headers, newModePayload));
     }
   }
 

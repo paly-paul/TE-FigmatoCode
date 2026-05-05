@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   const loggedUserRes = await fetch(loggedUserUrl, { method: "GET", headers });
   const loggedUserData = await safeJson(loggedUserRes);
 
-  // Also check if Profile lookup by email works (uses same auth path as resolve_profile_name)
+  // Also check if Profile lookup by email works (uses the same auth path as profile flows).
   const email =
     (() => {
       const { searchParams } = new URL(request.url);

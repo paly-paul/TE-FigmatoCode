@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -62,11 +62,20 @@ export default function CandidateAppShell({
 }: CandidateAppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
+
+  const queryProfileName = searchParams.get("profile")?.trim() || searchParams.get("profile_name")?.trim() || "";
+  const queryProfileVersion =
+    searchParams.get("profile_version")?.trim() || searchParams.get("profile_version_name")?.trim() || "";
+  const isProfileCreateRoute = pathname.startsWith("/profile/create");
+  const isNewProfileCreateFlow = isProfileCreateRoute && !queryProfileName && !queryProfileVersion;
+  const notificationsEnabled = !isNewProfileCreateFlow;
+  const notificationUserEmail = notificationsEnabled ? sessionEmail : null;
 
   const {
     notifications,
@@ -78,7 +87,7 @@ export default function CandidateAppShell({
     markOneRead,
     markingAll,
     markingItemId,
-  } = useUserNotifications(sessionEmail);
+  } = useUserNotifications(notificationUserEmail);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -94,8 +103,12 @@ export default function CandidateAppShell({
   }, [pathname]);
 
   useEffect(() => {
-    if (notifOpen && sessionEmail) void refreshNotifications();
-  }, [notifOpen, sessionEmail, refreshNotifications]);
+    if (!notificationsEnabled && notifOpen) {
+      setNotifOpen(false);
+      return;
+    }
+    if (notifOpen && notificationUserEmail) void refreshNotifications();
+  }, [notifOpen, notificationUserEmail, notificationsEnabled, refreshNotifications]);
 
   const shouldBlockNavigation = (href: string): boolean => {
     if (!href) return false;
@@ -165,21 +178,23 @@ export default function CandidateAppShell({
           </Link>
 
           <div className="flex items-center gap-1">
-            <button
-              ref={bellRef}
-              type="button"
-              onClick={() => setNotifOpen((o) => !o)}
-              className="relative rounded-lg p-2.5 text-gray-600 hover:bg-gray-100"
-              aria-label="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {sessionEmail && unreadCount > 0 ? (
-                <span
-                  className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"
-                  aria-hidden
-                />
-              ) : null}
-            </button>
+            {notificationsEnabled ? (
+              <button
+                ref={bellRef}
+                type="button"
+                onClick={() => setNotifOpen((o) => !o)}
+                className="relative rounded-lg p-2.5 text-gray-600 hover:bg-gray-100"
+                aria-label="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {notificationUserEmail && unreadCount > 0 ? (
+                  <span
+                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"
+                    aria-hidden
+                  />
+                ) : null}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
@@ -408,8 +423,8 @@ export default function CandidateAppShell({
         notifications={notifications}
         loading={notifLoading}
         error={notifError}
-        onMarkAllRead={sessionEmail ? markAllRead : undefined}
-        onMarkItemRead={sessionEmail ? markOneRead : undefined}
+        onMarkAllRead={notificationUserEmail ? markAllRead : undefined}
+        onMarkItemRead={notificationUserEmail ? markOneRead : undefined}
         markingAll={markingAll}
         markingItemId={markingItemId}
       />

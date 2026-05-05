@@ -15,10 +15,11 @@ import {
   readResumeProfile,
   upsertResumeProfile,
 } from "@/lib/profileSession";
-import { getCandidateProfileData, saveProfile } from "@/services/profile";
+import { getCandidateProfileData, getCandidateProfileDataByEmail, saveProfile } from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import type { ResumeProfileData } from "@/types/profile";
+import { StatusPopup } from "@/components/ui/StatusPopup";
 
 interface ResumeSkillsData {
   skills?: string[];
@@ -306,6 +307,12 @@ function SkillsProjectsPageContent() {
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
   const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
+  const [draftPopup, setDraftPopup] = useState<{
+    open: boolean;
+    variant: "success" | "error";
+    title: string;
+    message?: string;
+  }>({ open: false, variant: "success", title: "" });
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
@@ -629,31 +636,13 @@ function SkillsProjectsPageContent() {
           setProfileName(queryProfileName);
         }
 
-        if (!profileName && candidateId) {
-          const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-          resolverUrl.searchParams.set("candidate_id", candidateId);
-          const resolverRes = await fetch(resolverUrl.toString());
-          if (resolverRes.ok) {
-            const resolverData = (await resolverRes.json()) as { profile_name?: string };
-            if (resolverData.profile_name) {
-              profileName = resolverData.profile_name;
-              setProfileName(profileName);
-            }
-          }
-        }
-
         if (!profileName) {
           const sessionEmail = getSessionLoginEmail()?.trim() || "";
           if (sessionEmail) {
-            const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-            resolverUrl.searchParams.set("email", sessionEmail);
-            const resolverRes = await fetch(resolverUrl.toString());
-            if (resolverRes.ok) {
-              const resolverData = (await resolverRes.json()) as { profile_name?: string };
-              if (resolverData.profile_name) {
-                profileName = resolverData.profile_name;
-                setProfileName(profileName);
-              }
+            const resolvedByEmail = await resolveProfileNameByEmail(sessionEmail);
+            if (resolvedByEmail) {
+              profileName = resolvedByEmail;
+              setProfileName(profileName);
             }
           }
         }
@@ -666,7 +655,13 @@ function SkillsProjectsPageContent() {
         const generatedSkills = await fetchGeneratedSkillsForProfile(profileName);
         if (cancelled) return;
 
-        const backendProfile = await getCandidateProfileData(profileName);
+        const sessionEmail = getSessionLoginEmail()?.trim() || "";
+        const backendProfile = isLikelyDocId(profileName)
+          ? await getCandidateProfileData(profileName)
+          : sessionEmail
+            ? await getCandidateProfileDataByEmail(sessionEmail)
+            : null;
+        if (!backendProfile) return;
         if (cancelled) return;
         // Keep session profile synchronized without clobbering newer manual edits
         // captured in this browser session (e.g. basic-details certifications).
@@ -721,14 +716,25 @@ function SkillsProjectsPageContent() {
           );
         }
 
-        // Also fetch raw `get_data` so we can map skills_table/tools + projects_table fully.
-        // (Our mapped `getCandidateProfileData` intentionally normalizes to ResumeProfileData.)
+        // Also fetch raw profile payload so we can map skills_table/tools + projects_table fully.
+        // (Our mapped getters intentionally normalize to ResumeProfileData.)
         try {
-          const rawRes = await fetch("/api/method/get_data/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ doctype: "Profile", name: profileName }),
-          });
+          const rawRes = await (async () => {
+            if (isLikelyDocId(profileName) && wizardComplete) {
+              return fetch("/api/method/get_data/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ doctype: "Profile", name: profileName }),
+              });
+            }
+            if (sessionEmail) {
+              const rawUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
+              rawUrl.searchParams.set("email", sessionEmail);
+              return fetch(rawUrl.toString(), { method: "GET" });
+            }
+            return null;
+          })();
+          if (!rawRes) return;
           if (rawRes.ok) {
             const raw = (await rawRes.json()) as any;
             const root = raw?.data ?? raw?.message?.data ?? raw?.message ?? raw;
@@ -1541,6 +1547,7 @@ function SkillsProjectsPageContent() {
         profile_doc: mergedProfilePayload,
         profile_version: mergedProfileVersionPayload,
         action: "submit",
+        mode: profileName ? "edit" : "new",
       });
 
       const linkedProfileFromServerMessage = extractLinkedProfileIdFromServerMessages(response);
@@ -1567,6 +1574,359 @@ function SkillsProjectsPageContent() {
       setIsFinishModalOpen(true);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Unable to save profile.");
+    } finally {
+      setIsSubmittingProfile(false);
+    }
+  }
+
+  async function handleSaveDraft() {
+    const storedProfile = readResumeProfile();
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
+    let profileName = queryProfileName || getProfileName() || "";
+
+    const firstName = storedProfile?.firstName?.trim() || "";
+    const lastName = storedProfile?.lastName?.trim() || "";
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    const email = storedProfile?.email?.trim() || "";
+    if (!fullName || !email) {
+      alert("Missing profile basics. Please complete Basic Details before saving a draft.");
+      return;
+    }
+
+    if (!profileName) {
+      const resolved = await resolveProfileNameByEmail(email);
+      if (resolved) {
+        profileName = resolved;
+        setProfileName(resolved);
+      }
+    }
+
+    const keySkills = dedupeSkills(skills);
+    const skillsTable = nonEmptyExperiences()
+      .map((entry) => {
+        const skillName = entry.experience.trim();
+        const yearsRaw = entry.experienceYears.trim();
+        const years = Number.parseFloat(yearsRaw);
+        const referenceUrl = entry.experienceReference.trim();
+        const normalizedYears = Number.isFinite(years) && years >= 0 ? years : "";
+        return {
+          skill: skillName || "",
+          key_skills: skillName || "",
+          experience: normalizedYears,
+          experience_years: normalizedYears,
+          url: referenceUrl,
+        };
+      })
+      .filter(
+        (entry) =>
+          entry.skill || entry.key_skills || entry.experience !== "" || entry.experience_years !== "" || entry.url
+      );
+
+    const workExperienceTable = nonEmptyExperiences()
+      .map((entry) => ({
+        role: entry.experience.trim() || "",
+        company: "",
+        from_date: "",
+        to_date: "",
+        duration: entry.experienceYears.trim() || "",
+        responsibilities: entry.experience.trim() ? [entry.experience.trim()] : [],
+        url: entry.experienceReference.trim() || "",
+      }))
+      .filter((entry) => entry.role || entry.duration || entry.url);
+
+    const educationDetails =
+      storedProfile?.education?.map((entry) => ({
+        degree: entry.title?.trim() || undefined,
+        institution: entry.institute?.trim() || undefined,
+        specialization: entry.specialization?.trim() || undefined,
+        score: entry.score?.trim() || undefined,
+        graduation_year: entry.graduationYear?.trim() || undefined,
+        year_of_passing: entry.graduationYear?.trim() || undefined,
+        year: entry.graduationYear?.trim() || undefined,
+      })).filter(
+        (entry) =>
+          entry.degree ||
+          entry.institution ||
+          entry.specialization ||
+          entry.score ||
+          entry.graduation_year ||
+          entry.year_of_passing ||
+          entry.year
+      ) ?? [];
+
+    const totalExperience = (() => {
+      const yearsRaw = storedProfile?.experienceYears?.trim() || "0";
+      const years = parseInt(yearsRaw, 10);
+      return Number.isFinite(years) && years >= 0 ? years : undefined;
+    })();
+    const experienceYearsValue = storedProfile?.experienceYears?.trim() || undefined;
+    const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
+    const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
+    const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
+    const profileCompletionPercentage = Math.round(completionPercent);
+
+    const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
+    const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
+      countryHint: storedProfile?.nationality?.trim() || "India",
+    });
+    const profileImageRef = storedProfile?.profileImageUrl?.trim() || "";
+
+    const nextProfilePayload = {
+      full_name: fullName,
+      email,
+      first_name: firstName,
+      last_name: lastName,
+      date_of_birth: storedProfile?.dob?.trim() || "",
+      gender: storedProfile?.gender?.trim() || "",
+      country_code: storedProfile?.countryCode?.trim() || "",
+      contact_no: storedProfile?.phone?.trim() || "",
+      alternative_email: storedProfile?.altEmail?.trim() || "",
+      current_location: normalizedCurrentLocation,
+      preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      state: "Draft",
+      ...(profileImageRef ? { profile_image: profileImageRef } : {}),
+    };
+
+    const nextProfileVersionPayload = {
+      mode: profileName ? "edit" : "new",
+      professional_title: storedProfile?.professionalTitle?.trim() || "",
+      experience_years: experienceYearsValue,
+      experience_months: experienceMonthsValue,
+      profile_completion: profileCompletionPercentage,
+      completion_percentage: profileCompletionPercentage,
+      current_location: normalizedCurrentLocation,
+      current_salary: currentSalaryValue,
+      current_salary_per_hour: currentSalaryValue,
+      current_salary_currency: currentSalaryCurrencyValue,
+      salary_per_hour: currentSalaryValue,
+      salary_currency: currentSalaryCurrencyValue,
+      professional_summary: storedProfile?.summary?.trim() || "",
+      nationality: storedProfile?.nationality?.trim() || "",
+      preferred_location: storedProfile?.preferredLocation?.trim() || "",
+      ...(profileImageRef ? { profile_image: profileImageRef } : {}),
+      skills_table: skillsTable,
+      key_skills: keySkills,
+      education_qualifications: educationDetails.map((entry) => ({
+        title: entry.degree || "",
+        degree: entry.degree || "",
+        institution: entry.institution || "",
+        institute: entry.institution || "",
+        specialization: entry.specialization || "",
+        score: entry.score || "",
+        graduation_year: entry.graduation_year || "",
+        year_of_passing: entry.year_of_passing || entry.year || "",
+        year: entry.year || "",
+      })),
+      certification_table: storedProfile?.certifications?.length
+        ? storedProfile.certifications
+            .map((entry) => ({
+              certificate: entry.name?.trim() || "",
+              certification_name: entry.name?.trim() || "",
+              issued_by: entry.issuing?.trim() || "",
+              certificate_number: entry.certificateNumber?.trim() || "",
+              issued_date: entry.issueDate?.trim() || "",
+              issue_date: entry.issueDate?.trim() || "",
+              expiry_date: entry.expirationDate?.trim() || "",
+              expiration_date: entry.expirationDate?.trim() || "",
+              year: entry.issueDate?.trim()?.slice(0, 4) || "",
+              url: entry.url?.trim() || "",
+            }))
+            .filter((entry) =>
+              entry.certificate ||
+              entry.certification_name ||
+              entry.issued_by ||
+              entry.certificate_number ||
+              entry.issued_date ||
+              entry.issue_date ||
+              entry.expiry_date ||
+              entry.expiration_date ||
+              entry.year ||
+              entry.url
+            )
+        : [],
+      external_profile_links: storedProfile?.externalLinks?.length
+        ? storedProfile.externalLinks
+            .map((entry) => ({
+              platform: entry.label?.trim() || "",
+              url: entry.url?.trim() || "",
+            }))
+            .filter((entry) => entry.platform || entry.url)
+        : [],
+      projects_table: nonEmptyProjects()
+        .map((project) => ({
+          project_name: project.projectTitle?.trim() || "",
+          project_title: project.projectTitle?.trim() || "",
+          title: project.projectTitle?.trim() || "",
+          customer_company: project.customerCompany?.trim() || "",
+          start_date: project.projectStartDate || "",
+          end_date: project.inProgress ? "" : project.projectEndDate || "",
+          description: project.projectDescription?.trim() || "",
+          role: project.responsibilities?.trim() || "",
+          roles_responsibilities: project.responsibilities?.trim() || "",
+        }))
+        .filter((entry) =>
+          entry.project_name ||
+          entry.customer_company ||
+          entry.start_date ||
+          entry.end_date ||
+          entry.description ||
+          entry.role
+        ),
+      languages: storedProfile?.languages?.length
+        ? storedProfile.languages
+            .map((entry) => ({
+              language: entry.language?.trim() || "",
+              language_name: entry.language?.trim() || "",
+              read: entry.read?.trim() || "",
+              write: entry.write?.trim() || "",
+              speak: entry.speak?.trim() || "",
+            }))
+            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+        : [],
+      language_details: storedProfile?.languages?.length
+        ? storedProfile.languages
+            .map((entry) => ({
+              language: entry.language?.trim() || "",
+              language_name: entry.language?.trim() || "",
+              read: entry.read?.trim() || "",
+              write: entry.write?.trim() || "",
+              speak: entry.speak?.trim() || "",
+            }))
+            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+        : [],
+      language_table: storedProfile?.languages?.length
+        ? storedProfile.languages
+            .map((entry) => ({
+              language: entry.language?.trim() || "",
+              language_name: entry.language?.trim() || "",
+              read: entry.read?.trim() || "",
+              write: entry.write?.trim() || "",
+              speak: entry.speak?.trim() || "",
+            }))
+            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+        : [],
+      known_languages: storedProfile?.languages?.length
+        ? storedProfile.languages
+            .map((entry) => entry.language?.trim() || "")
+            .filter(Boolean)
+            .join(", ")
+        : "",
+      work_experience: workExperienceTable,
+    };
+
+    const existingEnvelope = profileName ? await fetchExistingProfileEnvelope(profileName) : null;
+    const editableProfileFields = [
+      "name",
+      "full_name",
+      "email",
+      "first_name",
+      "last_name",
+      "date_of_birth",
+      "gender",
+      "country_code",
+      "contact_no",
+      "alternative_email",
+      "current_location",
+      "preferred_location",
+      "profile_image",
+      "state",
+    ];
+    const editableProfileVersionFields = [
+      "name",
+      "version",
+      "profile",
+      "professional_title",
+      "experience_years",
+      "experience_months",
+      "current_salary",
+      "current_salary_currency",
+      "professional_summary",
+      "current_location",
+      "nationality",
+      "preferred_location",
+      "profile_image",
+      "skills_table",
+      "key_skills",
+      "education_qualifications",
+      "certification_table",
+      "external_profile_links",
+      "projects_table",
+      "languages",
+      "language_details",
+      "language_table",
+      "known_languages",
+      "work_experience",
+      "mode",
+    ];
+
+    const mergedProfilePayload = mergeWithExistingObject(
+      pickObjectFields(existingEnvelope?.profile, editableProfileFields),
+      nextProfilePayload as JsonRecord
+    );
+    const mergedProfileVersionPayload = mergeWithExistingObject(
+      pickObjectFields(existingEnvelope?.profile_version, editableProfileVersionFields),
+      nextProfileVersionPayload as JsonRecord
+    );
+
+    setIsSubmittingProfile(true);
+    try {
+      const response = await saveProfile({
+        profile: profileName || undefined,
+        full_name: fullName,
+        email,
+        professional_title: storedProfile?.professionalTitle?.trim() || undefined,
+        total_experience: totalExperience,
+        experience_years: experienceYearsValue,
+        experience_months: experienceMonthsValue,
+        current_salary: currentSalaryValue,
+        current_salary_per_hour: currentSalaryValue,
+        current_salary_currency: currentSalaryCurrencyValue,
+        salary_per_hour: currentSalaryValue,
+        salary_currency: currentSalaryCurrencyValue,
+        current_location: normalizedCurrentLocation || undefined,
+        profile_completion: profileCompletionPercentage,
+        completion_percentage: profileCompletionPercentage,
+        key_skills: keySkills.length ? keySkills : undefined,
+        education_details: educationDetails.length ? educationDetails : undefined,
+        profile_doc: mergedProfilePayload,
+        profile_version: mergedProfileVersionPayload,
+        action: "save",
+        mode: profileName ? "edit" : "new",
+      });
+
+      const messageRoot =
+        response.message && typeof response.message === "object"
+          ? (response.message as Record<string, unknown>)
+          : null;
+      const savedProfileName =
+        (typeof (response as Record<string, unknown>).profile === "string" &&
+          ((response as Record<string, unknown>).profile as string).trim()) ||
+        (typeof response.profile_name === "string" && response.profile_name.trim()) ||
+        (messageRoot && typeof messageRoot.profile === "string" && messageRoot.profile.trim()) ||
+        (messageRoot && typeof messageRoot.profile_name === "string" && messageRoot.profile_name.trim()) ||
+        "";
+
+      if (savedProfileName) {
+        profileName = savedProfileName;
+        setProfileName(savedProfileName);
+      }
+
+      setDraftPopup({
+        open: true,
+        variant: "success",
+        title: "Draft saved",
+        message: "Your latest changes have been saved.",
+      });
+    } catch (error) {
+      setDraftPopup({
+        open: true,
+        variant: "error",
+        title: "Unable to save draft",
+        message: error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
       setIsSubmittingProfile(false);
     }
@@ -2276,6 +2636,15 @@ function SkillsProjectsPageContent() {
         >
           Previous
         </Button>
+        <Button
+          variant="outline"
+          fullWidth={false}
+          className="px-6 sm:px-8"
+          onClick={() => void handleSaveDraft()}
+          disabled={isSubmittingProfile}
+        >
+          {isSubmittingProfile ? "Saving..." : "Save Draft"}
+        </Button>
         <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => void handleFinish()} disabled={isSubmittingProfile}>
           {isSubmittingProfile ? "Saving..." : "Finish"}
         </Button>
@@ -2327,6 +2696,14 @@ function SkillsProjectsPageContent() {
           </div>
         </div>
       ) : null}
+
+      <StatusPopup
+        open={draftPopup.open}
+        variant={draftPopup.variant}
+        title={draftPopup.title}
+        message={draftPopup.message}
+        onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }
@@ -2335,12 +2712,22 @@ async function resolveProfileNameByEmail(email: string): Promise<string> {
   const normalized = email.trim();
   if (!normalized) return "";
   try {
-    const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
     resolverUrl.searchParams.set("email", normalized);
     const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
     if (!resolverRes.ok) return "";
-    const resolverData = (await resolverRes.json()) as { profile_name?: string };
-    return resolverData.profile_name?.trim() || "";
+    const resolverData = (await resolverRes.json()) as JsonRecord;
+    const root =
+      resolverData.data && typeof resolverData.data === "object"
+        ? (resolverData.data as JsonRecord)
+        : resolverData.message && typeof resolverData.message === "object"
+          ? (resolverData.message as JsonRecord)
+          : resolverData;
+    const profile =
+      root.profile && typeof root.profile === "object"
+        ? (root.profile as JsonRecord)
+        : {};
+    return typeof profile.name === "string" ? profile.name.trim() : "";
   } catch {
     return "";
   }

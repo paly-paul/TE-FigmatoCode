@@ -23,7 +23,7 @@ import {
   createPreProfile,
   generateProfileFromPreProfile,
   getCandidateProfileData,
-  saveProfile,
+  getCandidateProfileDataByEmail,
   uploadProfileFile,
 } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
@@ -81,7 +81,24 @@ function extractUpdatedResumeRef(uploadResponse: Record<string, unknown> | null)
       ? (uploadResponse.data as Record<string, unknown>)
       : {},
   ];
-  const candidateKeys = ["file_url", "fileUrl", "url", "name", "file_name", "fileName"];
+  const candidateKeys = [
+    "updated_resume",
+    "updatedResume",
+    "resume_url",
+    "resumeUrl",
+    "resume_file",
+    "resumeFile",
+    "profile_resume",
+    "profileResume",
+    "profile_doc",
+    "profileDoc",
+    "file_url",
+    "fileUrl",
+    "url",
+    "name",
+    "file_name",
+    "fileName",
+  ];
   for (const root of roots) {
     for (const key of candidateKeys) {
       const value = root[key];
@@ -178,12 +195,22 @@ async function tryResolveProfileNameByEmail(email: string): Promise<string> {
   const normalized = email.trim();
   if (!normalized) return "";
   try {
-    const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
     resolverUrl.searchParams.set("email", normalized);
     const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
     if (!resolverRes.ok) return "";
-    const resolverData = (await resolverRes.json()) as { profile_name?: string };
-    return resolverData.profile_name?.trim() || "";
+    const resolverData = (await resolverRes.json()) as Record<string, unknown>;
+    const root =
+      resolverData.data && typeof resolverData.data === "object"
+        ? (resolverData.data as Record<string, unknown>)
+        : resolverData.message && typeof resolverData.message === "object"
+          ? (resolverData.message as Record<string, unknown>)
+          : resolverData;
+    const profile =
+      root.profile && typeof root.profile === "object"
+        ? (root.profile as Record<string, unknown>)
+        : {};
+    return typeof profile.name === "string" ? profile.name.trim() : "";
   } catch {
     return "";
   }
@@ -239,17 +266,8 @@ export default function CreateProfilePage() {
         const sessionEmail = getSessionLoginEmail()?.trim() || "";
         if (!sessionEmail) return;
 
-        const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
-        resolverUrl.searchParams.set("email", sessionEmail);
-        const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
-        if (!resolverRes.ok || cancelled) return;
-        const resolverData = (await resolverRes.json()) as { profile_name?: string };
-        const profileName = resolverData.profile_name?.trim() || "";
-        if (!profileName || cancelled) return;
-
-        const profileUrl = new URL("/api/method/get_data/", window.location.origin);
-        profileUrl.searchParams.set("doctype", "Profile");
-        profileUrl.searchParams.set("name", profileName);
+        const profileUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
+        profileUrl.searchParams.set("email", sessionEmail);
         const profileRes = await fetch(profileUrl.toString(), { method: "GET" });
         if (!profileRes.ok || cancelled) return;
         const profileData = (await profileRes.json()) as Record<string, unknown>;
@@ -331,8 +349,13 @@ export default function CreateProfilePage() {
         const uploadedFileData = await uploadProfileFile(file);
         console.log("Uploaded resume file:", uploadedFileData);
         updatedResumeRef = extractUpdatedResumeRef(uploadedFileData);
+        if (!updatedResumeRef) {
+          throw new Error("Upload response missing file reference.");
+        }
       } catch (err) {
         console.log("Upload profile file error:", err);
+        alert("Resume upload failed. Please try again.");
+        return;
       }
 
       // Prefill identity from the user session (instead of parsing the resume client-side).
@@ -365,6 +388,60 @@ export default function CreateProfilePage() {
 
       // Store immediately so downstream steps have basic identity, even if AI generation fails.
       upsertResumeProfile(identityData);
+
+      // Best-effort: parse resume now and persist Skills/Projects draft so the user can
+      // save Basic Details as Draft without losing the Skills & Projects prefill later.
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const parsedRes = await fetch("/api/parse-resume", {
+          method: "POST",
+          body: form,
+        });
+        if (parsedRes.ok) {
+          const parsed = (await parsedRes.json()) as Partial<ResumeProfileData>;
+          if (parsed && typeof parsed === "object") {
+            // Merge parsed fields into session profile without clobbering identity.
+            upsertResumeProfile({
+              ...parsed,
+              ...(identityData.email ? { email: identityData.email } : {}),
+              ...(identityData.firstName ? { firstName: identityData.firstName } : {}),
+              ...(identityData.lastName ? { lastName: identityData.lastName } : {}),
+            });
+          }
+
+          if (typeof window !== "undefined") {
+            const skills = Array.isArray(parsed?.keySkills) ? parsed.keySkills : [];
+            const tools = Array.isArray(parsed?.tools) ? parsed.tools : [];
+            const projects = Array.isArray(parsed?.projects) ? parsed.projects : [];
+            const experienceEntries = tools.map((tool) => ({
+              experience: tool,
+              experienceYears: "",
+              experienceReference: "",
+            }));
+
+            const resumeSkillsDraft = {
+              ...(skills.length ? { skills } : {}),
+              ...(experienceEntries.length ? { experienceEntries } : {}),
+              ...(projects.length ? { projects } : {}),
+            };
+
+            try {
+              const serialized = JSON.stringify(resumeSkillsDraft);
+              window.sessionStorage.setItem("resumeSkills", serialized);
+              const email = window.localStorage.getItem("te_login_email")?.trim().toLowerCase() || "";
+              const persistedKey = email ? `te_resume_profile_draft:${email}:resumeSkills` : "";
+              if (persistedKey) {
+                window.localStorage.setItem(persistedKey, serialized);
+              }
+            } catch {
+              // ignore storage errors
+            }
+          }
+        }
+      } catch {
+        // Resume parsing is best-effort only.
+      }
 
       const storedMeta: UploadedFile = updatedResumeRef ? { ...meta, updated_resume: updatedResumeRef } : meta;
       setUploadedFile(storedMeta);
@@ -442,6 +519,8 @@ export default function CreateProfilePage() {
       }
 
       const baseData = deriveFallbackResumeData(input.resumeFileName);
+      const updatedResumeRef = input.updatedResumeRef || "";
+      const hasResume = Boolean(updatedResumeRef);
       const derivedFullNameFromDisplayOrEmail =
         displayName ||
         sessionEmail
@@ -453,29 +532,30 @@ export default function CreateProfilePage() {
           .join(" ");
       const derivedFullNameFromFileName = [baseData.firstName, baseData.lastName].filter(Boolean).join(" ").trim();
       const derivedFullName = derivedFullNameFromDisplayOrEmail || derivedFullNameFromFileName;
-
-      if (!derivedFullName) {
-        alert("Unable to determine your full name. Please complete Basic Details first.");
-        return;
-      }
-
       const nameParts = derivedFullName.split(/\s+/).filter(Boolean);
       const firstName = nameParts[0] || "";
       const lastName = nameParts.slice(1).join(" ");
 
-      const updatedResumeRef = input.updatedResumeRef || "";
-
-      const identityData: ResumeProfileData = {
-        ...baseData,
-        ...(sessionEmail ? { email: sessionEmail } : {}),
-        ...(firstName ? { firstName } : {}),
-        ...(lastName ? { lastName } : {}),
-      };
-      upsertResumeProfile(identityData);
+      if (hasResume) {
+        if (!derivedFullName) {
+          alert("Unable to determine your full name. Please complete Basic Details first.");
+          return;
+        }
+        const identityData: ResumeProfileData = {
+          ...baseData,
+          ...(sessionEmail ? { email: sessionEmail } : {}),
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+        };
+        upsertResumeProfile(identityData);
+      } else {
+        // Continue-without-resume flow should start with empty fields on Basic Details.
+        clearResumeProfile();
+      }
 
       let effectiveProfileId = "";
       try {
-        if (updatedResumeRef) {
+        if (hasResume) {
           const createPreProfilePayload = new FormData();
           createPreProfilePayload.append("email", sessionEmail);
           createPreProfilePayload.append("full_name", derivedFullName);
@@ -490,32 +570,6 @@ export default function CreateProfilePage() {
             effectiveProfileId = generatedProfileName;
             setProfileName(generatedProfileName);
             setCandidateId(generatedProfileName);
-          }
-        } else {
-          const createEditResponse = await saveProfile({
-            full_name: derivedFullName,
-            email: sessionEmail,
-            action: "save",
-          });
-
-          const inferredProfileId =
-            (typeof createEditResponse.profile_name === "string" && createEditResponse.profile_name.trim()) ||
-            (typeof createEditResponse.profile === "string" && createEditResponse.profile.trim()) ||
-            "";
-          if (inferredProfileId) {
-            effectiveProfileId = inferredProfileId;
-            setProfileName(inferredProfileId);
-            setCandidateId(inferredProfileId);
-          }
-
-          const preProfileName = extractPreProfileNameFromCreateEditProfileResponse(createEditResponse);
-          if (preProfileName) {
-            const { profileName: generatedProfileName } = await generateProfileFromPreProfile(preProfileName);
-            if (generatedProfileName) {
-              effectiveProfileId = generatedProfileName;
-              setProfileName(generatedProfileName);
-              setCandidateId(generatedProfileName);
-            }
           }
         }
       } catch (error) {
@@ -552,7 +606,8 @@ export default function CreateProfilePage() {
         }
 
         // Final fallback: resolve by email (if backend supports it).
-        if (!effectiveProfileId) {
+        // Only relevant when a resume-based generation is expected.
+        if (hasResume && !effectiveProfileId) {
           const resolved = await tryResolveProfileNameByEmail(sessionEmail);
           if (resolved) {
             effectiveProfileId = resolved;
@@ -562,39 +617,36 @@ export default function CreateProfilePage() {
         }
       }
 
-      if (!effectiveProfileId) {
-        alert("Unable to create/update profile. Please try again.");
+      if (hasResume && !effectiveProfileId) {
+        alert("Unable to generate your profile from the resume. Please try again.");
         return;
       }
 
-      if (updatedResumeRef) {
-        try {
-          await saveProfile({
-            profile: effectiveProfileId,
-            full_name: derivedFullName,
-            email: sessionEmail,
-            action: "save",
-          });
-        } catch {
-          // Continue to basic details even if the best-effort save call fails.
-        }
-      }
+      // Do not create/edit profile on the backend here.
+      // The backend profile will be created/updated on the final "Finish" step.
 
       // Prefill from backend profile, but never crash the wizard if backend generation rolled back.
       // Some backends may reference a profile id in messages that doesn't actually exist.
       let backendProfile: ResumeProfileData | null = null;
-      try {
-        backendProfile = await getCandidateProfileData(effectiveProfileId);
-      } catch {
-        const resolved = await tryResolveProfileNameByEmail(sessionEmail);
-        if (resolved && resolved !== effectiveProfileId) {
-          effectiveProfileId = resolved;
-          setProfileName(resolved);
-          setCandidateId(resolved);
+      if (hasResume && effectiveProfileId) {
+        try {
+          // Prefer the resolved profile id so we hydrate the exact generated profile version.
+          backendProfile = await getCandidateProfileData(effectiveProfileId);
+        } catch {
           try {
-            backendProfile = await getCandidateProfileData(resolved);
+            backendProfile = await getCandidateProfileDataByEmail(sessionEmail);
           } catch {
-            backendProfile = null;
+            const resolved = await tryResolveProfileNameByEmail(sessionEmail);
+            if (resolved && resolved !== effectiveProfileId) {
+              effectiveProfileId = resolved;
+              setProfileName(resolved);
+              setCandidateId(resolved);
+              try {
+                backendProfile = await getCandidateProfileData(resolved);
+              } catch {
+                backendProfile = null;
+              }
+            }
           }
         }
       }

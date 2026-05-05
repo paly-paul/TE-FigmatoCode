@@ -176,7 +176,18 @@ export async function getRecommendedJobs(profileName: string): Promise<Recommend
   return normalizeRecommendedJobs(data);
 }
 
-export async function markInterestedInJob(candidateId: string, jobId: string): Promise<void> {
+export type MarkInterestedInJobResponse = {
+  message?: {
+    status?: string;
+    message?: string;
+    document?: string;
+  };
+};
+
+export async function markInterestedInJob(
+  candidateId: string,
+  jobId: string
+): Promise<MarkInterestedInJobResponse> {
   const url = new URL("/api/method/im_interested_in_job", window.location.origin);
   url.searchParams.set("candidate_id", candidateId.trim());
   url.searchParams.set("job_id", jobId.trim());
@@ -189,6 +200,7 @@ export async function markInterestedInJob(candidateId: string, jobId: string): P
   if (!res.ok) {
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
+  return data as MarkInterestedInJobResponse;
 }
 
 function collectApplicationRows(payload: Record<string, unknown>): Record<string, unknown>[] {

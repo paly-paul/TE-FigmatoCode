@@ -50,13 +50,20 @@ export function useSignupSubmit() {
 async function checkExistingSignupEmail(email: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
   try {
-    const resolverUrl = new URL("/api/method/resolve_profile_name/", window.location.origin);
+    const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
     resolverUrl.searchParams.set("email", email.trim().toLowerCase());
     const res = await fetch(resolverUrl.toString(), { method: "GET" });
     if (res.status === 404) return false;
     if (!res.ok) return false;
-    const data = (await res.json()) as { profile_name?: string };
-    return Boolean(data.profile_name?.trim());
+    const data = (await res.json()) as Record<string, unknown>;
+    const root =
+      data.data && typeof data.data === "object"
+        ? (data.data as Record<string, unknown>)
+        : data.message && typeof data.message === "object"
+          ? (data.message as Record<string, unknown>)
+          : data;
+    const profile = root.profile && typeof root.profile === "object" ? (root.profile as Record<string, unknown>) : {};
+    return typeof profile.name === "string" && profile.name.trim().length > 0;
   } catch {
     // Don't block signup when lookup fails; backend create call still enforces duplicate checks.
     return false;
