@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
-  CheckCircle2,
   Search,
   MapPin,
   Bookmark,
@@ -55,7 +54,7 @@ import {
   postProposalCandidateAcceptance,
   postProposalCandidateNegotiation,
 } from "@/services/jobs/actionCenter";
-import { updateJobSearchStatus } from "@/services/jobs/jobSearchStatus";
+import { activateJobSearch, postJobPause } from "@/services/jobs/jobSearchStatus";
 import { isLikelyJobOpeningDocName, postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
 import type { CandidateActionableApi } from "@/services/jobs/types";
 import type { CandidateActionableSlotApi } from "@/services/jobs/types";
@@ -467,7 +466,11 @@ function recencyScoreFromPostedTime(postedTime: string): number {
 function addMonthsIso(start: Date, months: number): string {
   const next = new Date(start);
   next.setMonth(next.getMonth() + months);
-  return next.toISOString();
+  return next.toISOString().slice(0, 10);
+}
+
+function toIsoDateYmd(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 export default function TalentEngineDashboard() {
@@ -483,8 +486,6 @@ export default function TalentEngineDashboard() {
   const [actionCenterSeeAll, setActionCenterSeeAll] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
-  const [drawerSuccessMessage, setDrawerSuccessMessage] = useState<string | null>(null);
-  const [showApplicationSuccess, setShowApplicationSuccess] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
   const [showReferModal, setShowReferModal] = useState(false);
@@ -540,42 +541,35 @@ export default function TalentEngineDashboard() {
   const generalCardsSignatureRef = useRef("");
   const recommendedJobsSignatureRef = useRef("");
 
-  const resolveJobSearchUserId = () => {
-    const fromCandidate = candidateId?.trim();
-    if (fromCandidate) return fromCandidate;
+  const resolveJobSearchProfileId = () => {
     const fromProfile = profileId?.trim();
     if (fromProfile) return fromProfile;
+    const fromCandidate = candidateId?.trim();
+    if (fromCandidate) return fromCandidate;
     const fromEmail = getSessionLoginEmail()?.trim();
     if (fromEmail) return fromEmail;
     return "";
   };
 
   const sendActiveJobSearchStatus = async () => {
-    const userId = resolveJobSearchUserId();
-    if (!userId) return;
-    await updateJobSearchStatus({
-      userId,
-      jobSearchStatus: "ACTIVE",
-      isOpenToOpportunities: true,
-      pauseDuration: null,
-      updatedAt: new Date().toISOString(),
+    const profile_id = resolveJobSearchProfileId();
+    if (!profile_id) return;
+    await activateJobSearch({
+      profile_id,
     });
   };
 
   const sendPausedJobSearchStatus = async (durationMonths: number) => {
-    const userId = resolveJobSearchUserId();
-    if (!userId) return;
+    const profile_id = resolveJobSearchProfileId();
+    if (!profile_id) return;
     const now = new Date();
-    await updateJobSearchStatus({
-      userId,
-      jobSearchStatus: "PAUSED",
-      isOpenToOpportunities: false,
-      pauseDuration: {
-        value: durationMonths,
-        unit: "MONTHS",
-      },
-      resumeDate: addMonthsIso(now, durationMonths),
-      updatedAt: now.toISOString(),
+    await postJobPause({
+      profile_id,
+      job_search_status: "Paused",
+      is_open_to_opportunities: 0,
+      pause_duration: String(durationMonths),
+      resume_date: addMonthsIso(now, durationMonths),
+      updated_at: toIsoDateYmd(now),
     });
   };
 
@@ -1227,7 +1221,6 @@ export default function TalentEngineDashboard() {
       jobDocumentId: job.jobDocumentId,
     };
 
-    setDrawerSuccessMessage(null);
     const isSameJobAlreadyOpen =
       isDrawerOpen &&
       selectedAction?.type === "Job" &&
@@ -1384,11 +1377,6 @@ export default function TalentEngineDashboard() {
     })();
   }, [activeTab, candidateId]);
 
-  useEffect(() => {
-    if (!drawerSuccessMessage) return;
-    setShowApplicationSuccess(true);
-  }, [drawerSuccessMessage]);
-
   const handleDrawerPrimaryAction = (
     action: ActionCard,
     extras?: {
@@ -1522,11 +1510,7 @@ export default function TalentEngineDashboard() {
             const matchedRecommendedJob = apiRecommendedJobs.find(
               (job) => job.jobDocumentId === jobDocumentId
             );
-            const applyRes = await markInterestedInJob(candidateId, jobDocumentId);
-            const applyMsg = (applyRes as Record<string, unknown>)?.message as Record<string, unknown> | undefined;
-            setDrawerSuccessMessage(
-              (typeof applyMsg?.message === "string" && applyMsg.message.trim()) || "Applied successfully."
-            );
+            await markInterestedInJob(candidateId, jobDocumentId);
             setAppliedJobDocumentIds((prev) => {
               const next = new Set(prev);
               next.add(jobDocumentId);
@@ -1581,11 +1565,11 @@ export default function TalentEngineDashboard() {
     if (!Number.isFinite(durationMonths) || durationMonths <= 0) return false;
     try {
       await sendPausedJobSearchStatus(durationMonths);
+      setIsLookingForJob(false);
+      return true;
     } catch {
-      // Backend may not be ready yet; still update local state and show success.
+      return false;
     }
-    setIsLookingForJob(false);
-    return true;
   };
 
   const renderEmptyJobs = (message: string) => (
@@ -1618,10 +1602,9 @@ export default function TalentEngineDashboard() {
           void (async () => {
             try {
               await sendActiveJobSearchStatus();
-            } catch {
-              // Keep UX responsive even if backend update fails.
-            } finally {
               setIsLookingForJob(true);
+            } catch {
+              // Keep current state if activation fails.
             }
           })();
         }
@@ -1712,39 +1695,7 @@ export default function TalentEngineDashboard() {
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
         onRequestClarification={handleDrawerClarification}
-        successMessage={drawerSuccessMessage}
       />
-      {showApplicationSuccess ? (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-4">
-          <div className="relative w-full max-w-[450px] rounded-lg bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl">
-            <div className="relative flex flex-col items-center justify-center overflow-hidden text-center">
-              <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
-              <span className="absolute right-10 top-16 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
-              <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
-              <span className="absolute bottom-10 right-12 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
-              <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
-              <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
-              <div className="mb-4 rounded-full bg-emerald-100 p-3 text-emerald-600 shadow-sm">
-                <CheckCircle2 className="h-8 w-8" />
-              </div>
-              <p className="text-xl font-semibold text-gray-900">Application Submitted Successfully</p>
-              <p className="mt-2 text-sm text-gray-600">
-                Your interest has been shared with the recruiter. We&apos;ll notify you about the next steps.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowApplicationSuccess(false);
-                  setDrawerSuccessMessage(null);
-                }}
-                className="mt-5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <PauseJobSearchModal
         open={showPauseModal}
         onClose={() => setShowPauseModal(false)}
@@ -1776,10 +1727,9 @@ export default function TalentEngineDashboard() {
           void (async () => {
             try {
               await sendActiveJobSearchStatus();
-            } catch {
-              // Keep UX responsive even if backend update fails.
-            } finally {
               setIsLookingForJob(true);
+            } catch {
+              // Keep current state if activation fails.
             }
           })();
         }}

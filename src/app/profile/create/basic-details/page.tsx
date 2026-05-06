@@ -15,7 +15,7 @@ import {
   clearResumeWizardSession,
   hasProceededPastResumeUpload,
 } from "@/lib/profileSession";
-import { clearAuthSession, getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
+import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { getCandidateProfileData, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
@@ -1440,7 +1440,14 @@ function BasicDetailsPageContent() {
   }, []);
 
   useEffect(() => {
-    setShowUploadResumeShortcut(!hasProceededPastResumeUpload());
+    const queryParams = new URLSearchParams(window.location.search);
+    const queryProfileName =
+      queryParams.get("profile")?.trim() ||
+      queryParams.get("profile_name")?.trim() ||
+      "";
+    const effectiveProfileName = queryProfileName || getProfileName() || getCandidateId() || "";
+    const isEditMode = isLikelyDocId(effectiveProfileName);
+    setShowUploadResumeShortcut(!hasProceededPastResumeUpload() && !isEditMode);
   }, []);
 
   useEffect(() => {

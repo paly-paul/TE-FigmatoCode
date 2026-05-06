@@ -76,6 +76,7 @@ function sanitizePayloadObject(input: Record<string, unknown>): Record<string, u
   const output: Record<string, unknown> = {};
 
   for (const [key, rawValue] of Object.entries(input)) {
+    if (key === "work_experience") continue;
     if (rawValue === undefined || rawValue === null) continue;
     if (typeof rawValue === "string" && rawValue.trim() === "" && key !== "alternative_email") continue;
 
@@ -115,13 +116,19 @@ function sanitizePayloadObject(input: Record<string, unknown>): Record<string, u
 }
 
 export async function saveProfile(payload: SaveProfilePayload): Promise<Record<string, unknown>> {
+  const profileObject =
+    payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile)
+      ? normalizeContactFields(payload.profile as Record<string, unknown>)
+      : undefined;
+  const profileNameFromString =
+    typeof payload.profile === "string" ? payload.profile.trim() : "";
+
   const normalizedPayload = sanitizePayloadObject({
     ...normalizeContactFields(payload),
     ...(payload.mode ? { mode: payload.mode } : {}),
-    profile:
-      payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile)
-        ? normalizeContactFields(payload.profile as Record<string, unknown>)
-        : payload.profile,
+    ...(profileNameFromString ? { profile_name: payload.profile_name || profileNameFromString } : {}),
+    ...(profileNameFromString ? { profile_id: payload.profile_id || profileNameFromString } : {}),
+    ...(profileObject ? { profile: profileObject } : {}),
     profile_doc:
       payload.profile_doc && typeof payload.profile_doc === "object" && !Array.isArray(payload.profile_doc)
         ? normalizeContactFields(payload.profile_doc)
