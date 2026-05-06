@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
     Award,
     BriefcaseBusiness,
@@ -75,6 +75,8 @@ const EMPTY_PROFILE: ProfileData = {
     summary: "",
     experience: "",
     salary: "",
+    profileStrength: 0,
+    visibilityScore: 0,
     persona: "",
     personalInfo: {
         dob: "",
@@ -383,6 +385,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
 
 export default function MyProfilePage() {
     const router = useRouter();
+    const params = useParams<{ profileName?: string | string[] }>();
     const isMobile = useIsMobile();
     const [profileData, setProfileData] = useState<ProfileData>(EMPTY_PROFILE);
     const [activeProfile, setActiveProfile] = useState(true);
@@ -404,7 +407,9 @@ export default function MyProfilePage() {
     });
     const PROFILE = profileData;
     const profileImageSrc = PROFILE.profileImageUrl?.trim() || "";
-    const profileId = getProfileName()?.trim() || "";
+    const routeProfileParam = Array.isArray(params?.profileName) ? params.profileName[0] : params?.profileName;
+    const routeProfileId = typeof routeProfileParam === "string" ? decodeURIComponent(routeProfileParam).trim() : "";
+    const profileId = getProfileName()?.trim() || routeProfileId;
     const formattedPhone = formatContactNumber(PROFILE.phone, PROFILE.countryCode);
 
     const copyText = async (value: string, key: string) => {
@@ -440,7 +445,7 @@ export default function MyProfilePage() {
             }));
         }
 
-        const profileId = getProfileName();
+        const profileId = getProfileName()?.trim() || routeProfileId;
         if (!profileId) return;
         void (async () => {
             try {
@@ -453,7 +458,7 @@ export default function MyProfilePage() {
                 // Keep empty profile if API fails.
             }
         })();
-    }, []);
+    }, [routeProfileId]);
 
   const toggleSection = (key: keyof typeof openSections) => {
         setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -479,6 +484,7 @@ export default function MyProfilePage() {
     const resolveProfileIdForActions = async (): Promise<string | null> => {
         const fromSession = getProfileName()?.trim();
         if (fromSession) return fromSession;
+        if (routeProfileId) return routeProfileId;
         return null;
     };
 

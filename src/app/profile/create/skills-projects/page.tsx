@@ -150,48 +150,6 @@ function toLanguageCode(value: string | undefined): string {
   return alpha.length >= 2 ? alpha.slice(0, 2) : "";
 }
 
-function extractSkillLabel(value: unknown): string {
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    if (!normalized) return "";
-    if (
-      (normalized.startsWith("[") && normalized.endsWith("]")) ||
-      (normalized.startsWith("{") && normalized.endsWith("}"))
-    ) {
-      try {
-        return extractSkillLabel(JSON.parse(normalized) as unknown);
-      } catch {
-        return normalized;
-      }
-    }
-    return normalized;
-  }
-  if (Array.isArray(value)) {
-    for (const row of value) {
-      const extracted = extractSkillLabel(row);
-      if (extracted) return extracted;
-    }
-    return "";
-  }
-  if (!value || typeof value !== "object") return "";
-  const record = value as Record<string, unknown>;
-  return (
-    extractSkillLabel(record.key_skills) ||
-    extractSkillLabel(record.skill) ||
-    extractSkillLabel(record.skill_name) ||
-    extractSkillLabel(record.tool_name) ||
-    extractSkillLabel(record.name)
-  );
-}
-
-function getToolLabelFromRow(row: Record<string, unknown>): string {
-  if (typeof row.tool_name === "string" && row.tool_name.trim()) return row.tool_name.trim();
-  if (typeof row.tool === "string" && row.tool.trim()) return row.tool.trim();
-  if (typeof row.skill_name === "string" && row.skill_name.trim()) return row.skill_name.trim();
-  if (typeof row.skill === "string" && row.skill.trim()) return row.skill.trim();
-  return extractSkillLabel(row.key_skills);
-}
-
 // const SKILL_OPTIONS = [
 //   "React",
 //   "Next.js",
@@ -870,7 +828,13 @@ function SkillsProjectsPageContent() {
               for (const item of toolsTableForYears) {
                 if (!item || typeof item !== "object") continue;
                 const row: any = item;
-                const toolName = getToolLabelFromRow(row);
+                const skillFromJson = collectSkillStringsFromUnknown(row?.key_skills)?.[0] ?? "";
+                const toolName =
+                  typeof row?.tool_name === "string"
+                    ? row.tool_name.trim()
+                    : typeof row?.skill === "string"
+                      ? row.skill.trim()
+                      : skillFromJson;
                 if (!toolName) continue;
                 const yearsRaw =
                   typeof row?.experience_years === "number"
@@ -896,7 +860,17 @@ function SkillsProjectsPageContent() {
 
               const mapped = toolsTableRaw
                 .map((row: any) => {
-                  const tool = getToolLabelFromRow(row);
+                  const skillFromJson = collectSkillStringsFromUnknown(row?.key_skills)?.[0] ?? "";
+                  const tool =
+                    typeof row?.tool_name === "string"
+                      ? row.tool_name.trim()
+                      : typeof row?.tool === "string"
+                        ? row.tool.trim()
+                        : typeof row?.skill_name === "string"
+                          ? row.skill_name.trim()
+                          : typeof row?.skill === "string"
+                            ? row.skill.trim()
+                            : skillFromJson;
                   if (!tool) return null;
                   let years =
                     typeof row?.experience_years === "number"
@@ -3008,8 +2982,28 @@ function dedupeSkills(values: string[]) {
   ).slice(0, 30);
 }
 
+function parseJsonLike(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+  ) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function collectSkillStringsFromUnknown(value: unknown): string[] {
   if (typeof value === "string") {
+    const parsed = parseJsonLike(value);
+    if (parsed !== undefined) {
+      return collectSkillStringsFromUnknown(parsed);
+    }
     return value
       .split(/,|\/|;|\||•|\n/g)
       .map((part) => part.trim())
