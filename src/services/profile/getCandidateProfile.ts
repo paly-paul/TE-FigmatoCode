@@ -183,8 +183,28 @@ function splitSkillText(value: string) {
     .filter(Boolean);
 }
 
+function parseJsonLike(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+  ) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function collectSkillStrings(value: unknown): string[] {
   if (typeof value === "string") {
+    const parsed = parseJsonLike(value);
+    if (parsed !== undefined) {
+      return collectSkillStrings(parsed);
+    }
     const normalized = value.trim();
     if (!normalized || looksLikeRecordId(normalized)) return [];
     return splitSkillText(normalized).filter((part) => !looksLikeRecordId(part));
@@ -581,8 +601,10 @@ function mapToolsTableToWorkExperience(value: unknown): ResumeProfileData["workE
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
+      const parsedSkillTokens = collectSkillStrings(record.key_skills);
       const toolName =
-        pickDisplayString(record, "tool_name", "toolName", "skill", "key_skills", "name") ??
+        pickDisplayString(record, "tool_name", "toolName", "skill", "name") ??
+        parsedSkillTokens[0] ??
         undefined;
       const years = pickString(record, "experience_years", "experience", "years", "duration");
       if (!toolName && !years) return null;
