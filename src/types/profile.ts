@@ -65,6 +65,7 @@ export interface ResumeProfileData {
   currentLocation?: string;
   preferredLocation?: string;
   workAuthorization?: string;
+  preferredIndustry?: string;
   profileImageUrl?: string;
   profileStrength?: number;
   visibilityScore?: number;

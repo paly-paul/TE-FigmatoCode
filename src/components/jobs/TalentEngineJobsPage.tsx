@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
   Calendar,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  DollarSign,
   MapPin,
   Search,
   Share2,
@@ -586,7 +586,7 @@ function JobsCard({
   /** Mobile layout: no skill chips, pipe in location, wallet icon, tighter spacing */
   compact?: boolean;
 }) {
-  const PayIcon = compact ? Wallet : DollarSign;
+  const PayIcon = Wallet;
   const iconClass = compact ? "h-4 w-4 shrink-0 text-slate-500" : "flex-shrink-0";
 
   return (
@@ -723,6 +723,7 @@ export default function TalentEngineJobsPage() {
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [drawerSuccessMessage, setDrawerSuccessMessage] = useState<string | null>(null);
+  const [showApplicationSuccess, setShowApplicationSuccess] = useState(false);
   const [baseSkills, setBaseSkills] = useState<string[]>([]);
   const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
@@ -802,10 +803,8 @@ export default function TalentEngineJobsPage() {
     };
   }, []);
 
-  const jobsSource = useMemo(
-    () => (hasAttemptedJobsLoad ? apiRecommendedJobs : JOBS),
-    [apiRecommendedJobs, hasAttemptedJobsLoad]
-  );
+  const jobsSource = useMemo(() => apiRecommendedJobs, [apiRecommendedJobs]);
+  const isInitialJobsLoading = !hasAttemptedJobsLoad;
 
   useEffect(() => {
     const source = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
@@ -931,7 +930,7 @@ export default function TalentEngineJobsPage() {
       byId.set(id, label);
     }
 
-    const sourceJobs = hasAttemptedJobsLoad && apiRecommendedJobs.length > 0 ? apiRecommendedJobs : JOBS;
+    const sourceJobs = apiRecommendedJobs;
     for (const job of sourceJobs) {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
@@ -1118,8 +1117,14 @@ export default function TalentEngineJobsPage() {
     const res = await markInterestedInJob(cid, jobDocumentId);
     const msg = res?.message?.message?.trim();
     setDrawerSuccessMessage(msg || "Applied successfully.");
+    setIsDrawerOpen(false);
     return true;
   };
+
+  useEffect(() => {
+    if (!drawerSuccessMessage) return;
+    setShowApplicationSuccess(true);
+  }, [drawerSuccessMessage]);
 
   const isCompactJobsLayout = useIsBelowLg();
 
@@ -1201,7 +1206,13 @@ export default function TalentEngineJobsPage() {
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       </div>
 
-      {filteredJobs.length > 0 ? (
+      {isInitialJobsLoading ? (
+        <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          <p className="mb-1 text-sm font-semibold text-gray-900">Loading jobs for you...</p>
+          <p className="text-sm text-gray-500">We are finding the best matches based on your profile.</p>
+        </div>
+      ) : filteredJobs.length > 0 ? (
         <div className="flex flex-col gap-4">
           {filteredJobs.map((job) => (
             <JobsCard
@@ -1326,7 +1337,15 @@ export default function TalentEngineJobsPage() {
               </div>
             </div>
 
-            {filteredJobs.length > 0 ? (
+            {isInitialJobsLoading ? (
+              <div className="bg-white border border-gray-200 rounded-sm px-6 py-12 text-center">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                <p className="text-sm font-semibold text-gray-900 mb-1">Loading jobs for you...</p>
+                <p className="text-sm text-gray-500">
+                  We are finding the best matches based on your profile.
+                </p>
+              </div>
+            ) : filteredJobs.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredJobs.map((job) => (
                   <JobsCard
@@ -1384,6 +1403,37 @@ export default function TalentEngineJobsPage() {
         successMessage={drawerSuccessMessage}
       />
       <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
+      {showApplicationSuccess ? (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-4">
+          <div className="relative w-full max-w-[450px] rounded-lg bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl">
+            <div className="relative flex flex-col items-center justify-center overflow-hidden text-center">
+              <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+              <span className="absolute right-10 top-16 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
+              <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
+              <span className="absolute bottom-10 right-12 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
+              <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
+              <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
+              <div className="mb-4 rounded-full bg-emerald-100 p-3 text-emerald-600 shadow-sm">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+              <p className="text-xl font-semibold text-gray-900">Application Submitted Successfully</p>
+              <p className="mt-2 text-sm text-gray-600">
+                Your interest has been shared with the recruiter. We&apos;ll notify you about the next steps.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowApplicationSuccess(false);
+                  setDrawerSuccessMessage(null);
+                }}
+                className="mt-5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 

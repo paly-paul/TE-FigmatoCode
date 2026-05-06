@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // Frappe requires the full dotted path; bare `send_reset_password` is not a whitelisted command name.
+  // Frappe requires the full dotted path; bare `send_reset_password_otp` is not a whitelisted command name.
   const methodPath =
     process.env.BACKEND_SEND_RESET_PASSWORD_METHOD?.trim() ||
     "te_frappe_6fe.api.otp.send_reset_password_otp";
@@ -63,3 +63,4 @@ export async function POST(request: Request) {
   res.headers.set("x-upstream-url", url);
   return res;
 }
+

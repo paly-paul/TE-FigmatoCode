@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { StatusPopup } from "@/components/ui/StatusPopup";
 
 interface VisibilityScoreCardProps {
   value: number;
@@ -23,7 +24,7 @@ export default function VisibilityScoreCard({
   ctaLabel = "Improve Score",
   onCtaClick,
 }: VisibilityScoreCardProps) {
-  const router = useRouter();
+  const [showPremiumPopup, setShowPremiumPopup] = useState(false);
   const radius = compact ? 60 : 80;
   const circumference = Math.PI * radius;
   const offset = circumference - (value / 100) * circumference;
@@ -33,8 +34,7 @@ export default function VisibilityScoreCard({
       onCtaClick();
       return;
     }
-
-    router.push("/dashboard/visibility-score");
+    setShowPremiumPopup(true);
   };
 
   return (
@@ -43,34 +43,37 @@ export default function VisibilityScoreCard({
       <p className="text-sm text-gray-600 mb-4">{description}</p>
 
       <div className={`relative w-full flex items-center justify-center ${compact ? "h-36" : "h-40 sm:h-52"}`}>
-        <svg
-          viewBox={compact ? "0 0 190 120" : "0 0 230 140"}
-          className={`w-full ${compact ? "max-w-[220px]" : "max-w-[260px]"} h-full`}
-        >
-          <path
-            d={compact ? "M25 95 A60 60 0 0 1 165 95" : "M20 110 A80 80 0 0 1 210 110"}
-            stroke="#e5e7eb"
-            strokeWidth={compact ? "14" : "18"}
-            fill="none"
-            strokeLinecap="butt"
-          />
-          <path
-            d={compact ? "M25 95 A60 60 0 0 1 165 95" : "M20 110 A80 80 0 0 1 210 110"}
-            stroke="#16a34a"
-            strokeWidth={compact ? "14" : "18"}
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="butt"
-          />
-        </svg>
-        <div
-          className={`absolute inset-x-0 flex justify-center font-bold text-gray-900 ${
-            compact ? "bottom-7 text-2xl" : "bottom-8 sm:bottom-10 text-2xl sm:text-3xl"
-          }`}
-        >
-          {value}
+        <div className="blur-[8px] opacity-40 select-none pointer-events-none">
+          <svg
+            viewBox={compact ? "0 0 190 120" : "0 0 230 140"}
+            className={`w-full ${compact ? "max-w-[220px]" : "max-w-[260px]"} h-full`}
+          >
+            <path
+              d={compact ? "M25 95 A60 60 0 0 1 165 95" : "M20 110 A80 80 0 0 1 210 110"}
+              stroke="#e5e7eb"
+              strokeWidth={compact ? "14" : "18"}
+              fill="none"
+              strokeLinecap="butt"
+            />
+            <path
+              d={compact ? "M25 95 A60 60 0 0 1 165 95" : "M20 110 A80 80 0 0 1 210 110"}
+              stroke="#16a34a"
+              strokeWidth={compact ? "14" : "18"}
+              fill="none"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+              strokeLinecap="butt"
+            />
+          </svg>
+          <div
+            className={`absolute inset-x-0 flex justify-center font-bold text-gray-900 ${
+              compact ? "bottom-7 text-2xl" : "bottom-8 sm:bottom-10 text-2xl sm:text-3xl"
+            }`}
+          >
+            {value}
+          </div>
         </div>
+        <div className="pointer-events-none absolute inset-0 rounded-lg bg-white/35" />
       </div>
 
       <button
@@ -80,6 +83,14 @@ export default function VisibilityScoreCard({
       >
         {ctaLabel}
       </button>
+
+      <StatusPopup
+        open={showPremiumPopup}
+        variant="success"
+        title="Premium Feature"
+        message="This feature is part of our Premium experience. Upgrade to explore smarter learning recommendations."
+        onClose={() => setShowPremiumPopup(false)}
+      />
     </div>
   );
 }

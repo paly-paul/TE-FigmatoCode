@@ -969,6 +969,10 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
         "workAuthorization"
       ) ??
       pickString(root, "work_authorized_countries", "work_authorization", "workAuthorization"),
+    preferredIndustry:
+      pickString(profileVersion, "preferred_industry", "industry", "preferredIndustry") ??
+      pickString(profileRecord, "preferred_industry", "industry", "preferredIndustry") ??
+      pickString(root, "preferred_industry", "industry", "preferredIndustry"),
     profileImageUrl:
       pickNestedImageUrl(
         profileRecord,

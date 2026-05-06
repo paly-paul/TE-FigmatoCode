@@ -12,10 +12,11 @@ import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import {
   clearResumeWizardSession,
+  hasProceededPastResumeUpload,
   readResumeProfile,
   upsertResumeProfile,
 } from "@/lib/profileSession";
-import { getCandidateProfileData, getCandidateProfileDataByEmail, saveProfile } from "@/services/profile";
+import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import type { ResumeProfileData } from "@/types/profile";
@@ -336,12 +337,17 @@ function SkillsProjectsPageContent() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
     experiences: false,
     projects: false,
   });
+
+  useEffect(() => {
+    setShowUploadResumeShortcut(!hasProceededPastResumeUpload());
+  }, []);
 
   function buildCurrentSnapshot(): string {
     return JSON.stringify({
@@ -698,17 +704,6 @@ function SkillsProjectsPageContent() {
           setProfileName(queryProfileName);
         }
 
-        if (!profileName) {
-          const sessionEmail = getSessionLoginEmail()?.trim() || "";
-          if (sessionEmail) {
-            const resolvedByEmail = await resolveProfileNameByEmail(sessionEmail);
-            if (resolvedByEmail) {
-              profileName = resolvedByEmail;
-              setProfileName(profileName);
-            }
-          }
-        }
-
         if (!profileName) return;
         const isEditMode = isLikelyDocId(profileName);
 
@@ -717,12 +712,7 @@ function SkillsProjectsPageContent() {
         const generatedSkills = await fetchGeneratedSkillsForProfile(profileName);
         if (cancelled) return;
 
-        const sessionEmail = getSessionLoginEmail()?.trim() || "";
-        const backendProfile = isLikelyDocId(profileName)
-          ? await getCandidateProfileData(profileName)
-          : sessionEmail
-            ? await getCandidateProfileDataByEmail(sessionEmail)
-            : null;
+        const backendProfile = await getCandidateProfileData(profileName);
         if (!backendProfile) return;
         if (cancelled) return;
         // Keep session profile synchronized without clobbering newer manual edits
@@ -780,22 +770,11 @@ function SkillsProjectsPageContent() {
 
         // Also fetch raw profile payload so we can map skills_table/tools + projects_table fully.
         try {
-          const rawRes = await (async () => {
-            if (isEditMode) {
-              return fetch("/api/method/get_data/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ doctype: "Profile", name: profileName }),
-              });
-            }
-            if (sessionEmail) {
-              const rawUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
-              rawUrl.searchParams.set("email", sessionEmail);
-              return fetch(rawUrl.toString(), { method: "GET" });
-            }
-            return null;
-          })();
-          if (!rawRes) return;
+          const rawRes = await fetch("/api/method/get_data/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ doctype: "Profile", name: profileName }),
+          });
           if (rawRes.ok) {
             const raw = (await rawRes.json()) as any;
             const root = raw?.data ?? raw?.message?.data ?? raw?.message ?? raw;
@@ -1279,7 +1258,7 @@ function SkillsProjectsPageContent() {
       searchParams.get("profile")?.trim() ||
       searchParams.get("profile_name")?.trim() ||
       "";
-    let profileName = queryProfileName || getProfileName() || "";
+    let profileName = queryProfileName || getProfileName() || getCandidateId() || "";
     setLastSubmitWasEdit(Boolean(profileName));
 
     const firstName = storedProfile?.firstName?.trim() || "";
@@ -1292,11 +1271,8 @@ function SkillsProjectsPageContent() {
     }
 
     if (!profileName) {
-      const resolved = await resolveProfileNameByEmail(email);
-      if (resolved) {
-        profileName = resolved;
-        setProfileName(resolved);
-      }
+      alert("Missing profile id. Please go back and continue from the Create page.");
+      return;
     }
 
     const keySkills = dedupeSkills(skills);
@@ -1617,7 +1593,7 @@ function SkillsProjectsPageContent() {
       searchParams.get("profile")?.trim() ||
       searchParams.get("profile_name")?.trim() ||
       "";
-    let profileName = queryProfileName || getProfileName() || "";
+    let profileName = queryProfileName || getProfileName() || getCandidateId() || "";
 
     const firstName = storedProfile?.firstName?.trim() || "";
     const lastName = storedProfile?.lastName?.trim() || "";
@@ -1634,11 +1610,13 @@ function SkillsProjectsPageContent() {
     }
 
     if (!profileName) {
-      const resolved = await resolveProfileNameByEmail(email);
-      if (resolved) {
-        profileName = resolved;
-        setProfileName(resolved);
-      }
+      setDraftPopup({
+        open: true,
+        variant: "error",
+        title: "Unable to save draft",
+        message: "Missing profile id. Please go back and continue from the Create page.",
+      });
+      return false;
     }
 
     const keySkills = dedupeSkills(skills);
@@ -2036,6 +2014,24 @@ function SkillsProjectsPageContent() {
       setDashboardWelcomePending({ force: true });
     }
     router.push("/dashboard");
+  }
+
+  function handleUploadResumeShortcut() {
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl("/profile/create");
+      setShowUnsavedModal(true);
+      return;
+    }
+    router.push("/profile/create");
+  }
+
+  function handleGoToBasicDetails() {
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl("/profile/create/basic-details");
+      setShowUnsavedModal(true);
+      return;
+    }
+    router.push("/profile/create/basic-details");
   }
 
   return (
@@ -2728,27 +2724,42 @@ function SkillsProjectsPageContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-3">
-        <Button
-          variant="outline"
-          fullWidth={false}
-          onClick={() => router.push("/profile/create/basic-details")}
-          className="px-6 sm:px-8"
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          fullWidth={false}
-          className="px-6 sm:px-8"
-          onClick={() => void handleSaveDraft()}
-          disabled={isSubmittingProfile || !hasUnsavedChanges}
-        >
-          {isSubmittingProfile ? "Saving..." : "Save Draft"}
-        </Button>
-        <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => void handleFinish()} disabled={isSubmittingProfile}>
-          {isSubmittingProfile ? "Saving..." : "Finish"}
-        </Button>
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-3">
+        <div>
+          {showUploadResumeShortcut ? (
+            <Button
+              type="button"
+              variant="outline"
+              fullWidth={false}
+              className="px-4 sm:px-6 text-sm"
+              onClick={handleUploadResumeShortcut}
+            >
+              Upload Resume for Faster Setup
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            fullWidth={false}
+            onClick={handleGoToBasicDetails}
+            className="px-6 sm:px-8"
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            fullWidth={false}
+            className="px-6 sm:px-8"
+            onClick={() => void handleSaveDraft()}
+            disabled={isSubmittingProfile || !hasUnsavedChanges}
+          >
+            {isSubmittingProfile ? "Saving..." : "Save Draft"}
+          </Button>
+          <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => void handleFinish()} disabled={isSubmittingProfile}>
+            {isSubmittingProfile ? "Saving..." : "Finish"}
+          </Button>
+        </div>
       </div>
 
       {isFinishModalOpen ? (
@@ -2819,31 +2830,6 @@ function SkillsProjectsPageContent() {
       />
     </div>
   );
-}
-
-async function resolveProfileNameByEmail(email: string): Promise<string> {
-  const normalized = email.trim();
-  if (!normalized) return "";
-  try {
-    const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
-    resolverUrl.searchParams.set("email", normalized);
-    const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
-    if (!resolverRes.ok) return "";
-    const resolverData = (await resolverRes.json()) as JsonRecord;
-    const root =
-      resolverData.data && typeof resolverData.data === "object"
-        ? (resolverData.data as JsonRecord)
-        : resolverData.message && typeof resolverData.message === "object"
-          ? (resolverData.message as JsonRecord)
-          : resolverData;
-    const profile =
-      root.profile && typeof root.profile === "object"
-        ? (root.profile as JsonRecord)
-        : {};
-    return typeof profile.name === "string" ? profile.name.trim() : "";
-  } catch {
-    return "";
-  }
 }
 
 async function fetchExistingProfileEnvelope(profileName: string): Promise<{

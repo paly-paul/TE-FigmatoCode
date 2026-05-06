@@ -23,7 +23,6 @@ import {
   createPreProfile,
   generateProfileFromPreProfile,
   getCandidateProfileData,
-  getCandidateProfileDataByEmail,
   uploadProfileFile,
 } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
@@ -562,13 +561,9 @@ export default function CreateProfilePage() {
       let backendProfile: ResumeProfileData | null = null;
       if (hasResume && effectiveProfileId) {
         try {
-          backendProfile = await getCandidateProfileDataByEmail(sessionEmail);
+          backendProfile = await getCandidateProfileData(effectiveProfileId);
         } catch {
-          try {
-            backendProfile = await getCandidateProfileData(effectiveProfileId);
-          } catch {
-            backendProfile = null;
-          }
+          backendProfile = null;
         }
       }
 

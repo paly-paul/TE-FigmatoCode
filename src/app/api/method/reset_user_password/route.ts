@@ -10,36 +10,25 @@ export async function POST(request: Request) {
 
   const emailRaw = typeof body.email === "string" ? body.email : "";
   const email = emailRaw.trim().toLowerCase();
+  const newPasswordRaw = typeof body.new_password === "string" ? body.new_password : "";
+  const new_password = newPasswordRaw.trim();
+
   if (!email) {
     return NextResponse.json({ status: "error", message: "Email is required" }, { status: 400 });
   }
-
-  const forceResetPwdOtp =
-    typeof process.env.FORCE_RESET_PASSWORD_OTP === "string" &&
-    ["1", "true", "yes", "on"].includes(process.env.FORCE_RESET_PASSWORD_OTP.trim().toLowerCase());
-  if (forceResetPwdOtp) {
-    return NextResponse.json(
-      {
-        status: "success",
-        message: "FORCE_RESET_PASSWORD_OTP is enabled. Use OTP 12345.",
-        otp_required: 1,
-      },
-      { status: 200 }
-    );
+  if (!new_password) {
+    return NextResponse.json({ status: "error", message: "New password is required" }, { status: 400 });
   }
 
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
     return NextResponse.json(
-      { status: "error", message: "BACKEND_URL is not set. Cannot send reset password OTP." },
+      { status: "error", message: "BACKEND_URL is not set. Cannot reset user password." },
       { status: 503 }
     );
   }
 
-  // Frappe requires the full dotted path; bare `send_reset_password` is not a whitelisted command name.
-  const methodPath =
-    process.env.BACKEND_SEND_RESET_PASSWORD_METHOD?.trim() ||
-    "te_frappe_6fe.api.otp.send_reset_password_otp";
+  const methodPath = process.env.BACKEND_RESET_USER_PASSWORD_METHOD?.trim() || "reset_user_password";
   const url = `${backendBase}/api/method/${encodeURI(methodPath)}`;
   const headers: HeadersInit = { "Content-Type": "application/json" };
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -48,7 +37,7 @@ export async function POST(request: Request) {
   const upstream = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, new_password }),
   });
 
   const text = await upstream.text();
@@ -63,3 +52,4 @@ export async function POST(request: Request) {
   res.headers.set("x-upstream-url", url);
   return res;
 }
+
