@@ -247,6 +247,7 @@ interface ExternalLinkEntry {
 interface LanguageEntry {
   id: string;
   language: string;
+  proficiency: string;
   read: string;
   write: string;
   speak: string;
@@ -309,6 +310,7 @@ function createLanguageEntry(
   return {
     id: overrides.id ?? createEntryId("lang"),
     language: overrides.language ?? "",
+    proficiency: overrides.proficiency ?? "",
     read: overrides.read ?? "",
     write: overrides.write ?? "",
     speak: overrides.speak ?? "",
@@ -920,7 +922,7 @@ function BasicDetailsPageContent() {
         },
       ],
       externalLinks: [],
-      languages: [{ language: "", read: "", write: "", speak: "" }],
+      languages: [{ language: "", proficiency: "", read: "", write: "", speak: "" }],
     })
   );
   const [snapshotRevision, setSnapshotRevision] = useState(0);
@@ -981,6 +983,7 @@ function BasicDetailsPageContent() {
       })),
       languages: languages.map((entry) => ({
         language: entry.language.trim(),
+        proficiency: entry.proficiency.trim(),
         read: entry.read.trim(),
         write: entry.write.trim(),
         speak: entry.speak.trim(),
@@ -1314,6 +1317,7 @@ function BasicDetailsPageContent() {
         profile.languages.map((entry) =>
           createLanguageEntry({
             language: toLanguageDisplayName(entry.language ?? ""),
+            proficiency: (entry.proficiency ?? "").trim(),
             read: (entry.read ?? "").trim(),
             write: (entry.write ?? "").trim(),
             speak: (entry.speak ?? "").trim(),

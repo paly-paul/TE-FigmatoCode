@@ -39,6 +39,7 @@ export interface ResumeWorkExperienceEntry {
 
 export interface ResumeLanguageEntry {
   language?: string;
+  proficiency?: string;
   read?: string;
   write?: string;
   speak?: string;

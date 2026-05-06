@@ -9,13 +9,13 @@ async function resolveProfileNameForLogin(email: string): Promise<string> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return "";
 
-  let profileName = getProfileName()?.trim() ?? "";
-  if (profileName) return profileName;
+  const sessionProfileName = getProfileName()?.trim() ?? "";
 
   const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
   resolverUrl.searchParams.set("email", normalized);
   const resolverResponse = await fetch(resolverUrl.toString(), { method: "GET" });
-  if (!resolverResponse.ok) return "";
+  if (!resolverResponse.ok) return sessionProfileName;
+
   const resolverData = (await resolverResponse.json()) as Record<string, unknown>;
   const root =
     resolverData.data && typeof resolverData.data === "object"
@@ -27,8 +27,12 @@ async function resolveProfileNameForLogin(email: string): Promise<string> {
     root.profile && typeof root.profile === "object"
       ? (root.profile as Record<string, unknown>)
       : {};
-  profileName = typeof profile.name === "string" ? profile.name.trim() : "";
-  return profileName;
+  const resolved =
+    typeof profile.name === "string" && profile.name.trim() ? profile.name.trim() : "";
+
+  // Server lookup is authoritative for which PR- belongs to this email; session can be stale
+  // (different account, renamed doc, or old tab).
+  return resolved || sessionProfileName;
 }
 
 function extractResumeRef(input: unknown, depth = 0): string {
