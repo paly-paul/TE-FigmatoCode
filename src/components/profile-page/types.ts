@@ -79,6 +79,8 @@ export interface ProfileData {
   education: EducationItem[];
   languages: LanguageItem[];
   skills: string[];
+  workAuthorizations: string[];
+  preferredIndustries: string[];
   certifications: Certification[];
   experienceItems: ExperienceItem[];
   tools: ToolItem[];

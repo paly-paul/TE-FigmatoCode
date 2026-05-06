@@ -17,7 +17,9 @@ import {
   upsertResumeProfile,
 } from "@/lib/profileSession";
 import { getCandidateProfileData, saveProfile } from "@/services/profile";
-import { CheckCircle2, ChevronDown, ChevronUp, X } from "lucide-react";
+import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
+import { getVerifiedProjectTypeOptions } from "@/services/profile/getVerifiedProjectTypes";
+import { CheckCircle2, ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import type { ResumeProfileData } from "@/types/profile";
 import { StatusPopup } from "@/components/ui/StatusPopup";
@@ -41,6 +43,33 @@ interface ResumeSkillsData {
   }>;
   projectDescription?: string;
   responsibilities?: string;
+}
+
+function parseMultiSelectString(value: string | undefined): string[] {
+  if (!value) return [];
+  return Array.from(
+    new Set(
+      value
+        .split(/[,\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function serializeMultiSelect(values: string[]): string {
+  return values.map((item) => item.trim()).filter(Boolean).join(", ");
+}
+
+async function sanitizePreferredIndustrySelection(value: string | undefined): Promise<string> {
+  const selected = parseMultiSelectString(value);
+  if (!selected.length) return "";
+  try {
+    const allowed = new Set((await getVerifiedProjectTypeOptions()).map((item) => item.trim()).filter(Boolean));
+    return serializeMultiSelect(selected.filter((item) => allowed.has(item)));
+  } catch {
+    return serializeMultiSelect(selected);
+  }
 }
 
 function safeReadResumeSkillsDraft(): ResumeSkillsData | null {
@@ -78,18 +107,7 @@ function safeWriteResumeSkillsDraft(payload: ResumeSkillsData): void {
   }
 }
 
-const DEFAULT_SUGGESTED_SKILLS = [
-  "Communication",
-  "Problem Solving",
-  "Teamwork",
-  "Project Management",
-  "MS Excel",
-  "Data Analysis",
-  "JavaScript",
-  "React",
-  "Node.js",
-  "SQL",
-];
+// No static skills: options come from backend + resume extraction + generated skills.
 
 interface ExperienceEntry {
   id: string;
@@ -307,7 +325,7 @@ function MobileAccordionCard({
   children: ReactNode;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-xl overflow-visible">
       <button
         type="button"
         onClick={onToggle}
@@ -331,8 +349,11 @@ function SkillsProjectsPageContent() {
   const searchParamsKey = searchParams.toString();
   const [skills, setSkills] = useState<string[]>([]);
   const [suggestedSkills, setSuggestedSkills] = useState<string[]>([]);
+  const [generatedSkillOptions, setGeneratedSkillOptions] = useState<string[]>([]);
   const [backendSkillsStatus, setBackendSkillsStatus] = useState("");
   const [selectedSkill, setSelectedSkill] = useState("");
+  const [skillOptionSearch, setSkillOptionSearch] = useState("");
+  const [isSkillsDropdownOpen, setIsSkillsDropdownOpen] = useState(false);
   const [experiences, setExperiences] = useState<ExperienceEntry[]>(() => [createExperienceEntry()]);
   const [projects, setProjects] = useState<ProjectEntry[]>(() => [createProjectEntry()]);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -442,10 +463,15 @@ function SkillsProjectsPageContent() {
 
   // Backend-only options: suggestedSkills holds key skills returned from the API.
   // The dropdown offers those values, excluding ones already selected in `skills`.
-  const suggestedSkillOptions = dedupeSkills([
-    ...DEFAULT_SUGGESTED_SKILLS,
-    ...suggestedSkills,
-  ]);
+  const suggestedSkillOptions = (() => {
+    const generatedFirst = dedupeSkillOptions(generatedSkillOptions);
+    const all = dedupeSkillOptions([...generatedFirst, ...suggestedSkills]);
+    const generatedSet = new Set(generatedFirst.map((s) => s.trim().toLowerCase()));
+    const rest = all.filter((s) => !generatedSet.has(s.trim().toLowerCase()));
+    const query = skillOptionSearch.trim().toLowerCase();
+    const ordered = [...generatedFirst, ...rest];
+    return query ? ordered.filter((s) => s.toLowerCase().includes(query)) : ordered;
+  })();
   const hiddenAlreadySelectedCount = suggestedSkillOptions.filter((skill) => {
     const normalized = skill.trim().toLowerCase();
     return skills.some((selected) => selected.trim().toLowerCase() === normalized);
@@ -455,8 +481,27 @@ function SkillsProjectsPageContent() {
   // if API suggestions are empty, fall back to already selected skills.
   useEffect(() => {
     if (!skills.length) return;
-    setSuggestedSkills((prev) => dedupeSkills([...prev, ...skills]));
+    setSuggestedSkills((prev) => dedupeSkillOptions([...prev, ...skills]));
   }, [skills]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const options = await getDropdownDetailsOptions({
+        doctype: "Resource Requirement",
+        fieldName: "key_skills",
+        limit: 1000,
+        page: 1,
+      }).catch(() => []);
+      if (cancelled) return;
+      if (options.length) {
+        setSuggestedSkills((prev) => dedupeSkillOptions([...prev, ...options]));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -561,7 +606,8 @@ function SkillsProjectsPageContent() {
     if (projectsDone) completedSections += 1;
 
     const ratio = Math.min(1, completedSections / totalSections);
-    return 40 + ratio * 30;
+    // This is the final step in the create flow; it should progress beyond 70%.
+    return 70 + ratio * 30;
   })();
 
   useEffect(() => {
@@ -577,7 +623,7 @@ function SkillsProjectsPageContent() {
       if (!data) return;
       if (Array.isArray(data.skills) && data.skills.length) {
         setSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
-        setSuggestedSkills((prev) => dedupeSkills([...prev, ...(data.skills || [])]));
+        setSuggestedSkills((prev) => dedupeSkillOptions([...prev, ...(data.skills || [])]));
       }
       if (Array.isArray(data.experienceEntries) && data.experienceEntries.length) {
         const normalized = data.experienceEntries
@@ -655,7 +701,7 @@ function SkillsProjectsPageContent() {
 
     if (storedProfile.keySkills?.length) {
       setSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
-      setSuggestedSkills((prev) => dedupeSkills([...prev, ...storedProfile.keySkills!]));
+      setSuggestedSkills((prev) => dedupeSkillOptions([...prev, ...storedProfile.keySkills!]));
     }
 
     if (storedProfile.tools?.length) {
@@ -1054,10 +1100,11 @@ function SkillsProjectsPageContent() {
         }
 
         const existingSkills = backendProfile.keySkills ?? [];
-        const combinedSkills = dedupeSkills([...generatedSkills, ...existingSkills]);
+        const combinedSkills = dedupeSkillOptions([...generatedSkills, ...existingSkills]);
 
         if (combinedSkills.length) {
           setSuggestedSkills(combinedSkills);
+          setGeneratedSkillOptions(dedupeSkillOptions(generatedSkills));
 
           if (generatedSkills.length && existingSkills.length) {
             setBackendSkillsStatus(
@@ -1161,6 +1208,8 @@ function SkillsProjectsPageContent() {
     });
     setSuggestedSkills((prev) => prev.filter((skill) => skill !== value));
     setSelectedSkill("");
+    setSkillOptionSearch("");
+    setIsSkillsDropdownOpen(false);
     setErrors((prev) => ({ ...prev, skills: undefined }));
   }
 
@@ -1380,6 +1429,7 @@ function SkillsProjectsPageContent() {
       countryHint: storedProfile?.nationality?.trim() || "India",
     });
     const profileImageRef = storedProfile?.profileImageUrl?.trim() || "";
+    const sanitizedPreferredIndustry = await sanitizePreferredIndustrySelection(storedProfile?.preferredIndustry);
 
     const nextProfilePayload = {
       full_name: fullName,
@@ -1412,6 +1462,7 @@ function SkillsProjectsPageContent() {
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
       work_authorized_countries: storedProfile?.workAuthorization?.trim() || "",
+      preferred_industry: sanitizedPreferredIndustry,
       ...(profileImageRef ? { profile_image: profileImageRef } : {}),
       skills_table: skillsTable,
       key_skills: keySkills,
@@ -1726,6 +1777,7 @@ function SkillsProjectsPageContent() {
       countryHint: storedProfile?.nationality?.trim() || "India",
     });
     const profileImageRef = storedProfile?.profileImageUrl?.trim() || "";
+    const sanitizedPreferredIndustry = await sanitizePreferredIndustrySelection(storedProfile?.preferredIndustry);
 
     const nextProfilePayload = {
       full_name: fullName,
@@ -1760,6 +1812,7 @@ function SkillsProjectsPageContent() {
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
       work_authorized_countries: storedProfile?.workAuthorization?.trim() || "",
+      preferred_industry: sanitizedPreferredIndustry,
       ...(profileImageRef ? { profile_image: profileImageRef } : {}),
       skills_table: skillsTable,
       key_skills: keySkills,
@@ -2115,24 +2168,69 @@ function SkillsProjectsPageContent() {
                   className="p-4 space-y-4"
                 >
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Skills <span className="text-red-500">*</span></span>
-                    <select
-                      value={selectedSkill}
-                      onChange={(e) => handleSkillsChange(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="">Select a skill</option>
-                      {suggestedSkillOptions.map((opt: string) => {
-                        const isAlreadyAdded = skills.some(
-                          (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
-                        );
-                        return (
-                        <option key={opt} value={opt} disabled={isAlreadyAdded}>
-                          {isAlreadyAdded ? `${opt} (Already added)` : opt}
-                        </option>
-                        );
-                      })}
-                    </select>
+                    <span className="text-sm font-medium text-gray-800">
+                      Skills <span className="text-red-500">*</span>
+                    </span>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSkillsDropdownOpen((prev) => !prev);
+                          setSkillOptionSearch("");
+                        }}
+                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2.5 text-left text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-gray-400">Select a skill</span>
+                          <ChevronDown className="h-4 w-4 text-gray-500" />
+                        </div>
+                      </button>
+
+                      {isSkillsDropdownOpen ? (
+                        <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="p-2">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search skills..."
+                                value={skillOptionSearch}
+                                onChange={(e) => setSkillOptionSearch(e.target.value)}
+                                className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="max-h-72 overflow-auto py-1">
+                            {suggestedSkillOptions.length ? (
+                              suggestedSkillOptions.map((opt) => {
+                                const isAlreadyAdded = skills.some(
+                                  (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
+                                );
+                                return (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    disabled={isAlreadyAdded}
+                                    onClick={() => handleSkillsChange(opt)}
+                                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                                      isAlreadyAdded
+                                        ? "cursor-not-allowed text-gray-300"
+                                        : "text-gray-700 hover:bg-gray-50"
+                                    }`}
+                                  >
+                                    <span>{opt}</span>
+                                    {isAlreadyAdded ? <span className="text-xs">(Added)</span> : null}
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="px-3 py-2 text-sm text-gray-500">No skills found.</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                     <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
                     {hiddenAlreadySelectedCount > 0 ? (
                       <p className="text-xs text-gray-500">
@@ -2446,7 +2544,7 @@ function SkillsProjectsPageContent() {
               ref={(node) => {
                 if (node) skillsSectionRef.current = node;
               }}
-              className="bg-white border border-gray-200 rounded-xl overflow-hidden"
+              className="bg-white border border-gray-200 rounded-xl overflow-visible"
             >
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Key Skills</h2>
@@ -2454,24 +2552,69 @@ function SkillsProjectsPageContent() {
 
               <div className="p-4 sm:p-6 space-y-4">
                 <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Skills <span className="text-red-500">*</span></span>
-                  <select
-                    value={selectedSkill}
-                    onChange={(e) => handleSkillsChange(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="">Select a skill</option>
-                    {suggestedSkillOptions.map((opt) => {
-                      const isAlreadyAdded = skills.some(
-                        (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
-                      );
-                      return (
-                      <option key={opt} value={opt} disabled={isAlreadyAdded}>
-                        {isAlreadyAdded ? `${opt} (Already added)` : opt}
-                      </option>
-                      );
-                    })}
-                  </select>
+                  <span className="text-sm font-medium text-gray-800">
+                    Skills <span className="text-red-500">*</span>
+                  </span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSkillsDropdownOpen((prev) => !prev);
+                        setSkillOptionSearch("");
+                      }}
+                      className="w-full rounded-md border border-gray-300 bg-white px-3 py-2.5 text-left text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-400">Select a skill</span>
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      </div>
+                    </button>
+
+                    {isSkillsDropdownOpen ? (
+                      <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="p-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search skills..."
+                              value={skillOptionSearch}
+                              onChange={(e) => setSkillOptionSearch(e.target.value)}
+                              className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="max-h-72 overflow-auto py-1">
+                          {suggestedSkillOptions.length ? (
+                            suggestedSkillOptions.map((opt) => {
+                              const isAlreadyAdded = skills.some(
+                                (selected) => selected.trim().toLowerCase() === opt.trim().toLowerCase()
+                              );
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  disabled={isAlreadyAdded}
+                                  onClick={() => handleSkillsChange(opt)}
+                                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                                    isAlreadyAdded
+                                      ? "cursor-not-allowed text-gray-300"
+                                      : "text-gray-700 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <span>{opt}</span>
+                                  {isAlreadyAdded ? <span className="text-xs">(Added)</span> : null}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-gray-500">No skills found.</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                     <p className="text-xs text-gray-500">Select multiple skills from the dropdown list.</p>
                     {hiddenAlreadySelectedCount > 0 ? (
                       <p className="text-xs text-gray-500">
@@ -2980,6 +3123,16 @@ function dedupeSkills(values: string[]) {
         .filter(Boolean)
     )
   ).slice(0, 30);
+}
+
+function dedupeSkillOptions(values: string[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 300);
 }
 
 function parseJsonLike(value: string): unknown {

@@ -2041,16 +2041,8 @@ function BasicDetailsPageContent() {
 
   function getFilteredPreferredIndustryOptions() {
     const query = preferredIndustrySearch.trim().toLowerCase();
-    const selectedValues = parseMultiSelectString(form.preferredIndustry);
-    const options = Array.from(new Set([...selectedValues, ...preferredIndustryOptions]));
-    const selectedSet = new Set(selectedValues);
-    const prioritizedOptions = [
-      ...selectedValues,
-      ...options.filter((option) => !selectedSet.has(option)),
-    ];
-    return !query
-      ? prioritizedOptions
-      : prioritizedOptions.filter((option) => option.toLowerCase().includes(query));
+    const options = preferredIndustryOptions;
+    return !query ? options : options.filter((option) => option.toLowerCase().includes(query));
   }
 
   function handlePreferredIndustryPick(option: string) {

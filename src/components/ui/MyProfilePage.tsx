@@ -97,6 +97,8 @@ const EMPTY_PROFILE: ProfileData = {
     ],
     languages: [],
     skills: [],
+    workAuthorizations: [],
+    preferredIndustries: [],
     certifications: [],
     experienceItems: [],
     tools: [],
@@ -118,6 +120,19 @@ function parseYearsFromDuration(duration: string | undefined, fallbackYears: num
     const parsed = Number.parseFloat(match[1]);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallbackYears;
     return parsed;
+}
+
+function splitMultiValueText(value: string | undefined): string[] {
+    const raw = (value || "").trim();
+    if (!raw) return [];
+    return Array.from(
+        new Set(
+            raw
+                .split(/,|\n/g)
+                .map((part) => part.trim())
+                .filter(Boolean)
+        )
+    );
 }
 
 function normalizeExternalUrl(url: string | undefined): string {
@@ -357,6 +372,8 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
                 speak: lang.speak || "Good",
             })) || fallback.languages,
         skills: resume.keySkills?.length ? resume.keySkills : fallback.skills,
+        workAuthorizations: splitMultiValueText(resume.workAuthorization),
+        preferredIndustries: splitMultiValueText(resume.preferredIndustry),
         certifications:
             resume.certifications?.map((cert, idx) => ({
                 id: `cert-${idx + 1}`,
@@ -388,6 +405,7 @@ export default function MyProfilePage() {
     const params = useParams<{ profileName?: string | string[] }>();
     const isMobile = useIsMobile();
     const [profileData, setProfileData] = useState<ProfileData>(EMPTY_PROFILE);
+    const [isProfileLoading, setIsProfileLoading] = useState(false);
     const [activeProfile, setActiveProfile] = useState(true);
     const [isUpdatingProfileStatus, setIsUpdatingProfileStatus] = useState(false);
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -398,6 +416,7 @@ export default function MyProfilePage() {
     const [openSections, setOpenSections] = useState({
         skills: true,
         certifications: false,
+        preferences: false,
         experience: false,
         tools: true,
         projects: true,
@@ -449,6 +468,7 @@ export default function MyProfilePage() {
         if (!profileId) return;
         void (async () => {
             try {
+                setIsProfileLoading(true);
                 const data = await getCandidateProfileData(profileId);
                 setProfileData(toProfileData(data, EMPTY_PROFILE));
                 if (typeof data.profileStatus === "string") {
@@ -456,6 +476,8 @@ export default function MyProfilePage() {
                 }
             } catch {
                 // Keep empty profile if API fails.
+            } finally {
+                setIsProfileLoading(false);
             }
         })();
     }, [routeProfileId]);
@@ -731,6 +753,44 @@ export default function MyProfilePage() {
                                     </button>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                ) : null}
+            </section>
+
+            <section className="mt-4 border border-[#DCE4F0] bg-white">
+                {renderAccordionHeader("Preferences", "preferences")}
+                {openSections.preferences ? (
+                    <div className="border-t border-[#E6ECF6] px-4 py-4">
+                        <div className="space-y-4">
+                            <div>
+                                <p className="text-[13px] font-medium text-[#5E7397]">Work Authorization</p>
+                                {PROFILE.workAuthorizations.length ? (
+                                    <div className="mt-2 flex flex-wrap gap-2.5">
+                                        {PROFILE.workAuthorizations.map((item) => (
+                                            <Pill key={`wa-${item}`}>{item}</Pill>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-[14px] text-[#5E7397]">
+                                        {isProfileLoading ? "Loading..." : "Not specified"}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="border-t border-[#E6ECF6] pt-4">
+                                <p className="text-[13px] font-medium text-[#5E7397]">Preferred Industries</p>
+                                {PROFILE.preferredIndustries.length ? (
+                                    <div className="mt-2 flex flex-wrap gap-2.5">
+                                        {PROFILE.preferredIndustries.map((item) => (
+                                            <Pill key={`pi-${item}`}>{item}</Pill>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-[14px] text-[#5E7397]">
+                                        {isProfileLoading ? "Loading..." : "Not specified"}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 ) : null}
@@ -1328,6 +1388,39 @@ export default function MyProfilePage() {
                                                 Add your certifications
                                             </button>
                                         </div>
+                                    )}
+                                </div>
+                            </div>
+                        </SectionCard>
+
+                        <SectionCard title="Preferences">
+                            <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
+                                <div>
+                                    <p className="text-sm font-medium text-[#5f6b7d]">Work Authorization</p>
+                                    {PROFILE.workAuthorizations.length ? (
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {PROFILE.workAuthorizations.map((item) => (
+                                                <Pill key={`desktop-wa-${item}`}>{item}</Pill>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-sm text-[#66758a]">
+                                            {isProfileLoading ? "Loading..." : "Not specified"}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="border-t border-[#e7ebf1] pt-4">
+                                    <p className="text-sm font-medium text-[#5f6b7d]">Preferred Industries</p>
+                                    {PROFILE.preferredIndustries.length ? (
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {PROFILE.preferredIndustries.map((item) => (
+                                                <Pill key={`desktop-pi-${item}`}>{item}</Pill>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-sm text-[#66758a]">
+                                            {isProfileLoading ? "Loading..." : "Not specified"}
+                                        </p>
                                     )}
                                 </div>
                             </div>
