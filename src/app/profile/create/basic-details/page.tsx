@@ -19,6 +19,7 @@ import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setPro
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { getCandidateProfileData, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
+import { getVerifiedProjectTypeOptions } from "@/services/profile/getVerifiedProjectTypes";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
@@ -42,11 +43,11 @@ const fallbackNationalityOptions = [
 ];
 const fallbackCurrencyOptions = ["USD", "INR", "EUR"];
 const languageRatings = [
-  "Native / Bilingual",
-  "Fluent",
-  "Professional",
-  "Intermediate",
   "Basic",
+  "Average",
+  "Medium",
+  "Good",
+  "Excellent",
 ];
 const countryDialCodes = [
   { country_code: "AF", dial_code: "+93" },
@@ -1155,12 +1156,7 @@ function BasicDetailsPageContent() {
               limit: 1000,
             });
           })(),
-          getDropdownDetailsOptions({
-            doctype: "Resource Requirement",
-            fieldName: "industry",
-            page: 1,
-            limit: 1000,
-          }),
+          getVerifiedProjectTypeOptions(),
       ]);
 
       if (cancelled) return;
@@ -2361,25 +2357,28 @@ function BasicDetailsPageContent() {
       .filter(Boolean);
 
     try {
-      await saveProfile({
-        profile: profileName || undefined,
+      const profileDocPayload = {
         full_name: fullName,
         email,
-        profile_doc: {
-          full_name: fullName,
-          email,
-          alternative_email: form.altEmail.trim(),
-          ...(hasContactPair
-            ? {
-                contact_no: contactNumberForPayload,
-                country_code: countryCodeForPayload,
-              }
-            : {}),
-          date_of_birth: form.dob || "",
-          gender: form.gender || "",
-          current_location: form.currentLocation.trim(),
-          state: "Draft",
-        },
+        alternative_email: form.altEmail.trim(),
+        ...(hasContactPair
+          ? {
+              contact_no: contactNumberForPayload,
+              country_code: countryCodeForPayload,
+            }
+          : {}),
+        date_of_birth: form.dob || "",
+        gender: form.gender || "",
+        current_location: form.currentLocation.trim(),
+        state: "Draft",
+      };
+      await saveProfile({
+        profile: profileDocPayload,
+        profile_name: profileName || undefined,
+        profile_id: profileName || undefined,
+        full_name: fullName,
+        email,
+        profile_doc: profileDocPayload,
         profile_version: {
           mode: profileName ? "edit" : "new",
           professional_title: form.professionalTitle.trim(),
@@ -3327,9 +3326,7 @@ function BasicDetailsPageContent() {
                         }}
                         className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                       >
-                        <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
-                          {form.workAuthorization || "Select work authorization"}
-                        </span>
+                        <span className="text-gray-400">Select work authorization</span>
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openWorkAuthorizationDropdown ? (
@@ -3407,9 +3404,7 @@ function BasicDetailsPageContent() {
                         }}
                         className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                       >
-                        <span className={form.preferredIndustry ? "text-gray-900" : "text-gray-400"}>
-                          {form.preferredIndustry || "Select preferred industry"}
-                        </span>
+                        <span className="text-gray-400">Select preferred industry</span>
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openPreferredIndustryDropdown ? (
@@ -4115,9 +4110,7 @@ function BasicDetailsPageContent() {
                       }}
                       className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                     >
-                      <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
-                        {form.workAuthorization || "Select work authorization"}
-                      </span>
+                      <span className="text-gray-400">Select work authorization</span>
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openWorkAuthorizationDropdown ? (
@@ -4195,9 +4188,7 @@ function BasicDetailsPageContent() {
                       }}
                       className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                     >
-                      <span className={form.preferredIndustry ? "text-gray-900" : "text-gray-400"}>
-                        {form.preferredIndustry || "Select preferred industry"}
-                      </span>
+                      <span className="text-gray-400">Select preferred industry</span>
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openPreferredIndustryDropdown ? (

@@ -120,6 +120,78 @@ type FormErrors = {
 
 type JsonRecord = Record<string, unknown>;
 
+const LANGUAGE_CODE_MAP: Record<string, string> = {
+  english: "en",
+  hindi: "hi",
+  tamil: "ta",
+  telugu: "te",
+  kannada: "kn",
+  malayalam: "ml",
+  marathi: "mr",
+  bengali: "bn",
+  gujarati: "gu",
+  punjabi: "pa",
+  urdu: "ur",
+  arabic: "ar",
+  french: "fr",
+  german: "de",
+  spanish: "es",
+  portuguese: "pt",
+  chinese: "zh",
+  japanese: "ja",
+};
+
+function toLanguageCode(value: string | undefined): string {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  const normalized = raw.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  if (LANGUAGE_CODE_MAP[normalized]) return LANGUAGE_CODE_MAP[normalized];
+  const alpha = normalized.replace(/[^a-z]/g, "");
+  return alpha.length >= 2 ? alpha.slice(0, 2) : "";
+}
+
+function extractSkillLabel(value: unknown): string {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return "";
+    if (
+      (normalized.startsWith("[") && normalized.endsWith("]")) ||
+      (normalized.startsWith("{") && normalized.endsWith("}"))
+    ) {
+      try {
+        return extractSkillLabel(JSON.parse(normalized) as unknown);
+      } catch {
+        return normalized;
+      }
+    }
+    return normalized;
+  }
+  if (Array.isArray(value)) {
+    for (const row of value) {
+      const extracted = extractSkillLabel(row);
+      if (extracted) return extracted;
+    }
+    return "";
+  }
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  return (
+    extractSkillLabel(record.key_skills) ||
+    extractSkillLabel(record.skill) ||
+    extractSkillLabel(record.skill_name) ||
+    extractSkillLabel(record.tool_name) ||
+    extractSkillLabel(record.name)
+  );
+}
+
+function getToolLabelFromRow(row: Record<string, unknown>): string {
+  if (typeof row.tool_name === "string" && row.tool_name.trim()) return row.tool_name.trim();
+  if (typeof row.tool === "string" && row.tool.trim()) return row.tool.trim();
+  if (typeof row.skill_name === "string" && row.skill_name.trim()) return row.skill_name.trim();
+  if (typeof row.skill === "string" && row.skill.trim()) return row.skill.trim();
+  return extractSkillLabel(row.key_skills);
+}
+
 // const SKILL_OPTIONS = [
 //   "React",
 //   "Next.js",
@@ -798,14 +870,7 @@ function SkillsProjectsPageContent() {
               for (const item of toolsTableForYears) {
                 if (!item || typeof item !== "object") continue;
                 const row: any = item;
-                const toolName =
-                  typeof row?.tool_name === "string"
-                    ? row.tool_name.trim()
-                    : typeof row?.skill === "string"
-                      ? row.skill.trim()
-                      : typeof row?.key_skills === "string"
-                        ? row.key_skills.trim()
-                        : "";
+                const toolName = getToolLabelFromRow(row);
                 if (!toolName) continue;
                 const yearsRaw =
                   typeof row?.experience_years === "number"
@@ -831,18 +896,7 @@ function SkillsProjectsPageContent() {
 
               const mapped = toolsTableRaw
                 .map((row: any) => {
-                  const tool =
-                    typeof row?.tool_name === "string"
-                      ? row.tool_name.trim()
-                      : typeof row?.tool === "string"
-                        ? row.tool.trim()
-                        : typeof row?.skill_name === "string"
-                          ? row.skill_name.trim()
-                          : typeof row?.skill === "string"
-                            ? row.skill.trim()
-                            : typeof row?.key_skills === "string"
-                              ? row.key_skills.trim()
-                              : "";
+                  const tool = getToolLabelFromRow(row);
                   if (!tool) return null;
                   let years =
                     typeof row?.experience_years === "number"
@@ -1456,12 +1510,12 @@ function SkillsProjectsPageContent() {
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
-              language_name: entry.language?.trim() || "",
+              fname: toLanguageCode(entry.language),
               read: entry.read?.trim() || "",
               write: entry.write?.trim() || "",
               speak: entry.speak?.trim() || "",
             }))
-            .filter((entry) => entry.language_name || entry.read || entry.write || entry.speak)
+            .filter((entry) => entry.fname || entry.read || entry.write || entry.speak)
         : [],
       work_experience: workExperienceTable,
     };
@@ -1518,7 +1572,9 @@ function SkillsProjectsPageContent() {
     setIsSubmittingProfile(true);
     try {
       console.info("[profile-submit] outgoing payload snapshot", {
-        profile: profileName || undefined,
+        profile: mergedProfilePayload,
+        profile_name: profileName || undefined,
+        profile_id: profileName || undefined,
         full_name: fullName,
         email,
         professional_title: storedProfile?.professionalTitle?.trim() || undefined,
@@ -1540,7 +1596,9 @@ function SkillsProjectsPageContent() {
       });
 
       const response = await saveProfile({
-        profile: profileName || undefined,
+        profile: mergedProfilePayload,
+        profile_name: profileName || undefined,
+        profile_id: profileName || undefined,
         full_name: fullName,
         email,
         professional_title: storedProfile?.professionalTitle?.trim() || undefined,
@@ -1800,12 +1858,12 @@ function SkillsProjectsPageContent() {
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
-              language_name: entry.language?.trim() || "",
+              fname: toLanguageCode(entry.language),
               read: entry.read?.trim() || "",
               write: entry.write?.trim() || "",
               speak: entry.speak?.trim() || "",
             }))
-            .filter((entry) => entry.language_name || entry.read || entry.write || entry.speak)
+            .filter((entry) => entry.fname || entry.read || entry.write || entry.speak)
         : [],
       work_experience: workExperienceTable,
     };
@@ -1865,7 +1923,9 @@ function SkillsProjectsPageContent() {
     setIsSubmittingProfile(true);
     try {
       const response = await saveProfile({
-        profile: profileName || undefined,
+        profile: mergedProfilePayload,
+        profile_name: profileName || undefined,
+        profile_id: profileName || undefined,
         full_name: fullName,
         email,
         professional_title: storedProfile?.professionalTitle?.trim() || undefined,
@@ -2032,11 +2092,6 @@ function SkillsProjectsPageContent() {
   }
 
   function handleGoToBasicDetails() {
-    if (hasUnsavedChanges) {
-      setPendingNavigationUrl("/profile/create/basic-details");
-      setShowUnsavedModal(true);
-      return;
-    }
     router.push("/profile/create/basic-details");
   }
 

@@ -72,11 +72,155 @@ function sanitizeCurrentLocationValue(value: string): string {
   return trimmed.replace(/\s*,\s*/g, "--").trim();
 }
 
+function splitListLikeText(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toLanguageCode(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  const map: Record<string, string> = {
+    english: "en",
+    hindi: "hi",
+    tamil: "ta",
+    telugu: "te",
+    kannada: "kn",
+    malayalam: "ml",
+    marathi: "mr",
+    bengali: "bn",
+    gujarati: "gu",
+    punjabi: "pa",
+    urdu: "ur",
+    arabic: "ar",
+    french: "fr",
+    german: "de",
+    spanish: "es",
+    portuguese: "pt",
+    chinese: "zh",
+    japanese: "ja",
+  };
+  if (map[normalized]) return map[normalized];
+  const alpha = normalized.replace(/[^a-z]/g, "");
+  return alpha.length >= 2 ? alpha.slice(0, 2) : "";
+}
+
+function normalizeObjectList(
+  value: unknown,
+  targetKey: "country" | "industries" | "key_skills"
+): Record<string, string>[] {
+  if (typeof value === "string") {
+    const tokens = splitListLikeText(value);
+    return tokens.map((token) => ({ [targetKey]: token }));
+  }
+
+  if (!Array.isArray(value)) return [];
+
+  const normalized: Record<string, string>[] = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const token = item.trim();
+      if (token) normalized.push({ [targetKey]: token });
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const direct = typeof record[targetKey] === "string" ? record[targetKey].trim() : "";
+    if (direct) {
+      normalized.push({ [targetKey]: direct });
+      continue;
+    }
+    // Fallback for nearby naming variants that may appear in mixed payloads.
+    const variant =
+      targetKey === "country"
+        ? (typeof record.work_authorized_countries === "string" ? record.work_authorized_countries : "")
+        : targetKey === "industries"
+          ? (typeof record.industry === "string" ? record.industry : "")
+          : (typeof record.skill === "string" ? record.skill : "");
+    const token = typeof variant === "string" ? variant.trim() : "";
+    if (token) normalized.push({ [targetKey]: token });
+  }
+  return normalized;
+}
+
+function normalizeTableRows(key: string, value: unknown): Record<string, unknown>[] {
+  const rows = typeof value === "string" ? splitListLikeText(value) : Array.isArray(value) ? value : [];
+  const normalized: Record<string, unknown>[] = [];
+
+  for (const row of rows) {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      const record = sanitizePayloadObject(row as Record<string, unknown>);
+      if (Object.keys(record).length > 0) normalized.push(record);
+      continue;
+    }
+
+    if (typeof row !== "string") continue;
+    const token = row.trim();
+    if (!token) continue;
+
+    if (key === "languages") {
+      const fname = toLanguageCode(token);
+      if (fname) normalized.push({ fname });
+      continue;
+    }
+    if (key === "skills_table") {
+      normalized.push({ skill: token, key_skills: token });
+      continue;
+    }
+    if (key === "projects_table") {
+      normalized.push({ project_name: token });
+      continue;
+    }
+    if (key === "education_qualifications") {
+      normalized.push({ degree: token });
+      continue;
+    }
+    if (key === "certification_table") {
+      normalized.push({ certification_name: token });
+      continue;
+    }
+    if (key === "external_profile_links") {
+      normalized.push({ platform: "", url: token });
+      continue;
+    }
+  }
+
+  return normalized;
+}
+
 function sanitizePayloadObject(input: Record<string, unknown>): Record<string, unknown> {
   const output: Record<string, unknown> = {};
 
   for (const [key, rawValue] of Object.entries(input)) {
     if (key === "work_experience") continue;
+    if (key === "work_authorized_countries") {
+      const normalized = normalizeObjectList(rawValue, "country");
+      if (normalized.length > 0) output[key] = normalized;
+      continue;
+    }
+    if (key === "preferred_industry" || key === "industries") {
+      const normalized = normalizeObjectList(rawValue, "industries");
+      if (normalized.length > 0) output.industries = normalized;
+      continue;
+    }
+    if (key === "key_skills") {
+      const normalized = normalizeObjectList(rawValue, "key_skills");
+      if (normalized.length > 0) output[key] = normalized;
+      continue;
+    }
+    if (
+      key === "languages" ||
+      key === "skills_table" ||
+      key === "projects_table" ||
+      key === "education_qualifications" ||
+      key === "certification_table" ||
+      key === "external_profile_links"
+    ) {
+      const normalized = normalizeTableRows(key, rawValue);
+      if (normalized.length > 0) output[key] = normalized;
+      continue;
+    }
     if (rawValue === undefined || rawValue === null) continue;
     if (typeof rawValue === "string" && rawValue.trim() === "" && key !== "alternative_email") continue;
 
