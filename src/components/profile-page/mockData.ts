@@ -52,6 +52,8 @@ export const PROFILE: ProfileData = {
     "Tariff & Billing Analysis",
     "SCADA Systems",
   ],
+  workAuthorizations: ["United States"],
+  preferredIndustries: ["Energy", "Renewables"],
   certifications: [
     {
       id: "c1",

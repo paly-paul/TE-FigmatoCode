@@ -5,6 +5,42 @@ import { splitPhoneFromCountryCode } from "@/services/profile/phone";
 
 type UnknownRecord = Record<string, unknown>;
 
+function mapObjectListToJoinedText(
+  value: unknown,
+  keys: string[]
+): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try {
+        return mapObjectListToJoinedText(JSON.parse(trimmed) as unknown, keys);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const trimmed = item.trim();
+      if (trimmed) out.push(trimmed);
+      continue;
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as UnknownRecord;
+    for (const key of keys) {
+      const v = typeof record[key] === "string" ? record[key].trim() : "";
+      if (v) out.push(v);
+    }
+  }
+  const unique = Array.from(new Set(out));
+  return unique.length ? unique.join(", ") : undefined;
+}
+
 function looksLikeRecordId(value: string | undefined) {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return false;
@@ -1010,20 +1046,16 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
       )
     ),
     workAuthorization:
-      pickString(
-        profileVersion,
-        "work_authorized_countries",
-        "work_authorization",
-        "workAuthorization"
-      ) ??
-      pickString(
-        profileRecord,
-        "work_authorized_countries",
-        "work_authorization",
-        "workAuthorization"
-      ) ??
+      mapObjectListToJoinedText(profileVersion.work_authorized_countries, ["country"]) ??
+      mapObjectListToJoinedText(profileRecord.work_authorized_countries, ["country"]) ??
+      mapObjectListToJoinedText(root.work_authorized_countries, ["country"]) ??
+      pickString(profileVersion, "work_authorized_countries", "work_authorization", "workAuthorization") ??
+      pickString(profileRecord, "work_authorized_countries", "work_authorization", "workAuthorization") ??
       pickString(root, "work_authorized_countries", "work_authorization", "workAuthorization"),
     preferredIndustry:
+      mapObjectListToJoinedText(profileVersion.industries, ["industries", "industry"]) ??
+      mapObjectListToJoinedText(profileRecord.industries, ["industries", "industry"]) ??
+      mapObjectListToJoinedText(root.industries, ["industries", "industry"]) ??
       pickString(profileVersion, "preferred_industry", "industry", "preferredIndustry") ??
       pickString(profileRecord, "preferred_industry", "industry", "preferredIndustry") ??
       pickString(root, "preferred_industry", "industry", "preferredIndustry"),
