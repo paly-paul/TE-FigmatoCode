@@ -31,15 +31,15 @@ export async function POST(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
     return NextResponse.json(
-      { status: "error", message: "BACKEND_URL is not set. Cannot send reset password OTP." },
+      { status: "error", message: "BACKEND_URL is not set. Cannot send resend password OTP." },
       { status: 503 }
     );
   }
 
-  // Frappe requires the full dotted path; bare `send_reset_password` is not a whitelisted command name.
+  // Frappe requires the full dotted path; bare `send_resend_password_otp` is not a whitelisted command name.
   const methodPath =
-    process.env.BACKEND_SEND_RESET_PASSWORD_METHOD?.trim() ||
-    "te_frappe_6fe.api.otp.send_reset_password_otp";
+    process.env.BACKEND_SEND_RESEND_PASSWORD_METHOD?.trim() ||
+    "te_frappe_6fe.api.otp.send_resend_password_otp";
   const url = `${backendBase}/api/method/${encodeURI(methodPath)}`;
   const headers: HeadersInit = { "Content-Type": "application/json" };
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -63,3 +63,4 @@ export async function POST(request: Request) {
   res.headers.set("x-upstream-url", url);
   return res;
 }
+

@@ -17,12 +17,16 @@ import {
 
 export default function ConfirmationPage() {
   const OTP_LENGTH = 5;
+  const REDIRECT_DELAY_MS = 6000;
   const router = useRouter();
   const [otpDigits, setOtpDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ""));
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [showVerifiedSuccess, setShowVerifiedSuccess] = useState(false);
+  const [postVerifyDestination, setPostVerifyDestination] = useState<string>("");
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -96,6 +100,7 @@ export default function ConfirmationPage() {
     try {
       await verifyCandidateSignupOtp(email, otpValue);
       await completeSignupFromPending();
+      setIsRedirecting(true);
       prefetchDropdownDetailsAfterLogin();
 
       const destination = await getPostLoginDestination(email);
@@ -103,7 +108,13 @@ export default function ConfirmationPage() {
       if (skipWizard) {
         setDashboardWelcomePending({ force: true });
       }
-      router.replace(destination);
+      setPostVerifyDestination(destination);
+      setShowVerifiedSuccess(true);
+
+      // Allow users to see the success screen (and optionally click "Okay!") before redirect.
+      window.setTimeout(() => {
+        router.replace(destination);
+      }, REDIRECT_DELAY_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify OTP.");
     } finally {
@@ -138,58 +149,94 @@ export default function ConfirmationPage() {
           <EnvelopeCheckIllustration />
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">Verify Your Account</h1>
-        <p className="text-sm text-gray-500 max-w-sm leading-relaxed mb-2">
-          We&apos;ve sent a one-time password (OTP) to your registered email. Please
-          enter it below to complete your verification.
-        </p>
-        {maskedEmail ? <p className="text-sm text-gray-600 mb-6">{maskedEmail}</p> : null}
-
-        <form onSubmit={handleSubmitOtp} className="w-full">
-          <div className="mb-5 flex justify-center gap-2">
-            {otpDigits.map((digit, index) => (
-              <input
-                key={index}
-                ref={(el) => {
-                  inputRefs.current[index] = el;
-                }}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => updateDigit(index, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(index, e)}
-                onPaste={handlePaste}
-                className="h-12 w-10 rounded-lg border border-gray-300 text-center text-lg font-semibold text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
-                aria-label={`OTP digit ${index + 1}`}
-              />
-            ))}
-          </div>
-
-          {error ? (
-            <p className="mb-3 text-sm text-red-600" role="alert">
-              {error}
+        {showVerifiedSuccess ? (
+          <>
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">OTP Verified Successfully!</h1>
+            <p className="text-sm text-gray-500 max-w-sm leading-relaxed mb-7">
+              Your account has been verified. We&apos;ll take you to upload your resume next.
             </p>
-          ) : null}
-          {success ? <p className="mb-3 text-sm text-green-600">{success}</p> : null}
 
-          <Button type="submit" disabled={isSubmittingOtp} className="mb-5">
-            {isSubmittingOtp ? "Verifying..." : "Submit OTP"}
-          </Button>
-        </form>
+            <Button
+              type="button"
+              disabled={!postVerifyDestination || !isRedirecting}
+              className="mb-5 w-full"
+              onClick={() => {
+                if (!postVerifyDestination) return;
+                router.replace(postVerifyDestination);
+              }}
+            >
+              Okay!
+            </Button>
 
-        <p className="text-sm text-gray-500">
-          Didn&apos;t receive the OTP?{" "}
-          <button
-            type="button"
-            onClick={() => void handleResendOtp()}
-            disabled={isResendingOtp}
-            className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-60"
-          >
-            {isResendingOtp ? "Resending..." : "Resend"}
-          </button>
-        </p>
+            <p className="text-sm text-gray-500">
+              Didn&apos;t receive the OTP?{" "}
+              <button
+                type="button"
+                onClick={() => void handleResendOtp()}
+                disabled
+                className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-60"
+              >
+                Resend
+              </button>
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">Verify Your Account</h1>
+            <p className="text-sm text-gray-500 max-w-sm leading-relaxed mb-2">
+              We&apos;ve sent a one-time password (OTP) to your registered email. Please
+              enter it below to complete your verification.
+            </p>
+            {maskedEmail ? <p className="text-sm text-gray-600 mb-6">{maskedEmail}</p> : null}
+
+            <form onSubmit={handleSubmitOtp} className="w-full">
+              <div className="mb-5 flex justify-center gap-2">
+                {otpDigits.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => {
+                      inputRefs.current[index] = el;
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => updateDigit(index, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(index, e)}
+                    onPaste={handlePaste}
+                    className="h-12 w-10 rounded-lg border border-gray-300 text-center text-lg font-semibold text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 disabled:opacity-60"
+                    aria-label={`OTP digit ${index + 1}`}
+                    disabled={isSubmittingOtp || isRedirecting}
+                  />
+                ))}
+              </div>
+
+              {error ? (
+                <p className="mb-3 text-sm text-red-600" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {success ? <p className="mb-3 text-sm text-green-600">{success}</p> : null}
+
+              <Button type="submit" disabled={isSubmittingOtp || isRedirecting} className="mb-5">
+                {isRedirecting ? "Redirecting..." : isSubmittingOtp ? "Verifying..." : "Submit OTP"}
+              </Button>
+            </form>
+
+            <p className="text-sm text-gray-500">
+              Didn&apos;t receive the OTP?{" "}
+              <button
+                type="button"
+                onClick={() => void handleResendOtp()}
+                disabled={isResendingOtp || isSubmittingOtp || isRedirecting}
+                className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-60"
+              >
+                {isResendingOtp ? "Resending..." : "Resend"}
+              </button>
+            </p>
+          </>
+        )}
       </div>
     </AuthLayout>
   );

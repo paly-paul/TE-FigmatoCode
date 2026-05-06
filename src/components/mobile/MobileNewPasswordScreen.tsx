@@ -3,27 +3,42 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { MobileAuthHeader } from "@/components/mobile/MobileAuthHeader";
 import { MobileSuccessStoriesSection } from "@/components/mobile/MobileSuccessStories";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { resetUserPassword } from "@/services/resetPassword";
 
 export function MobileNewPasswordScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const email = (searchParams.get("email") || "").trim().toLowerCase();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!email) {
+      setError("Missing email. Please start from forgot password.");
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
     setError("");
-    // TODO: connect to auth API
-    console.log({ newPassword });
-    router.push("/password-updated/");
+    setIsSubmitting(true);
+    try {
+      await resetUserPassword(email, newPassword);
+      router.push("/password-updated/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reset password.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -61,8 +76,8 @@ export function MobileNewPasswordScreen() {
             error={error}
           />
 
-          <Button type="submit" className="mt-1 min-h-[48px] text-base">
-            Update
+          <Button type="submit" className="mt-1 min-h-[48px] text-base" disabled={isSubmitting}>
+            {isSubmitting ? "Updating..." : "Update"}
           </Button>
         </form>
       </main>

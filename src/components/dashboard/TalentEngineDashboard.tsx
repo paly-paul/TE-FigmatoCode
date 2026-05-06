@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
+  CheckCircle2,
   Search,
   MapPin,
   Bookmark,
@@ -13,7 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
-  DollarSign,
+  Wallet,
   TrendingUp,
   User,
 } from "lucide-react";
@@ -482,6 +483,8 @@ export default function TalentEngineDashboard() {
   const [actionCenterSeeAll, setActionCenterSeeAll] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
+  const [drawerSuccessMessage, setDrawerSuccessMessage] = useState<string | null>(null);
+  const [showApplicationSuccess, setShowApplicationSuccess] = useState(false);
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
   const [showReferModal, setShowReferModal] = useState(false);
@@ -1224,6 +1227,7 @@ export default function TalentEngineDashboard() {
       jobDocumentId: job.jobDocumentId,
     };
 
+    setDrawerSuccessMessage(null);
     const isSameJobAlreadyOpen =
       isDrawerOpen &&
       selectedAction?.type === "Job" &&
@@ -1380,6 +1384,11 @@ export default function TalentEngineDashboard() {
     })();
   }, [activeTab, candidateId]);
 
+  useEffect(() => {
+    if (!drawerSuccessMessage) return;
+    setShowApplicationSuccess(true);
+  }, [drawerSuccessMessage]);
+
   const handleDrawerPrimaryAction = (
     action: ActionCard,
     extras?: {
@@ -1513,7 +1522,11 @@ export default function TalentEngineDashboard() {
             const matchedRecommendedJob = apiRecommendedJobs.find(
               (job) => job.jobDocumentId === jobDocumentId
             );
-            await markInterestedInJob(candidateId, jobDocumentId);
+            const applyRes = await markInterestedInJob(candidateId, jobDocumentId);
+            const applyMsg = (applyRes as Record<string, unknown>)?.message as Record<string, unknown> | undefined;
+            setDrawerSuccessMessage(
+              (typeof applyMsg?.message === "string" && applyMsg.message.trim()) || "Applied successfully."
+            );
             setAppliedJobDocumentIds((prev) => {
               const next = new Set(prev);
               next.add(jobDocumentId);
@@ -1699,7 +1712,39 @@ export default function TalentEngineDashboard() {
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
         onRequestClarification={handleDrawerClarification}
+        successMessage={drawerSuccessMessage}
       />
+      {showApplicationSuccess ? (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-4">
+          <div className="relative w-full max-w-[450px] rounded-lg bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl">
+            <div className="relative flex flex-col items-center justify-center overflow-hidden text-center">
+              <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+              <span className="absolute right-10 top-16 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
+              <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
+              <span className="absolute bottom-10 right-12 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
+              <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
+              <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
+              <div className="mb-4 rounded-full bg-emerald-100 p-3 text-emerald-600 shadow-sm">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+              <p className="text-xl font-semibold text-gray-900">Application Submitted Successfully</p>
+              <p className="mt-2 text-sm text-gray-600">
+                Your interest has been shared with the recruiter. We&apos;ll notify you about the next steps.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowApplicationSuccess(false);
+                  setDrawerSuccessMessage(null);
+                }}
+                className="mt-5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <PauseJobSearchModal
         open={showPauseModal}
         onClose={() => setShowPauseModal(false)}
@@ -1919,7 +1964,7 @@ export default function TalentEngineDashboard() {
                         <span className="truncate">{formatJobLocation(job.location, job.locationFull)}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <DollarSign size={16} className="h-4 w-4 shrink-0 text-slate-500" />
+                        <Wallet size={16} className="h-4 w-4 shrink-0 text-slate-500" />
                         <span>{job.salary}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2485,7 +2530,7 @@ export default function TalentEngineDashboard() {
                             <span className="truncate">{formatJobLocation(job.location, job.locationFull)}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <DollarSign size={16} className="flex-shrink-0" />
+                            <Wallet size={16} className="flex-shrink-0" />
                             {job.salary}
                           </div>
                           <div className="flex items-center gap-2">

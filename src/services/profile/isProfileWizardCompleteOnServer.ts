@@ -110,14 +110,20 @@ export async function isProfileWizardCompleteOnServer(
         : "";
     const rootStatus =
       typeof root.profile_status === "string" ? root.profile_status.trim().toLowerCase() : "";
-    const isDraft = profileState === "draft" || versionState === "draft";
     const isSubmitted =
       isSubmittedProfileState(profileState) ||
       isSubmittedProfileState(versionState) ||
       isSubmittedProfileState(rootState) ||
       isSubmittedProfileState(profileStatus) ||
       isSubmittedProfileState(versionStatus) ||
-      isSubmittedProfileState(rootStatus);
+      isSubmittedProfileState(rootStatus) ||
+      // Use the already-mapped profileStatus from getCandidateProfileData as an
+      // additional signal — profile_status is set to "Active" on successful submit.
+      isSubmittedProfileState(data.profileStatus ?? "");
+
+    // isDraft is only meaningful when there is no submitted signal at all.
+    // A nested sub-document's "Draft" state must not override a submitted root state.
+    const isDraft = (profileState === "draft" || versionState === "draft") && !isSubmitted;
 
     const completionPercent =
       extractCompletionPercent(profileVersion) ??
@@ -134,13 +140,14 @@ export async function isProfileWizardCompleteOnServer(
       profileStatus: profileStatus || null,
       versionStatus: versionStatus || null,
       rootStatus: rootStatus || null,
+      mappedProfileStatus: data.profileStatus || null,
       isSubmitted,
+      isDraft,
       completionPercent,
       email: data.email,
       currentLocation: data.currentLocation,
     });
-    // Only treat as complete after backend marks submitted/published/completed.
-    // This prevents upload/AI-prefill steps from routing to dashboard before Finish.
+    // Route to dashboard when any submitted/published/active state signal is present.
     return Boolean(!isDraft && isSubmitted);
   } catch (error) {
     console.error("[profile-check] server-data:error", { profileName, error });

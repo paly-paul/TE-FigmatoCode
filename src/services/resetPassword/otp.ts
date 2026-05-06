@@ -37,7 +37,7 @@ function readStatus(data: Record<string, unknown>): string {
  */
 export async function sendResetPasswordOtp(email: string): Promise<SendResetPasswordOtpResponse> {
   const normalizedEmail = email.trim().toLowerCase();
-  const res = await fetch("/api/method/send_reset_password", {
+  const res = await fetch("/api/method/send_reset_password_otp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: normalizedEmail }),

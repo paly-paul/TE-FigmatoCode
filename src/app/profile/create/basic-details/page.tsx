@@ -13,10 +13,11 @@ import {
   readResumeProfile,
   readResumeSkillsDraft,
   clearResumeWizardSession,
+  hasProceededPastResumeUpload,
 } from "@/lib/profileSession";
 import { clearAuthSession, getCandidateId, getProfileName, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
-import { getCandidateProfileDataByEmail, saveProfile, uploadProfileFile } from "@/services/profile";
+import { getCandidateProfileData, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { ResumeProfileData } from "@/types/profile";
@@ -357,6 +358,7 @@ interface BasicDetailsForm {
   currentLocation: string;
   preferredLocation: string;
   workAuthorization: string;
+  preferredIndustry: string;
 }
 
 type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
@@ -480,6 +482,19 @@ function withCurrentOption(options: string[], currentValue: string) {
   return value && !options.includes(value) ? [value, ...options] : options;
 }
 
+function parseMultiSelectString(value: string | undefined): string[] {
+  if (!value) return [];
+  const tokens = value
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens));
+}
+
+function serializeMultiSelect(values: string[]): string {
+  return values.map((item) => item.trim()).filter(Boolean).join(", ");
+}
+
 function hasMeaningfulProfileValue(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -525,6 +540,7 @@ const initialForm: BasicDetailsForm = {
   currentLocation: "",
   preferredLocation: "",
   workAuthorization: "",
+  preferredIndustry: "",
 };
 
 const fieldClass = (hasError: boolean) =>
@@ -883,6 +899,7 @@ function BasicDetailsPageContent() {
     basicDetails: false,
     education: false,
     certifications: false,
+    preferences: false,
     externalLinks: false,
     languages: false,
   });
@@ -891,9 +908,12 @@ function BasicDetailsPageContent() {
   const [countryCodeSearch, setCountryCodeSearch] = useState("");
   const [nationalityOptions, setNationalityOptions] = useState<string[]>(fallbackNationalityOptions);
   const [workAuthorizationOptions, setWorkAuthorizationOptions] = useState<string[]>([]);
+  const [preferredIndustryOptions, setPreferredIndustryOptions] = useState<string[]>([]);
   const [currencyOptions, setCurrencyOptions] = useState<string[]>(fallbackCurrencyOptions);
   const [openWorkAuthorizationDropdown, setOpenWorkAuthorizationDropdown] = useState(false);
+  const [openPreferredIndustryDropdown, setOpenPreferredIndustryDropdown] = useState(false);
   const [workAuthorizationSearch, setWorkAuthorizationSearch] = useState("");
+  const [preferredIndustrySearch, setPreferredIndustrySearch] = useState("");
   const [languageOptions, setLanguageOptions] = useState<string[]>([]);
   const [isLanguageOptionsLoading, setIsLanguageOptionsLoading] = useState(true);
   const [languageOptionsError, setLanguageOptionsError] = useState("");
@@ -906,6 +926,8 @@ function BasicDetailsPageContent() {
   const [isCurrentLocationLoading, setIsCurrentLocationLoading] = useState(false);
   const [isPreferredLocationLoading, setIsPreferredLocationLoading] = useState(false);
   const [activeLocationField, setActiveLocationField] = useState<"currentLocation" | "preferredLocation" | null>(null);
+  const [currentLocationInput, setCurrentLocationInput] = useState("");
+  const [preferredLocationInput, setPreferredLocationInput] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
     JSON.stringify({
@@ -928,6 +950,7 @@ function BasicDetailsPageContent() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
@@ -961,6 +984,7 @@ function BasicDetailsPageContent() {
         currentLocation: form.currentLocation.trim(),
         preferredLocation: form.preferredLocation.trim(),
         workAuthorization: form.workAuthorization.trim(),
+        preferredIndustry: form.preferredIndustry.trim(),
       },
       education: education.map((entry) => ({
         title: entry.title.trim(),
@@ -1054,7 +1078,7 @@ function BasicDetailsPageContent() {
   }, []);
 
   useEffect(() => {
-    const query = form.currentLocation.trim();
+    const query = currentLocationInput.trim();
     const controller = new AbortController();
     (async () => {
       try {
@@ -1072,10 +1096,10 @@ function BasicDetailsPageContent() {
     return () => {
       controller.abort();
     };
-  }, [form.currentLocation]);
+  }, [currentLocationInput]);
 
   useEffect(() => {
-    const query = form.preferredLocation.trim();
+    const query = preferredLocationInput.trim();
     const controller = new AbortController();
     (async () => {
       try {
@@ -1093,7 +1117,7 @@ function BasicDetailsPageContent() {
     return () => {
       controller.abort();
     };
-  }, [form.preferredLocation]);
+  }, [preferredLocationInput]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1101,7 +1125,8 @@ function BasicDetailsPageContent() {
     (async () => {
       setIsLanguageOptionsLoading(true);
       setLanguageOptionsError("");
-      const [nationalityResult, currencyResult, languageResult, workAuthorizationResult] = await Promise.allSettled([
+      const [nationalityResult, currencyResult, languageResult, workAuthorizationResult, preferredIndustryResult] =
+        await Promise.allSettled([
           getDropdownDetailsOptions({
             doctype: "Profile Version",
             fieldName: "nationality",
@@ -1130,6 +1155,12 @@ function BasicDetailsPageContent() {
               limit: 1000,
             });
           })(),
+          getDropdownDetailsOptions({
+            doctype: "Resource Requirement",
+            fieldName: "industry",
+            page: 1,
+            limit: 1000,
+          }),
       ]);
 
       if (cancelled) return;
@@ -1154,6 +1185,9 @@ function BasicDetailsPageContent() {
 
       if (workAuthorizationResult.status === "fulfilled" && workAuthorizationResult.value.length > 0) {
         setWorkAuthorizationOptions(workAuthorizationResult.value);
+      }
+      if (preferredIndustryResult.status === "fulfilled" && preferredIndustryResult.value.length > 0) {
+        setPreferredIndustryOptions(preferredIndustryResult.value);
       }
       setIsLanguageOptionsLoading(false);
     })();
@@ -1270,7 +1304,10 @@ function BasicDetailsPageContent() {
       currentLocation: preferExistingFormValue(prev.currentLocation, profile.currentLocation ?? ""),
       preferredLocation: preferExistingFormValue(prev.preferredLocation, profile.preferredLocation ?? ""),
       workAuthorization: preferExistingFormValue(prev.workAuthorization, profile.workAuthorization ?? ""),
+      preferredIndustry: preferExistingFormValue(prev.preferredIndustry, profile.preferredIndustry ?? ""),
     }));
+    setCurrentLocationInput((profile.currentLocation ?? "").trim());
+    setPreferredLocationInput((profile.preferredLocation ?? "").trim());
 
     if (profile.education && profile.education.length) {
       setEducation(
@@ -1376,39 +1413,10 @@ function BasicDetailsPageContent() {
           setProfileName(queryProfileName);
         }
 
-        if (!profileName) {
-          const sessionEmail = getSessionLoginEmail()?.trim() || "";
-          if (sessionEmail) {
-            const resolverUrl = new URL("/api/method/get_profile_by_email/", window.location.origin);
-            resolverUrl.searchParams.set("email", sessionEmail);
-            const resolverRes = await fetch(resolverUrl.toString(), { method: "GET" });
-            if (resolverRes.ok) {
-              const resolverData = (await resolverRes.json()) as Record<string, unknown>;
-              const root =
-                resolverData.data && typeof resolverData.data === "object"
-                  ? (resolverData.data as Record<string, unknown>)
-                  : resolverData.message && typeof resolverData.message === "object"
-                    ? (resolverData.message as Record<string, unknown>)
-                    : resolverData;
-              const profile =
-                root.profile && typeof root.profile === "object"
-                  ? (root.profile as Record<string, unknown>)
-                  : {};
-              const resolvedProfileName = typeof profile.name === "string" ? profile.name.trim() : "";
-              if (resolvedProfileName) {
-                profileName = resolvedProfileName;
-                setProfileName(resolvedProfileName);
-              }
-            }
-          }
-        }
-
         if (!profileName) return;
 
-        const sessionEmail = getSessionLoginEmail()?.trim() || "";
-        // In create flow, hydrate only via email/session context.
-        // Profile-id based loading is reserved for explicit edit-profile entry points.
-        const backendProfile = sessionEmail ? await getCandidateProfileDataByEmail(sessionEmail) : null;
+        // In create flow, hydrate by profile name/id (get_data).
+        const backendProfile = await getCandidateProfileData(profileName);
         if (!backendProfile) return;
         if (cancelled) return;
 
@@ -1429,6 +1437,10 @@ function BasicDetailsPageContent() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    setShowUploadResumeShortcut(!hasProceededPastResumeUpload());
   }, []);
 
   useEffect(() => {
@@ -1642,6 +1654,9 @@ function BasicDetailsPageContent() {
       case "workAuthorization":
         patch.workAuthorization = trimmed || undefined;
         break;
+      case "preferredIndustry":
+        patch.preferredIndustry = trimmed || undefined;
+        break;
       default:
         break;
     }
@@ -1656,8 +1671,10 @@ function BasicDetailsPageContent() {
     const displayValue = value.includes("--") ? value.split("--").join(", ") : value;
     setField(field, displayValue);
     if (field === "currentLocation") {
+      setCurrentLocationInput(displayValue);
       setCurrentLocationSuggestions([]);
     } else {
+      setPreferredLocationInput(displayValue);
       setPreferredLocationSuggestions([]);
     }
     setActiveLocationField(null);
@@ -1665,7 +1682,22 @@ function BasicDetailsPageContent() {
 
   function handleLocationInputChange(field: "currentLocation" | "preferredLocation", value: string) {
     setActiveLocationField(field);
-    setField(field, value);
+    if (field === "currentLocation") {
+      setCurrentLocationInput(value);
+    } else {
+      setPreferredLocationInput(value);
+    }
+  }
+
+  function handleLocationInputBlur(field: "currentLocation" | "preferredLocation") {
+    window.setTimeout(() => {
+      setActiveLocationField((current) => (current === field ? null : current));
+      if (field === "currentLocation") {
+        setCurrentLocationInput(form.currentLocation);
+      } else {
+        setPreferredLocationInput(form.preferredLocation);
+      }
+    }, 80);
   }
 
   function validate(): boolean {
@@ -1966,12 +1998,13 @@ function BasicDetailsPageContent() {
 
   function getFilteredWorkAuthorizationOptions() {
     const query = workAuthorizationSearch.trim().toLowerCase();
-    const options = withCurrentOption(workAuthorizationOptions, form.workAuthorization);
-    const selected = form.workAuthorization.trim();
-    const prioritizedOptions =
-      selected && options.includes(selected)
-        ? [selected, ...options.filter((option) => option !== selected)]
-        : options;
+    const selectedValues = parseMultiSelectString(form.workAuthorization);
+    const options = Array.from(new Set([...selectedValues, ...workAuthorizationOptions]));
+    const selectedSet = new Set(selectedValues);
+    const prioritizedOptions = [
+      ...selectedValues,
+      ...options.filter((option) => !selectedSet.has(option)),
+    ];
     const matched = !query
       ? prioritizedOptions
       : prioritizedOptions.filter((option) => option.toLowerCase().includes(query));
@@ -1983,19 +2016,52 @@ function BasicDetailsPageContent() {
       if (aStarts !== bStarts) return bStarts - aStarts;
       return aLabel.localeCompare(bLabel);
     });
-    if (!selected) return sortedMatches;
-    const selectedIndex = sortedMatches.findIndex((option) => option === selected);
-    if (selectedIndex <= 0) return sortedMatches;
-    const next = [...sortedMatches];
-    const [picked] = next.splice(selectedIndex, 1);
-    next.unshift(picked);
-    return next;
+    if (!selectedValues.length) return sortedMatches;
+    const selectedFirst = sortedMatches.filter((option) => selectedSet.has(option));
+    const unselected = sortedMatches.filter((option) => !selectedSet.has(option));
+    return [...selectedFirst, ...unselected];
   }
 
   function handleWorkAuthorizationPick(option: string) {
-    setField("workAuthorization", option);
-    setOpenWorkAuthorizationDropdown(false);
+    const selected = parseMultiSelectString(form.workAuthorization);
+    if (selected.some((value) => value.toLowerCase() === option.toLowerCase())) return;
+    setField("workAuthorization", serializeMultiSelect([...selected, option]));
     setWorkAuthorizationSearch("");
+  }
+
+  function removeWorkAuthorization(option: string) {
+    const next = parseMultiSelectString(form.workAuthorization).filter(
+      (value) => value.toLowerCase() !== option.toLowerCase()
+    );
+    setField("workAuthorization", serializeMultiSelect(next));
+  }
+
+  function getFilteredPreferredIndustryOptions() {
+    const query = preferredIndustrySearch.trim().toLowerCase();
+    const selectedValues = parseMultiSelectString(form.preferredIndustry);
+    const options = Array.from(new Set([...selectedValues, ...preferredIndustryOptions]));
+    const selectedSet = new Set(selectedValues);
+    const prioritizedOptions = [
+      ...selectedValues,
+      ...options.filter((option) => !selectedSet.has(option)),
+    ];
+    return !query
+      ? prioritizedOptions
+      : prioritizedOptions.filter((option) => option.toLowerCase().includes(query));
+  }
+
+  function handlePreferredIndustryPick(option: string) {
+    const selected = parseMultiSelectString(form.preferredIndustry);
+    if (selected.some((value) => value.toLowerCase() === option.toLowerCase())) return;
+    setField("preferredIndustry", serializeMultiSelect([...selected, option]));
+    setPreferredIndustrySearch("");
+  }
+
+  function removePreferredIndustry(option: string) {
+    const next = parseMultiSelectString(form.preferredIndustry).filter(
+      (value) => value.toLowerCase() !== option.toLowerCase()
+    );
+    setField("preferredIndustry", serializeMultiSelect(next));
   }
 
   function openSummaryDrawer() {
@@ -2024,6 +2090,7 @@ function BasicDetailsPageContent() {
         currentLocation: form.currentLocation.trim() || profileSnapshot.currentLocation,
         preferredLocation: form.preferredLocation.trim() || profileSnapshot.preferredLocation,
         workAuthorization: form.workAuthorization.trim() || profileSnapshot.workAuthorization,
+        preferredIndustry: form.preferredIndustry.trim() || profileSnapshot.preferredIndustry,
         nationality: form.nationality || profileSnapshot.nationality,
         education: education
           .map(({ title, institute, specialization, graduationYear, score }) => ({
@@ -2127,6 +2194,7 @@ function BasicDetailsPageContent() {
       currentLocation: form.currentLocation.trim(),
       preferredLocation: form.preferredLocation.trim(),
       workAuthorization: form.workAuthorization.trim(),
+      preferredIndustry: form.preferredIndustry.trim(),
       profileImageUrl: existingProfile.profileImageUrl?.trim() || undefined,
       education: trimmedEducation,
       certifications: trimmedCertifications,
@@ -2316,6 +2384,7 @@ function BasicDetailsPageContent() {
           nationality: form.nationality || "",
           preferred_location: form.preferredLocation.trim() || "",
           work_authorized_countries: form.workAuthorization.trim() || "",
+          preferred_industry: form.preferredIndustry.trim() || "",
           ...(draftSkills.length ? { key_skills: draftSkills } : {}),
           ...(draftSkillsTable.length ? { skills_table: draftSkillsTable } : {}),
           ...(draftProjectsTable.length ? { projects_table: draftProjectsTable } : {}),
@@ -2457,6 +2526,15 @@ function BasicDetailsPageContent() {
     setShowUnsavedModal(false);
     setPendingNavigationUrl(null);
     continueNavigation(target);
+  }
+
+  function handleUploadResumeShortcut() {
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl("/profile/create");
+      setShowUnsavedModal(true);
+      return;
+    }
+    router.push("/profile/create");
   }
 
   return (
@@ -2683,75 +2761,6 @@ function BasicDetailsPageContent() {
                   </label>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-gray-800">Work Authorization</span>
-                    <div
-                      className="relative"
-                      onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                          setOpenWorkAuthorizationDropdown(false);
-                        }
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpenWorkAuthorizationDropdown((prev) => !prev);
-                          setWorkAuthorizationSearch("");
-                        }}
-                        className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
-                      >
-                        <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
-                          {form.workAuthorization || "Select work authorization"}
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      </button>
-                      {openWorkAuthorizationDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                          <div className="border-b border-gray-100 p-2">
-                            <div className="relative">
-                              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                              <input
-                                type="text"
-                                value={workAuthorizationSearch}
-                                onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
-                                placeholder="Search work authorization"
-                                className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-                              />
-                            </div>
-                          </div>
-                          <div className="max-h-48 overflow-auto py-1">
-                            {getFilteredWorkAuthorizationOptions().length ? (
-                              getFilteredWorkAuthorizationOptions().map((option) => (
-                                <button
-                                  key={`work-auth-mobile-${option}`}
-                                  type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handleWorkAuthorizationPick(option);
-                                  }}
-                                  onTouchStart={(e) => {
-                                    e.preventDefault();
-                                    handleWorkAuthorizationPick(option);
-                                  }}
-                                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
-                                    form.workAuthorization === option
-                                      ? "bg-primary-50 text-primary-700"
-                                      : "text-gray-700"
-                                  }`}
-                                >
-                                  {option}
-                                </button>
-                              ))
-                            ) : (
-                              <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </label>
-
-                  <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Email <span className="text-red-500">*</span></span>
                     <input
                       type="email"
@@ -2802,9 +2811,10 @@ function BasicDetailsPageContent() {
                     <div className="relative">
                       <input
                         type="text"
-                        value={form.currentLocation}
+                        value={currentLocationInput}
                         onChange={(e) => handleLocationInputChange("currentLocation", e.target.value)}
                         onFocus={() => setActiveLocationField("currentLocation")}
+                        onBlur={() => handleLocationInputBlur("currentLocation")}
                         placeholder="City, Country"
                         className={`${fieldClass(Boolean(errors.currentLocation))} pr-10`}
                         autoComplete="off"
@@ -2848,9 +2858,10 @@ function BasicDetailsPageContent() {
                     <div className="relative">
                       <input
                         type="text"
-                        value={form.preferredLocation}
+                        value={preferredLocationInput}
                         onChange={(e) => handleLocationInputChange("preferredLocation", e.target.value)}
                         onFocus={() => setActiveLocationField("preferredLocation")}
+                        onBlur={() => handleLocationInputBlur("preferredLocation")}
                         placeholder="Where would you like to work?"
                         className={`${fieldClass(false)} pr-10`}
                         autoComplete="off"
@@ -3277,6 +3288,179 @@ function BasicDetailsPageContent() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </MobileAccordionCard>
+
+              <MobileAccordionCard
+                title="Preferences"
+                expanded={mobileAccordionOpen.preferences}
+                onToggle={() =>
+                  setMobileAccordionOpen((prev) => ({
+                    ...prev,
+                    preferences: !prev.preferences,
+                  }))
+                }
+              >
+                <div className="p-4 sm:p-6 space-y-5">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Work Authorization</span>
+                    <div
+                      className="relative"
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                          setOpenWorkAuthorizationDropdown(false);
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenWorkAuthorizationDropdown((prev) => !prev);
+                          setWorkAuthorizationSearch("");
+                        }}
+                        className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                      >
+                        <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
+                          {form.workAuthorization || "Select work authorization"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {openWorkAuthorizationDropdown ? (
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="border-b border-gray-100 p-2">
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={workAuthorizationSearch}
+                                onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
+                                placeholder="Search work authorization"
+                                className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-48 overflow-auto py-1">
+                            {getFilteredWorkAuthorizationOptions().length ? (
+                              getFilteredWorkAuthorizationOptions().map((option) => (
+                                <button
+                                  key={`work-auth-mobile-${option}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleWorkAuthorizationPick(option);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.preventDefault();
+                                    handleWorkAuthorizationPick(option);
+                                  }}
+                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                  {option}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    {parseMultiSelectString(form.workAuthorization).length ? (
+                      <div className="flex flex-wrap gap-2">
+                        {parseMultiSelectString(form.workAuthorization).map((value) => (
+                          <button
+                            key={`work-auth-chip-mobile-${value}`}
+                            type="button"
+                            onClick={() => removeWorkAuthorization(value)}
+                            className="group inline-flex items-center gap-1 rounded-full bg-primary-50 text-primary-700 border border-primary-100 px-3 py-1 text-xs font-medium hover:bg-primary-100"
+                          >
+                            <span>{value}</span>
+                            <span className="text-[11px] text-primary-500 group-hover:text-primary-700">x</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </label>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Preferred Industry</span>
+                    <div
+                      className="relative"
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                          setOpenPreferredIndustryDropdown(false);
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenPreferredIndustryDropdown((prev) => !prev);
+                          setPreferredIndustrySearch("");
+                        }}
+                        className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                      >
+                        <span className={form.preferredIndustry ? "text-gray-900" : "text-gray-400"}>
+                          {form.preferredIndustry || "Select preferred industry"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {openPreferredIndustryDropdown ? (
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="border-b border-gray-100 p-2">
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={preferredIndustrySearch}
+                                onChange={(e) => setPreferredIndustrySearch(e.target.value)}
+                                placeholder="Search preferred industry"
+                                className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-48 overflow-auto py-1">
+                            {getFilteredPreferredIndustryOptions().length ? (
+                              getFilteredPreferredIndustryOptions().map((option) => (
+                                <button
+                                  key={`preferred-industry-mobile-${option}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handlePreferredIndustryPick(option);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.preventDefault();
+                                    handlePreferredIndustryPick(option);
+                                  }}
+                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                  {option}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-500">No preferred industry found</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    {parseMultiSelectString(form.preferredIndustry).length ? (
+                      <div className="flex flex-wrap gap-2">
+                        {parseMultiSelectString(form.preferredIndustry).map((value) => (
+                          <button
+                            key={`preferred-industry-chip-mobile-${value}`}
+                            type="button"
+                            onClick={() => removePreferredIndustry(value)}
+                            className="group inline-flex items-center gap-1 rounded-full bg-primary-50 text-primary-700 border border-primary-100 px-3 py-1 text-xs font-medium hover:bg-primary-100"
+                          >
+                            <span>{value}</span>
+                            <span className="text-[11px] text-primary-500 group-hover:text-primary-700">x</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </label>
                 </div>
               </MobileAccordionCard>
 
@@ -3899,6 +4083,176 @@ function BasicDetailsPageContent() {
             </section>
 
             <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Preferences</h3>
+                <p className="text-xs text-gray-500">
+                  Add your work authorization and preferred industries
+                </p>
+              </div>
+              <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-gray-800">Work Authorization</span>
+                  <div
+                    className="relative"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                        setOpenWorkAuthorizationDropdown(false);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenWorkAuthorizationDropdown((prev) => !prev);
+                        setWorkAuthorizationSearch("");
+                      }}
+                      className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                    >
+                      <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
+                        {form.workAuthorization || "Select work authorization"}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                    </button>
+                    {openWorkAuthorizationDropdown ? (
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="border-b border-gray-100 p-2">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={workAuthorizationSearch}
+                              onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
+                              placeholder="Search work authorization"
+                              className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-48 overflow-auto py-1">
+                          {getFilteredWorkAuthorizationOptions().length ? (
+                            getFilteredWorkAuthorizationOptions().map((option) => (
+                              <button
+                                key={`work-auth-desktop-${option}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleWorkAuthorizationPick(option);
+                                }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  handleWorkAuthorizationPick(option);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                {option}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {parseMultiSelectString(form.workAuthorization).length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {parseMultiSelectString(form.workAuthorization).map((value) => (
+                        <button
+                          key={`work-auth-chip-desktop-${value}`}
+                          type="button"
+                          onClick={() => removeWorkAuthorization(value)}
+                          className="group inline-flex items-center gap-1 rounded-full bg-primary-50 text-primary-700 border border-primary-100 px-3 py-1 text-xs font-medium hover:bg-primary-100"
+                        >
+                          <span>{value}</span>
+                          <span className="text-[11px] text-primary-500 group-hover:text-primary-700">x</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-gray-800">Preferred Industry</span>
+                  <div
+                    className="relative"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                        setOpenPreferredIndustryDropdown(false);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenPreferredIndustryDropdown((prev) => !prev);
+                        setPreferredIndustrySearch("");
+                      }}
+                      className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                    >
+                      <span className={form.preferredIndustry ? "text-gray-900" : "text-gray-400"}>
+                        {form.preferredIndustry || "Select preferred industry"}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                    </button>
+                    {openPreferredIndustryDropdown ? (
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="border-b border-gray-100 p-2">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={preferredIndustrySearch}
+                              onChange={(e) => setPreferredIndustrySearch(e.target.value)}
+                              placeholder="Search preferred industry"
+                              className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-48 overflow-auto py-1">
+                          {getFilteredPreferredIndustryOptions().length ? (
+                            getFilteredPreferredIndustryOptions().map((option) => (
+                              <button
+                                key={`preferred-industry-desktop-${option}`}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handlePreferredIndustryPick(option);
+                                }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  handlePreferredIndustryPick(option);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                {option}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-sm text-gray-500">No preferred industry found</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {parseMultiSelectString(form.preferredIndustry).length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {parseMultiSelectString(form.preferredIndustry).map((value) => (
+                        <button
+                          key={`preferred-industry-chip-desktop-${value}`}
+                          type="button"
+                          onClick={() => removePreferredIndustry(value)}
+                          className="group inline-flex items-center gap-1 rounded-full bg-primary-50 text-primary-700 border border-primary-100 px-3 py-1 text-xs font-medium hover:bg-primary-100"
+                        >
+                          <span>{value}</span>
+                          <span className="text-[11px] text-primary-500 group-hover:text-primary-700">x</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </label>
+              </div>
+            </section>
+
+            <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">External Links</h3>
@@ -4275,9 +4629,10 @@ function BasicDetailsPageContent() {
                     <div className="relative">
                       <input
                         type="text"
-                        value={form.currentLocation}
+                        value={currentLocationInput}
                         onChange={(e) => handleLocationInputChange("currentLocation", e.target.value)}
                         onFocus={() => setActiveLocationField("currentLocation")}
+                        onBlur={() => handleLocationInputBlur("currentLocation")}
                         placeholder="City, Country"
                         className={fieldClass(Boolean(errors.currentLocation))}
                         autoComplete="off"
@@ -4319,9 +4674,10 @@ function BasicDetailsPageContent() {
                   <div className="relative">
                     <input
                       type="text"
-                      value={form.preferredLocation}
+                      value={preferredLocationInput}
                       onChange={(e) => handleLocationInputChange("preferredLocation", e.target.value)}
                       onFocus={() => setActiveLocationField("preferredLocation")}
+                      onBlur={() => handleLocationInputBlur("preferredLocation")}
                       placeholder="Where would you like to work?"
                       className={fieldClass(false)}
                       autoComplete="off"
@@ -4442,74 +4798,6 @@ function BasicDetailsPageContent() {
                   )}
                 </label>
 
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-gray-800">Work Authorization</span>
-                  <div
-                    className="relative"
-                    onBlur={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                        setOpenWorkAuthorizationDropdown(false);
-                      }
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenWorkAuthorizationDropdown((prev) => !prev);
-                        setWorkAuthorizationSearch("");
-                      }}
-                      className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
-                    >
-                      <span className={form.workAuthorization ? "text-gray-900" : "text-gray-400"}>
-                        {form.workAuthorization || "Select work authorization"}
-                      </span>
-                      <ChevronDown className="h-4 w-4 text-gray-400" />
-                    </button>
-                    {openWorkAuthorizationDropdown ? (
-                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
-                        <div className="border-b border-gray-100 p-2">
-                          <div className="relative">
-                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            <input
-                              type="text"
-                              value={workAuthorizationSearch}
-                              onChange={(e) => setWorkAuthorizationSearch(e.target.value)}
-                              placeholder="Search work authorization"
-                              className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-                            />
-                          </div>
-                        </div>
-                        <div className="max-h-48 overflow-auto py-1">
-                          {getFilteredWorkAuthorizationOptions().length ? (
-                            getFilteredWorkAuthorizationOptions().map((option) => (
-                              <button
-                                key={`work-auth-desktop-${option}`}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleWorkAuthorizationPick(option);
-                                }}
-                                onTouchStart={(e) => {
-                                  e.preventDefault();
-                                  handleWorkAuthorizationPick(option);
-                                }}
-                                className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
-                                  form.workAuthorization === option
-                                    ? "bg-primary-50 text-primary-700"
-                                    : "text-gray-700"
-                                }`}
-                              >
-                                {option}
-                              </button>
-                            ))
-                          ) : (
-                            <p className="px-3 py-2 text-sm text-gray-500">No work authorization found</p>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </label>
               </div>
             </section>
           </div>
@@ -4518,19 +4806,34 @@ function BasicDetailsPageContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-3">
-        <Button
-          variant="outline"
-          fullWidth={false}
-          className="px-6 sm:px-8"
-          onClick={() => void handleSaveDraft()}
-          disabled={!hasUnsavedChanges}
-        >
-          Save Draft
-        </Button>
-        <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext}>
-          Next
-        </Button>
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-3">
+        <div>
+          {showUploadResumeShortcut ? (
+            <Button
+              type="button"
+              variant="outline"
+              fullWidth={false}
+              className="px-4 sm:px-6 text-sm"
+              onClick={handleUploadResumeShortcut}
+            >
+              Upload Resume for Faster Setup
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            fullWidth={false}
+            className="px-6 sm:px-8"
+            onClick={() => void handleSaveDraft()}
+            disabled={!hasUnsavedChanges}
+          >
+            Save Draft
+          </Button>
+          <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext}>
+            Next
+          </Button>
+        </div>
       </div>
 
       <BaseDrawer
