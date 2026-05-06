@@ -79,6 +79,22 @@ function splitListLikeText(value: string): string[] {
     .filter(Boolean);
 }
 
+function parseJsonLike(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+  ) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function toLanguageCode(value: string): string {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
   const map: Record<string, string> = {
@@ -111,6 +127,10 @@ function normalizeObjectList(
   targetKey: "country" | "industries" | "key_skills"
 ): Record<string, string>[] {
   if (typeof value === "string") {
+    const parsed = parseJsonLike(value);
+    if (parsed !== undefined) {
+      return normalizeObjectList(parsed, targetKey);
+    }
     const tokens = splitListLikeText(value);
     return tokens.map((token) => ({ [targetKey]: token }));
   }
@@ -120,6 +140,11 @@ function normalizeObjectList(
   const normalized: Record<string, string>[] = [];
   for (const item of value) {
     if (typeof item === "string") {
+      const parsed = parseJsonLike(item);
+      if (parsed !== undefined) {
+        normalized.push(...normalizeObjectList(parsed, targetKey));
+        continue;
+      }
       const token = item.trim();
       if (token) normalized.push({ [targetKey]: token });
       continue;
@@ -145,7 +170,17 @@ function normalizeObjectList(
 }
 
 function normalizeTableRows(key: string, value: unknown): Record<string, unknown>[] {
-  const rows = typeof value === "string" ? splitListLikeText(value) : Array.isArray(value) ? value : [];
+  const parsedStringValue = typeof value === "string" ? parseJsonLike(value) : undefined;
+  const rows =
+    parsedStringValue !== undefined
+      ? Array.isArray(parsedStringValue)
+        ? parsedStringValue
+        : [parsedStringValue]
+      : typeof value === "string"
+        ? splitListLikeText(value)
+        : Array.isArray(value)
+          ? value
+          : [];
   const normalized: Record<string, unknown>[] = [];
 
   for (const row of rows) {
@@ -156,6 +191,17 @@ function normalizeTableRows(key: string, value: unknown): Record<string, unknown
     }
 
     if (typeof row !== "string") continue;
+    const parsed = parseJsonLike(row);
+    if (parsed !== undefined) {
+      const parsedRows = Array.isArray(parsed) ? parsed : [parsed];
+      for (const parsedRow of parsedRows) {
+        if (parsedRow && typeof parsedRow === "object" && !Array.isArray(parsedRow)) {
+          const record = sanitizePayloadObject(parsedRow as Record<string, unknown>);
+          if (Object.keys(record).length > 0) normalized.push(record);
+        }
+      }
+      continue;
+    }
     const token = row.trim();
     if (!token) continue;
 

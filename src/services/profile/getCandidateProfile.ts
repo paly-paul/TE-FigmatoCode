@@ -187,17 +187,6 @@ function collectSkillStrings(value: unknown): string[] {
   if (typeof value === "string") {
     const normalized = value.trim();
     if (!normalized || looksLikeRecordId(normalized)) return [];
-    if (
-      (normalized.startsWith("[") && normalized.endsWith("]")) ||
-      (normalized.startsWith("{") && normalized.endsWith("}"))
-    ) {
-      try {
-        const parsed = JSON.parse(normalized) as unknown;
-        return collectSkillStrings(parsed);
-      } catch {
-        // fall back to delimiter split below
-      }
-    }
     return splitSkillText(normalized).filter((part) => !looksLikeRecordId(part));
   }
 

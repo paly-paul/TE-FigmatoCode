@@ -7,6 +7,22 @@ function splitSkillText(value: string) {
     .filter(Boolean);
 }
 
+function parseJsonLike(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+  ) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function isLikelyNoise(value: string) {
   const token = value.trim();
   const normalized = token.toLowerCase();
@@ -14,6 +30,7 @@ function isLikelyNoise(value: string) {
   if (/^invalid or missing payload$/i.test(token)) return true;
   if (/^pr-\d+-\d+(?:-\d+)?$/i.test(token)) return true;
   if (/^[a-z0-9]{10}$/i.test(token) && !/[aeiou]/i.test(token)) return true;
+  if (/^\[\s*\{\s*\"key_skills\"\s*:/i.test(token)) return true;
   return false;
 }
 
@@ -26,7 +43,11 @@ function pickString(obj: Record<string, unknown>, ...keys: string[]) {
 }
 
 function collectSkillStrings(value: unknown): string[] {
-  if (typeof value === "string") return splitSkillText(value);
+  if (typeof value === "string") {
+    const parsed = parseJsonLike(value);
+    if (parsed !== undefined) return collectSkillStrings(parsed);
+    return splitSkillText(value);
+  }
 
   if (Array.isArray(value)) {
     return value.flatMap((item) => collectSkillStrings(item));
@@ -46,7 +67,7 @@ function collectSkillStrings(value: unknown): string[] {
   );
 
   return [
-    ...(direct ? splitSkillText(direct) : []),
+    ...(direct ? collectSkillStrings(direct) : []),
     ...[
       record.data,
       record.items,
