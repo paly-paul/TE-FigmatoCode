@@ -421,6 +421,32 @@ function mapExternalProfileLinks(value: unknown): ResumeProfileData["externalLin
 }
 
 function mapLanguages(value: unknown): ResumeProfileData["languages"] {
+  const languageCodeToName = (code: string | undefined) => {
+    const normalized = (code || "").trim().toLowerCase();
+    if (!normalized) return undefined;
+    const map: Record<string, string> = {
+      en: "English",
+      hi: "Hindi",
+      ta: "Tamil",
+      te: "Telugu",
+      kn: "Kannada",
+      ml: "Malayalam",
+      mr: "Marathi",
+      bn: "Bengali",
+      gu: "Gujarati",
+      pa: "Punjabi",
+      ur: "Urdu",
+      ar: "Arabic",
+      fr: "French",
+      de: "German",
+      es: "Spanish",
+      pt: "Portuguese",
+      zh: "Chinese",
+      ja: "Japanese",
+    };
+    return map[normalized] || normalized.toUpperCase();
+  };
+
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
@@ -444,6 +470,7 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
     const record = value as UnknownRecord;
     const directLanguage = pickDisplayString(
       record,
+      "fname",
       "language",
       "language_name",
       "language_known",
@@ -479,9 +506,10 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
     );
     const directProficiency = pickString(record, "proficiency", "level", "fluency");
     if (directLanguage || directRead || directWrite || directSpeak || directProficiency) {
+      const normalizedDirectLanguage = languageCodeToName(directLanguage) || directLanguage;
       return [
         {
-          language: directLanguage,
+          language: normalizedDirectLanguage,
           proficiency: directProficiency,
           read: directRead ?? directProficiency,
           write: directWrite ?? directProficiency,
@@ -506,9 +534,10 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
       const proficiency = pickString(record, "proficiency", "level", "fluency");
-      return {
-        language: pickDisplayString(
+      const rawLanguage =
+        pickDisplayString(
           record,
+          "fname",
           "language",
           "language_name",
           "language_known",
@@ -517,7 +546,10 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
           "lang_name",
           "title",
           "name"
-        ),
+        ) || undefined;
+      const normalizedLanguage = languageCodeToName(rawLanguage) || rawLanguage;
+      return {
+        language: normalizedLanguage,
         proficiency,
         read: pickString(
           record,
