@@ -3,6 +3,7 @@ function toErrorMessage(data: Record<string, unknown>): string {
   if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
   if (data.message && typeof data.message === "object") {
     const nested = data.message as Record<string, unknown>;
+    if (typeof nested.detail === "string" && nested.detail.trim()) return nested.detail.trim();
     if (typeof nested.message === "string" && nested.message.trim()) return nested.message.trim();
   }
   return "Unable to update job search status.";

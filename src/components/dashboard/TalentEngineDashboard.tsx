@@ -64,6 +64,7 @@ import {
 } from "@/services/jobs/mapApiJobsToUi";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { getAllLocationOptions } from "@/services/jobs/locationOptions";
+import { StatusPopup } from "../ui/StatusPopup";
 
 interface ActionCard {
   id: number;
@@ -498,6 +499,12 @@ export default function TalentEngineDashboard() {
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
+  const [jobSearchStatusPopup, setJobSearchStatusPopup] = useState<{
+    open: boolean;
+    variant: "success" | "error";
+    title: string;
+    message?: string;
+  }>({ open: false, variant: "error", title: "" });
 
   useEffect(() => {
     // Warm dropdown options before the filter drawer opens.
@@ -556,6 +563,18 @@ export default function TalentEngineDashboard() {
     if (!profile_id) return;
     await activateJobSearch({
       profile_id,
+    });
+  };
+
+  const showJobSearchError = (error: unknown, title = "Unable to update job search") => {
+    const message = error instanceof Error && error.message.trim()
+      ? error.message
+      : "Please try again after some time.";
+    setJobSearchStatusPopup({
+      open: true,
+      variant: "error",
+      title,
+      message,
     });
   };
 
@@ -1603,8 +1622,8 @@ export default function TalentEngineDashboard() {
             try {
               await sendActiveJobSearchStatus();
               setIsLookingForJob(true);
-            } catch {
-              // Keep current state if activation fails.
+            } catch (error) {
+              showJobSearchError(error, "Unable to activate job search");
             }
           })();
         }
@@ -1728,12 +1747,19 @@ export default function TalentEngineDashboard() {
             try {
               await sendActiveJobSearchStatus();
               setIsLookingForJob(true);
-            } catch {
-              // Keep current state if activation fails.
+            } catch (error) {
+              showJobSearchError(error, "Unable to activate job search");
             }
           })();
         }}
         onNotRightNow={() => setShowPauseModal(true)}
+      />
+      <StatusPopup
+        open={jobSearchStatusPopup.open}
+        variant={jobSearchStatusPopup.variant}
+        title={jobSearchStatusPopup.title}
+        message={jobSearchStatusPopup.message}
+        onClose={() => setJobSearchStatusPopup((prev) => ({ ...prev, open: false }))}
       />
     </>
   );
