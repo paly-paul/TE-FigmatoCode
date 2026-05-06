@@ -346,7 +346,13 @@ function SkillsProjectsPageContent() {
   });
 
   useEffect(() => {
-    setShowUploadResumeShortcut(!hasProceededPastResumeUpload());
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
+    const effectiveProfileName = queryProfileName || getProfileName() || getCandidateId() || "";
+    const isEditMode = isLikelyDocId(effectiveProfileName);
+    setShowUploadResumeShortcut(!hasProceededPastResumeUpload() && !isEditMode);
   }, []);
 
   function buildCurrentSnapshot(): string {
