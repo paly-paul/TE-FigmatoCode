@@ -462,6 +462,7 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
       return [
         {
           language: directLanguage,
+          proficiency: directProficiency,
           read: directRead ?? directProficiency,
           write: directWrite ?? directProficiency,
           speak: directSpeak ?? directProficiency,
@@ -484,6 +485,7 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const record = item as UnknownRecord;
+      const proficiency = pickString(record, "proficiency", "level", "fluency");
       return {
         language: pickDisplayString(
           record,
@@ -496,6 +498,7 @@ function mapLanguages(value: unknown): ResumeProfileData["languages"] {
           "title",
           "name"
         ),
+        proficiency,
         read: pickString(
           record,
           "read",
@@ -758,7 +761,10 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
     root.profile_version && typeof root.profile_version === "object"
       ? (root.profile_version as UnknownRecord)
       : root;
-  const fullName = pickString(profileRecord, "full_name", "fullName", "name");
+  // Frappe stores the document id in `name` (e.g. PR-000123). Only use it for display when it is
+  // not a record id — otherwise get_data (flat doc) vs get_profile_by_email (nested profile) looks
+  // like the "name" changes when full_name is missing on one path.
+  const fullName = pickDisplayString(profileRecord, "full_name", "fullName", "name");
   const splitName = splitFullName(fullName);
   const keySkillsFromArray = mapKeySkills(profileVersion.key_skills);
   const keySkillsFromTable = mapSkillsTable(profileVersion.skills_table);

@@ -1474,42 +1474,13 @@ function SkillsProjectsPageContent() {
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
-              language: entry.language?.trim() || "",
               language_name: entry.language?.trim() || "",
               read: entry.read?.trim() || "",
               write: entry.write?.trim() || "",
               speak: entry.speak?.trim() || "",
             }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+            .filter((entry) => entry.language_name || entry.read || entry.write || entry.speak)
         : [],
-      language_details: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => ({
-              language: entry.language?.trim() || "",
-              language_name: entry.language?.trim() || "",
-              read: entry.read?.trim() || "",
-              write: entry.write?.trim() || "",
-              speak: entry.speak?.trim() || "",
-            }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-        : [],
-      language_table: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => ({
-              language: entry.language?.trim() || "",
-              language_name: entry.language?.trim() || "",
-              read: entry.read?.trim() || "",
-              write: entry.write?.trim() || "",
-              speak: entry.speak?.trim() || "",
-            }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-        : [],
-      known_languages: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => entry.language?.trim() || "")
-            .filter(Boolean)
-            .join(", ")
-        : "",
       work_experience: workExperienceTable,
     };
 
@@ -1551,9 +1522,6 @@ function SkillsProjectsPageContent() {
       "external_profile_links",
       "projects_table",
       "languages",
-      "language_details",
-      "language_table",
-      "known_languages",
       "work_experience",
     ];
     const mergedProfilePayload = mergeWithExistingObject(
@@ -1848,42 +1816,13 @@ function SkillsProjectsPageContent() {
       languages: storedProfile?.languages?.length
         ? storedProfile.languages
             .map((entry) => ({
-              language: entry.language?.trim() || "",
               language_name: entry.language?.trim() || "",
               read: entry.read?.trim() || "",
               write: entry.write?.trim() || "",
               speak: entry.speak?.trim() || "",
             }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
+            .filter((entry) => entry.language_name || entry.read || entry.write || entry.speak)
         : [],
-      language_details: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => ({
-              language: entry.language?.trim() || "",
-              language_name: entry.language?.trim() || "",
-              read: entry.read?.trim() || "",
-              write: entry.write?.trim() || "",
-              speak: entry.speak?.trim() || "",
-            }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-        : [],
-      language_table: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => ({
-              language: entry.language?.trim() || "",
-              language_name: entry.language?.trim() || "",
-              read: entry.read?.trim() || "",
-              write: entry.write?.trim() || "",
-              speak: entry.speak?.trim() || "",
-            }))
-            .filter((entry) => entry.language || entry.read || entry.write || entry.speak)
-        : [],
-      known_languages: storedProfile?.languages?.length
-        ? storedProfile.languages
-            .map((entry) => entry.language?.trim() || "")
-            .filter(Boolean)
-            .join(", ")
-        : "",
       work_experience: workExperienceTable,
     };
 
@@ -1926,9 +1865,6 @@ function SkillsProjectsPageContent() {
       "external_profile_links",
       "projects_table",
       "languages",
-      "language_details",
-      "language_table",
-      "known_languages",
       "work_experience",
       "mode",
     ];
