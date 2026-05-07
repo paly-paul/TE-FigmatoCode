@@ -47,6 +47,7 @@ import { getCandidateId, getProfileName } from "@/lib/authSession";
 import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { getCandidateActionables } from "@/services/jobs/getCandidateActionables";
 import {
+  getCandidateInterests,
   getJobApplications,
   getRecommendedJobs,
   markInterestedInJob,
@@ -60,11 +61,13 @@ import type { CandidateActionableApi } from "@/services/jobs/types";
 import type { CandidateActionableSlotApi } from "@/services/jobs/types";
 import {
   mapApplicationToDashboardJob,
+  mapCandidateInterestToDashboardJob,
   mapRecommendedToDashboardJob,
 } from "@/services/jobs/mapApiJobsToUi";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { getAllLocationOptions } from "@/services/jobs/locationOptions";
 import { StatusPopup } from "../ui/StatusPopup";
+import { JobSuccessPopup } from "../ui/JobSuccessPopup";
 
 interface ActionCard {
   id: number;
@@ -92,6 +95,7 @@ interface ActionCard {
   receivedAt?: string;
   applicationStage?: string;
   applicationAppliedDate?: string;
+  matchPercentage?: number;
 }
 
 function mapActionableInterviewSlots(
@@ -130,7 +134,7 @@ interface JobListing {
   startDate: string;
   matchPercentage: number;
   status: "Strong Match" | "Closing Soon" | "Early Applicants" | "New";
-  stage: "Received" | "Shortlisted" | "Interview" | "Rejected";
+  stage: string;
   postedTime: string;
   skills: string[];
   employmentType: string;
@@ -198,23 +202,9 @@ const ACTION_CARDS: ActionCard[] = [
   },
 ];
 
-/** Action Center › Interviews tab (display-only until interviews API is wired). */
-const UPCOMING_INTERVIEWS_FOR_ACTION_CENTER: UpcomingInterviewDisplay[] = [];
-// Example:
-// [{
-//   id: "demo-1",
-//   title: "Frontend Developer Interview",
-//   company: "Google",
-//   location: "Bangalore, India",
-//   scheduleLabel: "Today, 3:00 PM",
-//   modalityLabel: "Virtual (Zoom)",
-//   status: "Scheduled",
-// }];
-
 /** Max Action Center cards shown before "See All" (per tab). */
 const ACTION_CENTER_PAGE_SIZE = 4;
 const DASHBOARD_RECOMMENDED_JOBS_LIMIT = 6;
-const APPLIED_JOBS_STORAGE_PREFIX = "dashboard_applied_jobs_v1";
 const SOURCING_ACCEPTED_STORAGE_PREFIX = "dashboard_sourcing_accepted_v1";
 const LOCAL_ACTIONABLES_STORAGE_PREFIX = "dashboard_local_actionables_v1";
 const LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX = "dashboard_local_submitted_action_cards_v1";
@@ -326,6 +316,13 @@ function formatActionSubtitleForMobile(subtitle: string) {
 }
 
 type ActionableDisplayKind = "recruiter-interest" | "interview" | "salary-negotiation";
+
+function isScheduledInterview(actionable: Pick<CandidateActionableApi, "stage" | "status">): boolean {
+  return (
+    actionable.stage.toLowerCase() === "interview" &&
+    actionable.status.toLowerCase() === "scheduled"
+  );
+}
 
 function getActionableDisplayKind(actionable: Pick<CandidateActionableApi, "stage" | "status">): ActionableDisplayKind {
   const stageText = actionable.stage.toLowerCase();
@@ -479,7 +476,7 @@ export default function TalentEngineDashboard() {
   const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
-  const [mobileApplicationSource, setMobileApplicationSource] = useState<"Applied By You" | "Recruiter Added">("Applied By You");
+  const [applicationSubTab, setApplicationSubTab] = useState<"Shortlisted" | "Applied Jobs">("Shortlisted");
   const [mobileApplicationStage, setMobileApplicationStage] = useState("Stage");
   const [activeActionTab, setActiveActionTab] = useState<
     "Job" | "Interviews" | "Profile" | "General"
@@ -505,6 +502,16 @@ export default function TalentEngineDashboard() {
     title: string;
     message?: string;
   }>({ open: false, variant: "error", title: "" });
+  const [actionSuccessPopup, setActionSuccessPopup] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+  }>({ open: false, title: "", message: "" });
+
+  const showActionSuccess = (title: string, message: string) =>
+    setActionSuccessPopup({ open: true, title, message });
+  const closeActionSuccess = () =>
+    setActionSuccessPopup((prev) => ({ ...prev, open: false }));
 
   useEffect(() => {
     // Warm dropdown options before the filter drawer opens.
@@ -520,11 +527,12 @@ export default function TalentEngineDashboard() {
   }, []);
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
+  const [apiScheduledInterviews, setApiScheduledInterviews] = useState<UpcomingInterviewDisplay[]>([]);
   const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
   const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
-  const [localAppliedJobs, setLocalAppliedJobs] = useState<JobListing[]>([]);
+  const [apiInterestJobs, setApiInterestJobs] = useState<JobListing[]>([]);
   const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
   const [sourcingAcceptedRrCandidates, setSourcingAcceptedRrCandidates] = useState<Set<string>>(
     () => new Set()
@@ -621,9 +629,16 @@ export default function TalentEngineDashboard() {
         } finally {
           setHasAttemptedJobsLoad(true);
         }
+
+        try {
+          const interestsRes = await getCandidateInterests(currentCandidateId);
+          setApiInterestJobs(interestsRes.map((item) => mapCandidateInterestToDashboardJob(item)));
+        } catch {
+          setApiInterestJobs([]);
+        }
       } else {
         setApiApplicationJobs([]);
-        setLocalAppliedJobs([]);
+        setApiInterestJobs([]);
         setAppliedJobDocumentIds(new Set());
         setLocalAcceptedActionables([]);
         setHasAttemptedJobsLoad(true);
@@ -683,36 +698,55 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const nextActions: ActionCard[] = Array.from(bestActionableByJob.values()).map((item) => {
-          const isInterviewActionable = getActionableDisplayKind(item) === "interview";
-          const stableIdSeed = item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
-          return {
-            id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
-            type: "Job",
-            title: toActionTitle(item),
-            subtitle: `${item.job_title} - ${item.job_id}`,
-            timestamp: item.stage || item.status || "Now",
-            jobDocumentId: item.job_id,
-            rrCandidateName: item.rr_candidate,
-            isSourcingAccepted: Boolean(
-              item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
-            ),
-            proposalName: item.name,
-            interviewId: isInterviewActionable
-              ? item.name?.trim() || item.info?.interview_id
-              : item.info?.interview_id,
-            interviewRound: item.info?.interview_round,
-            interviewType: item.info?.interview_type,
-            interviewMode: item.info?.interview_mode,
-            interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
-            sourcingAcceptedAt:
-              item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
-            receivedAt:
-              item.received_at ||
-              item.accepted_at ||
-              localAcceptedAtByJob.get(item.job_id?.trim() || ""),
-          };
-        });
+        const nextActions: ActionCard[] = [];
+        const scheduledInterviewItems: UpcomingInterviewDisplay[] = [];
+
+        for (const item of bestActionableByJob.values()) {
+          if (isScheduledInterview(item)) {
+            const slots = item.info?.interview_slots ?? [];
+            const slot =
+              slots.find((s) => s.slot_status?.toLowerCase() === "scheduled") ?? slots[0];
+            scheduledInterviewItems.push({
+              id: item.name?.trim() || `${item.job_id}|interview-scheduled`,
+              jobTitle: item.job_title || item.job_id || "Interview",
+              interviewRound: item.info?.interview_round,
+              interviewType: item.info?.interview_type,
+              interviewMode: item.info?.interview_mode,
+              slotDate: slot?.slot_date,
+              slotTime: slot?.slot_time,
+              slotTimezone: slot?.slot_timezone,
+            });
+          } else {
+            const isInterviewActionable = getActionableDisplayKind(item) === "interview";
+            const stableIdSeed = item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
+            nextActions.push({
+              id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
+              type: "Job",
+              title: toActionTitle(item),
+              subtitle: `${item.job_title} - ${item.job_id}`,
+              timestamp: item.stage || item.status || "Now",
+              jobDocumentId: item.job_id,
+              rrCandidateName: item.rr_candidate,
+              isSourcingAccepted: Boolean(
+                item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
+              ),
+              proposalName: item.name,
+              interviewId: isInterviewActionable
+                ? item.name?.trim() || item.info?.interview_id
+                : item.info?.interview_id,
+              interviewRound: item.info?.interview_round,
+              interviewType: item.info?.interview_type,
+              interviewMode: item.info?.interview_mode,
+              interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
+              sourcingAcceptedAt:
+                item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+              receivedAt:
+                item.received_at ||
+                item.accepted_at ||
+                localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            });
+          }
+        }
 
         const localAcceptedCards: ActionCard[] = localAcceptedActionables.map((row) => ({
           id:
@@ -799,6 +833,7 @@ export default function TalentEngineDashboard() {
         if (actionCardsSignatureRef.current !== actionSignature) {
           actionCardsSignatureRef.current = actionSignature;
           setApiActionCards(orderedActions);
+          setApiScheduledInterviews(scheduledInterviewItems);
         }
 
         const orderedGeneral = [...nextGeneral];
@@ -859,9 +894,6 @@ export default function TalentEngineDashboard() {
       candidateId: currentCandidateId,
       profileName,
     };
-    const storageKey = currentCandidateId
-      ? `${APPLIED_JOBS_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
     const sourcingAcceptedKey = currentCandidateId
       ? `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${currentCandidateId}`
       : null;
@@ -871,27 +903,6 @@ export default function TalentEngineDashboard() {
     const localSubmittedCardsKey = currentCandidateId
       ? `${LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX}:${currentCandidateId}`
       : null;
-
-    if (storageKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const hydrated = parsed.filter((row): row is JobListing => {
-              return typeof row === "object" && row !== null;
-            });
-            setLocalAppliedJobs(hydrated);
-            const ids = hydrated
-              .map((j) => j.jobDocumentId)
-              .filter((v): v is string => Boolean(v?.trim()));
-            setAppliedJobDocumentIds(new Set(ids));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
 
     if (sourcingAcceptedKey && typeof window !== "undefined") {
       try {
@@ -1002,16 +1013,6 @@ export default function TalentEngineDashboard() {
 
   useEffect(() => {
     if (!candidateId || typeof window === "undefined") return;
-    const storageKey = `${APPLIED_JOBS_STORAGE_PREFIX}:${candidateId}`;
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(localAppliedJobs));
-    } catch {
-      // ignore
-    }
-  }, [candidateId, localAppliedJobs]);
-
-  useEffect(() => {
-    if (!candidateId || typeof window === "undefined") return;
     const storageKey = `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${candidateId}`;
     try {
       window.localStorage.setItem(
@@ -1089,16 +1090,16 @@ export default function TalentEngineDashboard() {
     ? filteredActions
     : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
 
-  const upcomingInterviews = UPCOMING_INTERVIEWS_FOR_ACTION_CENTER;
+  const upcomingInterviews = apiScheduledInterviews;
 
   const actionTabCounts = useMemo(() => {
     return {
       Job: resolvedActionCards.filter((c) => c.type === "Job").length,
-      Interviews: upcomingInterviews.length,
+      Interviews: apiScheduledInterviews.length,
       Profile: resolvedActionCards.filter((c) => c.type === "Profile").length,
       General: resolvedActionCards.filter((c) => c.type === "General").length,
     };
-  }, [resolvedActionCards, upcomingInterviews.length]);
+  }, [resolvedActionCards, apiScheduledInterviews.length]);
 
   const orderedActionTabs = useMemo((): ("Job" | "Interviews" | "Profile" | "General")[] => {
     const all = ["Job", "Interviews", "Profile", "General"] as const;
@@ -1121,16 +1122,9 @@ export default function TalentEngineDashboard() {
   }, [actionTabCounts]);
 
   const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
-  const applicationSourceJobs = useMemo(() => {
-    const merged = [...apiApplicationJobs];
-    for (const localJob of localAppliedJobs) {
-      const alreadyExists = merged.some((j) => j.jobDocumentId === localJob.jobDocumentId);
-      if (!alreadyExists) merged.unshift(localJob);
-    }
-    return merged;
-  }, [apiApplicationJobs, localAppliedJobs]);
+  const applicationSourceJobs = apiApplicationJobs;
 
-  const { visibleRecommendedJobs, visibleApplicationJobs } = useMemo(() => {
+  const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const normalizeRotation = (value: string) => {
       const normalized = value.trim().toLowerCase();
@@ -1219,6 +1213,7 @@ export default function TalentEngineDashboard() {
     return {
       visibleRecommendedJobs: recommendedFiltered,
       visibleApplicationJobs: filterList(applicationSourceJobs),
+      visibleAppliedInterestJobs: filterList(apiInterestJobs),
     };
   }, [
     activeFilters,
@@ -1228,6 +1223,7 @@ export default function TalentEngineDashboard() {
     showSavedOnly,
     recommendedSourceJobs,
     applicationSourceJobs,
+    apiInterestJobs,
   ]);
 
   const handleJobApplyClick = (job: JobListing) => {
@@ -1238,6 +1234,7 @@ export default function TalentEngineDashboard() {
       subtitle: `${job.location} - ${job.locationFull}`,
       timestamp: job.postedTime,
       jobDocumentId: job.jobDocumentId,
+      matchPercentage: job.matchPercentage,
     };
 
     const isSameJobAlreadyOpen =
@@ -1264,6 +1261,7 @@ export default function TalentEngineDashboard() {
       jobDocumentId: job.jobDocumentId,
       applicationStage: job.stage,
       applicationAppliedDate: job.appliedDate,
+      matchPercentage: job.matchPercentage,
     };
     setSelectedAction(nextAction);
     setIsDrawerOpen(true);
@@ -1326,18 +1324,50 @@ export default function TalentEngineDashboard() {
   };
 
   const getStageStyle = (stage: string) => {
-    switch (stage) {
-      case "Received":
-        return "bg-blue-50 text-blue-600 border-blue-200";
-      case "Shortlisted":
-        return "bg-green-50 text-green-600 border-green-200";
-      case "Interview":
-        return "bg-purple-50 text-purple-600 border-purple-200";
-      case "Rejected":
-        return "bg-red-50 text-red-600 border-red-200";
-      default:
-        return "bg-gray-50 text-gray-600";
+    const normalized = stage.trim().toLowerCase();
+    if (!normalized) return "bg-gray-50 text-gray-600 border-gray-200";
+
+    // Initial/submitted pipeline states.
+    if (
+      normalized.includes("receive") ||
+      normalized.includes("source") ||
+      normalized.includes("appl") ||
+      normalized.includes("await")
+    ) {
+      return "bg-blue-50 text-blue-700 border-blue-200";
     }
+
+    // Positive progression states.
+    if (
+      normalized.includes("shortlist") ||
+      normalized.includes("select") ||
+      normalized.includes("accept") ||
+      normalized.includes("offer")
+    ) {
+      return "bg-green-50 text-green-700 border-green-200";
+    }
+
+    // In-progress interaction states.
+    if (
+      normalized.includes("interview") ||
+      normalized.includes("screen") ||
+      normalized.includes("assess") ||
+      normalized.includes("review")
+    ) {
+      return "bg-purple-50 text-purple-700 border-purple-200";
+    }
+
+    // Negative/closed states.
+    if (
+      normalized.includes("reject") ||
+      normalized.includes("declin") ||
+      normalized.includes("withdraw") ||
+      normalized.includes("cancel")
+    ) {
+      return "bg-red-50 text-red-700 border-red-200";
+    }
+
+    return "bg-amber-50 text-amber-700 border-amber-200";
   };
 
   const MatchCircle = ({ score }: { score: number }) => {
@@ -1368,12 +1398,14 @@ export default function TalentEngineDashboard() {
     );
   };
 
-  const buildAppliedJobFromRecommended = (job: JobListing): JobListing => ({
-    ...job,
-    status: "New",
-    stage: "Received",
-  appliedDate: new Date().toISOString(),
-  });
+  const refreshAppliedJobs = async (currentCandidateId: string) => {
+    try {
+      const interestsRes = await getCandidateInterests(currentCandidateId);
+      setApiInterestJobs(interestsRes.map((item) => mapCandidateInterestToDashboardJob(item)));
+    } catch {
+      // Keep existing UI state if refresh fails.
+    }
+  };
 
   const refreshJobApplications = async (currentCandidateId: string) => {
     const applicationsRes = await getJobApplications(currentCandidateId);
@@ -1393,6 +1425,7 @@ export default function TalentEngineDashboard() {
       } catch {
         // Keep existing UI state if refresh fails.
       }
+      await refreshAppliedJobs(candidateId);
     })();
   }, [activeTab, candidateId]);
 
@@ -1452,6 +1485,10 @@ export default function TalentEngineDashboard() {
             return next;
           });
           removeSubmittedActionCard();
+          showActionSuccess(
+            "Interview Confirmed!",
+            "Your interview slot has been booked. You'll receive a confirmation with further details."
+          );
         } else if (isInterview) {
           return false;
         } else if (isProposal && action.proposalName) {
@@ -1467,6 +1504,10 @@ export default function TalentEngineDashboard() {
             return next;
           });
           removeSubmittedActionCard();
+          showActionSuccess(
+            "Proposal Accepted!",
+            "Your salary proposal has been accepted. The recruiter will be in touch with next steps."
+          );
         } else if (action.rrCandidateName?.trim()) {
           const availabilityDate = extras?.availabilityDate?.trim() || undefined;
           const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
@@ -1523,38 +1564,32 @@ export default function TalentEngineDashboard() {
             });
           }
           removeSubmittedActionCard();
+          showActionSuccess(
+            "Great Choice!",
+            "You've successfully accepted the job invitation. Stay tuned for updates from the recruiter."
+          );
         } else {
           if (!jobDocumentId) return false;
           if (candidateId) {
-            const matchedRecommendedJob = apiRecommendedJobs.find(
-              (job) => job.jobDocumentId === jobDocumentId
-            );
-            await markInterestedInJob(candidateId, jobDocumentId);
+            const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
+            await markInterestedInJob(candidateId, jobDocumentId, {
+              score: action.matchPercentage,
+              availableDate: extras?.availabilityDate?.trim() || undefined,
+              expectedSalary: Number.isFinite(parsedSalary) && parsedSalary > 0 ? parsedSalary : undefined,
+            });
             setAppliedJobDocumentIds((prev) => {
               const next = new Set(prev);
               next.add(jobDocumentId);
               return next;
             });
-            if (matchedRecommendedJob) {
-              const optimisticApplied = buildAppliedJobFromRecommended(matchedRecommendedJob);
-              setApiApplicationJobs((prev) => {
-                const alreadyExists = prev.some((job) => job.jobDocumentId === jobDocumentId);
-                if (alreadyExists) return prev;
-                return [optimisticApplied, ...prev];
-              });
-              setLocalAppliedJobs((prev) => {
-                const alreadyExists = prev.some((job) => job.jobDocumentId === jobDocumentId);
-                if (alreadyExists) return prev;
-                return [optimisticApplied, ...prev];
-              });
-            }
             setApiRecommendedJobs((prev) => prev.filter((j) => j.jobDocumentId !== jobDocumentId));
-            try {
-              await refreshJobApplications(candidateId);
-              setActiveTab("Your Applications");
-            } catch {
-              // If applications refresh fails, keep optimistic UI state.
-            }
+            await refreshAppliedJobs(candidateId);
+            setActiveTab("Your Applications");
+            setApplicationSubTab("Applied Jobs");
+            showActionSuccess(
+              "Application Submitted!",
+              "Your interest has been shared with the recruiter. We'll notify you about the next steps."
+            );
           }
         }
         setIsDrawerOpen(false);
@@ -1714,6 +1749,12 @@ export default function TalentEngineDashboard() {
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
         onRequestClarification={handleDrawerClarification}
+      />
+      <JobSuccessPopup
+        open={actionSuccessPopup.open}
+        title={actionSuccessPopup.title}
+        message={actionSuccessPopup.message}
+        onClose={closeActionSuccess}
       />
       <PauseJobSearchModal
         open={showPauseModal}
@@ -2004,18 +2045,18 @@ export default function TalentEngineDashboard() {
         ) : (
           <>
             <div className="mb-4 flex border-b border-[#D8E2F1]">
-              {(["Applied By You", "Recruiter Added"] as const).map((source) => (
+              {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
                 <button
-                  key={source}
+                  key={subTab}
                   type="button"
-                  onClick={() => setMobileApplicationSource(source)}
-                  className={`flex items-center gap-2 border-b-4 px-2 pb-3 pt-1 text-sm font-medium ${mobileApplicationSource === source
+                  onClick={() => setApplicationSubTab(subTab)}
+                  className={`flex items-center gap-2 border-b-4 px-2 pb-3 pt-1 text-sm font-medium ${applicationSubTab === subTab
                       ? "border-blue-600 text-blue-600"
                       : "border-transparent text-[#60708F]"
                     }`}
                 >
                   <Clock3 className="h-4 w-4" />
-                  {source}
+                  {subTab}
                 </button>
               ))}
             </div>
@@ -2067,11 +2108,67 @@ export default function TalentEngineDashboard() {
               </button>
             </div>
 
-            {visibleApplicationJobs.length > 0 ? (
-              <div className="flex flex-col gap-4">
-                {visibleApplicationJobs
-                  .filter((job) => mobileApplicationStage === "Stage" || job.stage === mobileApplicationStage)
-                  .map((job) => (
+            {applicationSubTab === "Shortlisted" ? (
+              visibleApplicationJobs.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  {visibleApplicationJobs
+                    .filter((job) => mobileApplicationStage === "Stage" || job.stage === mobileApplicationStage)
+                    .map((job) => (
+                      <div
+                        key={job.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleApplicationCardClick(job)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleApplicationCardClick(job);
+                          }
+                        }}
+                        className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                      >
+                        <div className="mb-4">
+                          <span className={`inline-flex rounded px-2.5 py-1 text-xs font-medium ${getStageStyle(job.stage)}`}>
+                            {job.stage}
+                          </span>
+                        </div>
+
+                        <div className="mb-4">
+                          <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                          <p className="mt-1 text-sm text-gray-700">{job.company}</p>
+                          <p className="mt-1 text-sm text-[#60708F]">
+                            {formatJobLocation(job.location, job.locationFull)}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Applied on {formatAppliedDate(job.appliedDate)}
+                          </p>
+                        </div>
+
+                        <div className="mb-5 flex items-center gap-2">
+                          <span className="text-sm text-gray-600">Match</span>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((bar) => (
+                              <div
+                                key={bar}
+                                className={`h-2.5 w-2.5 rounded-[2px] ${bar <= Math.ceil(job.matchPercentage / 20)
+                                    ? getMatchColor(job.matchPercentage)
+                                    : "bg-gray-200"
+                                  }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">{job.matchPercentage}%</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                renderEmptyApplications()
+              )
+            ) : (
+              visibleAppliedInterestJobs.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  {visibleAppliedInterestJobs.map((job) => (
                     <div
                       key={job.id}
                       role="button"
@@ -2083,46 +2180,23 @@ export default function TalentEngineDashboard() {
                           handleApplicationCardClick(job);
                         }
                       }}
-                      className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                      className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:bg-gray-50 cursor-pointer"
                     >
-                      <div className="mb-4">
-                        <span className={`inline-flex rounded px-2.5 py-1 text-xs font-medium ${getStageStyle(job.stage)}`}>
-                          {job.stage}
+                      <div className="mb-2">
+                        <span className="inline-flex rounded bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                          Applied
                         </span>
                       </div>
-
-                      <div className="mb-4">
+                      <div>
                         <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
                         <p className="mt-1 text-sm text-gray-700">{job.company}</p>
-                        <p className="mt-1 text-sm text-[#60708F]">
-                          {formatJobLocation(job.location, job.locationFull)}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Applied on {formatAppliedDate(job.appliedDate)}
-                        </p>
                       </div>
-
-                      <div className="mb-5 flex items-center gap-2">
-                        <span className="text-sm text-gray-600">Match</span>
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((bar) => (
-                            <div
-                              key={bar}
-                              className={`h-2.5 w-2.5 rounded-[2px] ${bar <= Math.ceil(job.matchPercentage / 20)
-                                  ? getMatchColor(job.matchPercentage)
-                                  : "bg-gray-200"
-                                }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-sm font-semibold text-gray-900">{job.matchPercentage}%</span>
-                      </div>
-
                     </div>
                   ))}
-              </div>
-            ) : (
-              renderEmptyApplications()
+                </div>
+              ) : (
+                renderEmptyApplications()
+              )
             )}
           </>
         )}
@@ -2566,88 +2640,161 @@ export default function TalentEngineDashboard() {
                 ) : (
                   renderEmptyJobs("Try broadening your search, location, or salary range.")
                 )
-              ) : visibleApplicationJobs.length > 0 ? (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="hidden md:block">
-                    <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
-                      <span>Job/Title & Location</span>
-                      <span>Company</span>
-                      <span className="text-center">Match Score %</span>
-                      <span>Stage</span>
-                      <span>Applied On</span>
-                    </div>
-
-                    {visibleApplicationJobs.map((job) => (
-                      <div
-                        key={job.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleApplicationCardClick(job)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            handleApplicationCardClick(job);
-                          }
-                        }}
-                        className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
-                      >
-                        <div>
-                          <p className="font-medium text-gray-900">{job.title}</p>
-                          <p className="text-xs text-gray-500">
-                            {formatJobLocation(job.location, job.locationFull)}
-                          </p>
-                        </div>
-                        <p className="text-sm text-gray-700">{job.company}</p>
-                        <p className="flex justify-center">
-                          <MatchCircle score={job.matchPercentage} />
-                        </p>
-                        <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
-                          {job.stage}
-                        </span>
-                        <span className="text-sm text-gray-600">{formatAppliedDate(job.appliedDate)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="md:hidden divide-y">
-                    {visibleApplicationJobs.map((job) => (
-                      <div
-                        key={job.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleApplicationCardClick(job)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            handleApplicationCardClick(job);
-                          }
-                        }}
-                        className="p-4 hover:bg-gray-50"
-                      >
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
-                            <p className="text-sm text-gray-600">{job.company}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {formatJobLocation(job.location, job.locationFull)}
-                            </p>
-                          </div>
-                          <MatchCircle score={job.matchPercentage} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
-                            {job.stage}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            Applied on {formatAppliedDate(job.appliedDate)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               ) : (
-                renderEmptyApplications()
+                <>
+                  <div className="mb-4 flex gap-2 border-b border-gray-200">
+                    {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
+                      <button
+                        key={subTab}
+                        type="button"
+                        onClick={() => setApplicationSubTab(subTab)}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                          applicationSubTab === subTab
+                            ? "border-blue-600 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {subTab}
+                      </button>
+                    ))}
+                  </div>
+
+                  {applicationSubTab === "Shortlisted" ? (
+                    visibleApplicationJobs.length > 0 ? (
+                      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="hidden md:block">
+                          <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
+                            <span>Job/Title</span>
+                            <span>Company</span>
+                            <span className="text-center">Match Score %</span>
+                            <span>Stage</span>
+                            <span>Applied On</span>
+                          </div>
+
+                          {visibleApplicationJobs.map((job) => (
+                            <div
+                              key={job.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleApplicationCardClick(job)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleApplicationCardClick(job);
+                                }
+                              }}
+                              className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900">{job.title}</p>
+                              </div>
+                              <p className="text-sm text-gray-700">{job.company}</p>
+                              <p className="flex justify-center">
+                                <MatchCircle score={job.matchPercentage} />
+                              </p>
+                              <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
+                                {job.stage}
+                              </span>
+                              <span className="text-sm text-gray-600">{formatAppliedDate(job.appliedDate)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="md:hidden divide-y">
+                          {visibleApplicationJobs.map((job) => (
+                            <div
+                              key={job.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleApplicationCardClick(job)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleApplicationCardClick(job);
+                                }
+                              }}
+                              className="p-4 hover:bg-gray-50"
+                            >
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="flex-1">
+                                  <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                                  <p className="text-sm text-gray-600">{job.company}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {formatJobLocation(job.location, job.locationFull)}
+                                  </p>
+                                </div>
+                                <MatchCircle score={job.matchPercentage} />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
+                                  {job.stage}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  Applied on {formatAppliedDate(job.appliedDate)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      renderEmptyApplications()
+                    )
+                  ) : (
+                    visibleAppliedInterestJobs.length > 0 ? (
+                      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="hidden md:block">
+                          <div className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.5fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
+                            <span>Job/Title</span>
+                            <span>Company</span>
+                          </div>
+
+                          {visibleAppliedInterestJobs.map((job) => (
+                            <div
+                              key={job.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleApplicationCardClick(job)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleApplicationCardClick(job);
+                                }
+                              }}
+                              className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.5fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50 cursor-pointer"
+                            >
+                              <p className="font-medium text-gray-900">{job.title}</p>
+                              <p className="text-sm text-gray-700">{job.company}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="md:hidden divide-y">
+                          {visibleAppliedInterestJobs.map((job) => (
+                            <div
+                              key={job.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleApplicationCardClick(job)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleApplicationCardClick(job);
+                                }
+                              }}
+                              className="p-4 hover:bg-gray-50"
+                            >
+                              <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                              <p className="text-sm text-gray-600">{job.company}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      renderEmptyApplications()
+                    )
+                  )}
+                </>
               )}
             </div>
           </div>

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
   Calendar,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   MapPin,
@@ -13,6 +12,7 @@ import {
   SlidersHorizontal,
   Wallet,
 } from "lucide-react";
+import { JobSuccessPopup } from "@/components/ui/JobSuccessPopup";
 import ActionDrawer from "../ActionDrawer";
 import AppNavbar from "../profile/AppNavbar";
 import CandidateAppShell from "../mobile/CandidateAppShell";
@@ -70,6 +70,7 @@ interface ActionCard {
   subtitle: string;
   timestamp: string;
   jobDocumentId?: string;
+  matchPercentage?: number;
 }
 
 function recencyScoreFromPostedTime(postedTime: string): number {
@@ -1088,6 +1089,7 @@ export default function TalentEngineJobsPage() {
       subtitle: `${job.location} - ${job.locationFull}`,
       timestamp: job.postedTime,
       jobDocumentId: job.jobDocumentId,
+      matchPercentage: job.matchPercentage,
     };
 
     setDrawerSuccessMessage(null);
@@ -1105,7 +1107,14 @@ export default function TalentEngineJobsPage() {
     setIsDrawerOpen(true);
   };
 
-  const handleDrawerPrimaryAction = async (action: ActionCard): Promise<boolean> => {
+  const handleDrawerPrimaryAction = async (
+    action: ActionCard,
+    extras?: {
+      availabilityDate?: string;
+      expectedSalary?: string;
+      acceptTerms?: boolean;
+    }
+  ): Promise<boolean> => {
     const jobDocumentId = action.jobDocumentId?.trim() || "";
     const cid = candidateId?.trim() || "";
     if (!cid) {
@@ -1114,7 +1123,12 @@ export default function TalentEngineJobsPage() {
     if (!jobDocumentId) {
       throw new Error("This job is missing an id, so it can’t be applied to yet.");
     }
-    const res = await markInterestedInJob(cid, jobDocumentId);
+    const parsedSalary = Number.parseFloat(extras?.expectedSalary?.trim() || "");
+    const res = await markInterestedInJob(cid, jobDocumentId, {
+      score: action.matchPercentage,
+      availableDate: extras?.availabilityDate?.trim() || undefined,
+      expectedSalary: Number.isFinite(parsedSalary) && parsedSalary > 0 ? parsedSalary : undefined,
+    });
     const msg = res?.message?.message?.trim();
     setDrawerSuccessMessage(msg || "Applied successfully.");
     setIsDrawerOpen(false);
@@ -1403,37 +1417,15 @@ export default function TalentEngineJobsPage() {
         successMessage={drawerSuccessMessage}
       />
       <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
-      {showApplicationSuccess ? (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-4">
-          <div className="relative w-full max-w-[450px] rounded-lg bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl">
-            <div className="relative flex flex-col items-center justify-center overflow-hidden text-center">
-              <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
-              <span className="absolute right-10 top-16 h-2 w-2 rounded-full bg-emerald-300 animate-ping" />
-              <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
-              <span className="absolute bottom-10 right-12 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
-              <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
-              <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
-              <div className="mb-4 rounded-full bg-emerald-100 p-3 text-emerald-600 shadow-sm">
-                <CheckCircle2 className="h-8 w-8" />
-              </div>
-              <p className="text-xl font-semibold text-gray-900">Application Submitted Successfully</p>
-              <p className="mt-2 text-sm text-gray-600">
-                Your interest has been shared with the recruiter. We&apos;ll notify you about the next steps.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowApplicationSuccess(false);
-                  setDrawerSuccessMessage(null);
-                }}
-                className="mt-5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <JobSuccessPopup
+        open={showApplicationSuccess}
+        title="Application Submitted Successfully"
+        message="Your interest has been shared with the recruiter. We'll notify you about the next steps."
+        onClose={() => {
+          setShowApplicationSuccess(false);
+          setDrawerSuccessMessage(null);
+        }}
+      />
     </>
   );
 

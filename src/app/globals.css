@@ -101,6 +101,21 @@
 }
 
 /*
+ * Safari (macOS + iOS): date inputs use a shadow-DOM pseudo-element for the value
+ * display that collapses unless given an explicit min-height. Without this the
+ * calendar picker field appears very small compared to other browsers.
+ */
+input[type="date"] {
+  min-height: 42px;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: left;
+  display: block;
+}
+
+/*
  * iOS Safari zooms the viewport when focusing controls with computed font-size < 16px.
  * Keep zoom accessibility enabled and prevent focus-zoom by normalizing field font-size.
  */

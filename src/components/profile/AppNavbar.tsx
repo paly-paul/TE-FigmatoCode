@@ -13,6 +13,7 @@ import { clearResumeWizardSession, readResumeProfile } from "@/lib/profileSessio
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import Image from "next/image";
 import { getCandidateProfileData } from "@/services/profile";
+import LogoutConfirmModal from "@/components/ui/LogoutConfirmModal";
 
 export default function AppNavbar() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function AppNavbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const bellRef = useRef<HTMLButtonElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -282,7 +284,7 @@ export default function AppNavbar() {
 
                   <button
                     type="button"
-                    onClick={() => void handleLogout()}
+                    onClick={() => setShowLogoutConfirm(true)}
                     disabled={isLoggingOut}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
@@ -359,7 +361,7 @@ export default function AppNavbar() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleLogout()}
+                  onClick={() => setShowLogoutConfirm(true)}
                   disabled={isLoggingOut}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-red-600 hover:bg-red-50 text-left text-sm"
                 >
@@ -384,6 +386,12 @@ export default function AppNavbar() {
         onMarkItemRead={notificationUserEmail ? markOneRead : undefined}
         markingAll={markingAll}
         markingItemId={markingItemId}
+      />
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        busy={isLoggingOut}
+        onConfirm={() => void handleLogout()}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </header>
   );

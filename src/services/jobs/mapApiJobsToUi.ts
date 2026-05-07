@@ -1,5 +1,5 @@
 import { stableJobNumericId, slugifyLocationId } from "./stableJobId";
-import type { CandidateActionableApi, JobApplicationApi, RecommendedJobApi } from "./types";
+import type { CandidateActionableApi, CandidateInterestApi, JobApplicationApi, RecommendedJobApi } from "./types";
 
 export type DashboardJobListing = {
   id: number;
@@ -13,7 +13,7 @@ export type DashboardJobListing = {
   startDate: string;
   matchPercentage: number;
   status: "Strong Match" | "Closing Soon" | "Early Applicants" | "New";
-  stage: "Received" | "Shortlisted" | "Interview" | "Rejected";
+  stage: string;
   postedTime: string;
   skills: string[];
   employmentType: string;
@@ -184,25 +184,51 @@ function mapApplicationStatusToStage(status: string): DashboardJobListing["stage
 
 export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJobListing {
   const locId = slugifyLocationId(row.job_id);
+  const score = typeof row.score === "number" && Number.isFinite(row.score) ? row.score : 0;
+  const resolvedStage = (row.stage || "").trim() || mapApplicationStatusToStage(row.status);
   return {
     id: stableJobNumericId(row.id + row.job_id),
     title: row.job_title,
     location: "—",
     locationId: locId,
     locationFull: "—",
-    company: "—",
+    company: row.company?.trim() || "—",
     salary: "—",
     hourlyRate: 0,
     startDate: row.date ? `Updated: ${row.date}` : "—",
-    matchPercentage: 0,
+    matchPercentage: Math.max(0, Math.min(100, Math.round(score))),
     status: "New",
-    stage: mapApplicationStatusToStage(row.status),
+    stage: resolvedStage,
     postedTime: row.date || "—",
     skills: [],
     employmentType: "—",
     seniorityLevel: "—",
     jobDocumentId: row.job_id,
     appliedDate: row.date || undefined,
+  };
+}
+
+export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): DashboardJobListing {
+  const locId = slugifyLocationId(item.location || item.rr);
+  return {
+    id: stableJobNumericId(item.candidate_interest_for_rr + item.rr),
+    title: item.job_title || item.rr,
+    location: item.location || "—",
+    locationId: locId,
+    locationFull: item.location || "—",
+    company: item.customer || "—",
+    salary: "—",
+    hourlyRate: 0,
+    startDate: "—",
+    matchPercentage: 0,
+    status: "New",
+    stage: "Applied",
+    postedTime: "—",
+    skills: [],
+    employmentType: "—",
+    seniorityLevel: "—",
+    jobDocumentId: item.rr,
+    appliedDate: undefined,
   };
 }
 

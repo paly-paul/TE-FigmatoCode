@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Banknote,
   Calendar,
   ChevronDown,
   ChevronUp,
@@ -64,6 +65,7 @@ export interface ActionDrawerActionCard {
   receivedAt?: string;
   applicationStage?: string;
   applicationAppliedDate?: string;
+  matchPercentage?: number;
 }
 
 interface ActionDrawerProps {
@@ -217,6 +219,7 @@ export default function ActionDrawer({
   const [clarificationRemark, setClarificationRemark] = useState("");
   const [isClarificationSubmitting, setIsClarificationSubmitting] = useState(false);
   const [showAcceptConfirmation, setShowAcceptConfirmation] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [interviewSlots, setInterviewSlots] = useState<InterviewSlotOptionApi[]>([]);
   const [interviewSlotsLoading, setInterviewSlotsLoading] = useState(false);
@@ -243,6 +246,15 @@ export default function ActionDrawer({
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "center" });
   };
+
+  useEffect(() => {
+    if (!showAcceptConfirmation) {
+      setConfirmVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setConfirmVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [showAcceptConfirmation]);
 
   useEffect(() => {
     if (open) {
@@ -575,9 +587,12 @@ export default function ActionDrawer({
   const primarySubmitDisabled = Boolean(
     isSubmitting || hasSubmitted
   );
-  const resolvedMatchPercent = rrDetails?.match_score != null
-    ? `${Math.round(rrDetails.match_score)}%`
-    : actionDrawerJobSummary.matchPercentLabel;
+  const resolvedMatchPercent =
+    rrDetails?.match_score != null
+      ? `${Math.round(rrDetails.match_score)}%`
+      : action?.matchPercentage != null
+        ? `${action.matchPercentage}%`
+        : actionDrawerJobSummary.matchPercentLabel;
   const resolvedPostedAgo = rrDetails?.posted_time || actionDrawerJobSummary.postedAgo;
   const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
@@ -1442,37 +1457,103 @@ export default function ActionDrawer({
         )}
       </BaseDrawer>
       {showAcceptConfirmation ? (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-[#202939]">Confirm acceptance</h3>
-            <p className="mt-2 text-sm text-[#5E7397]">
-              Please confirm you want to accept this proposal for the selected job.
-            </p>
-            <div className="mt-4 space-y-2 rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-3">
-              <p className="text-xs text-[#5E7397]">Job</p>
-              <p className="text-sm font-medium text-[#202939]">{confirmTargetJobLabel}</p>
-              <p className="pt-1 text-xs text-[#5E7397]">Proposal</p>
-              <p className="text-sm font-medium text-[#202939]">{confirmTargetProposalLabel}</p>
-            </div>
-            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setShowAcceptConfirmation(false)}
-                className="rounded-md border border-[#D6DCEA] px-5 py-2.5 text-sm font-medium text-[#202939] transition hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={primarySubmitDisabled}
-                onClick={() => {
-                  setShowAcceptConfirmation(false);
-                  runPrimaryAction();
-                }}
-                className="rounded-md bg-[#1447E6] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#103CC1] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? "Submitting..." : "Confirm"}
-              </button>
+        <div
+          className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${
+            confirmVisible ? "bg-black/45 opacity-100" : "bg-black/0 opacity-0"
+          }`}
+        >
+          <div
+            className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl transition-all duration-500 ${
+              confirmVisible
+                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
+                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            }`}
+          >
+            {/* Decorative dots */}
+            <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+            <span className="absolute right-12 top-16 h-2 w-2 rounded-full bg-emerald-300 animate-ping [animation-delay:200ms]" />
+            <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping [animation-delay:400ms]" />
+            <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping [animation-delay:150ms]" />
+            <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
+            <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
+
+            <div className="relative z-10">
+              {/* Icon + heading */}
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 shadow-sm">
+                  <Banknote className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+                    Confirm Package
+                  </p>
+                  <p className="text-xs text-slate-500">Review and confirm before submitting</p>
+                </div>
+              </div>
+
+              {/* Package details card */}
+              <div className="mb-5 rounded-xl border border-blue-100 bg-white/80 p-4 shadow-sm animate-in slide-in-from-bottom-1 duration-400">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Package Summary
+                </p>
+
+                <div className="space-y-2.5 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-slate-500">Job</span>
+                    <span className="text-right font-medium text-slate-800">{confirmTargetJobLabel}</span>
+                  </div>
+
+                  {proposalData?.proposed_rate != null && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Package</span>
+                      <span className="text-right font-bold text-blue-700 text-base">
+                        ${proposalData.proposed_rate}
+                        <span className="ml-0.5 text-sm font-semibold text-blue-500">
+                          /{proposalData.billing_frequency || "Hourly"}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+
+                  {proposalData?.proposed_joining_date && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Joining Date</span>
+                      <span className="text-right font-medium text-slate-800">
+                        {proposalData.proposed_joining_date}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-start justify-between gap-3 border-t border-slate-100 pt-2.5">
+                    <span className="text-slate-500">Proposal</span>
+                    <span className="text-right font-medium text-slate-600 text-xs">
+                      {confirmTargetProposalLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+                <button
+                  type="button"
+                  disabled={primarySubmitDisabled}
+                  onClick={() => {
+                    setShowAcceptConfirmation(false);
+                    runPrimaryAction();
+                  }}
+                  className="rounded-xl bg-[#033CE5] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSubmitting ? "Submitting..." : "Confirm & Submit"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAcceptConfirmation(false)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

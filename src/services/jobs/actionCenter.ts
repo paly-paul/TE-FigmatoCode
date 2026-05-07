@@ -1,5 +1,5 @@
 import { parseApiErrorMessage } from "@/services/signup/parseApiError";
-import type { JobApplicationApi, RecommendedJobApi } from "./types";
+import type { CandidateInterestApi, JobApplicationApi, RecommendedJobApi } from "./types";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -186,15 +186,30 @@ export type MarkInterestedInJobResponse = {
 
 export async function markInterestedInJob(
   candidateId: string,
-  jobId: string
+  jobId: string,
+  options?: {
+    score?: number;
+    availableDate?: string;
+    expectedSalary?: number;
+  }
 ): Promise<MarkInterestedInJobResponse> {
   const url = new URL("/api/method/im_interested_in_job", window.location.origin);
-  url.searchParams.set("candidate_id", candidateId.trim());
-  url.searchParams.set("job_id", jobId.trim());
+
+  const body: Record<string, unknown> = {
+    candidate_id: candidateId.trim(),
+    job_id: jobId.trim(),
+  };
+  if (options?.score != null) body.score = options.score;
+  if (options?.availableDate?.trim()) body.available_date = options.availableDate.trim();
+  if (options?.expectedSalary != null && Number.isFinite(options.expectedSalary) && options.expectedSalary > 0) {
+    body.expected_salary = options.expectedSalary;
+  }
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   const data = await getJsonOrEmpty(res);
   if (!res.ok) {
@@ -247,6 +262,15 @@ function pickField(row: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
+function pickFiniteNumber(row: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = row[key];
+    const parsed = asNumberOrNull(value);
+    if (parsed !== null) return parsed;
+  }
+  return undefined;
+}
+
 function normalizeJobApplications(payload: Record<string, unknown>): JobApplicationApi[] {
   const raw = collectApplicationRows(payload);
   const out: JobApplicationApi[] = [];
@@ -261,6 +285,11 @@ function normalizeJobApplications(payload: Record<string, unknown>): JobApplicat
       job_title: job_title || job_id,
       job_id: job_id || job_title,
       status,
+      company: pickField(row, ["customer", "company", "client", "organization"]),
+      stage:
+        pickField(row, ["current_rr_stage", "stage", "application_stage"]) ||
+        pickField(row, ["status", "application_status"]),
+      score: pickFiniteNumber(row, ["score", "match_score", "matching_score"]),
       date: pickField(row, ["modified", "creation", "date", "applied_on", "posting_date"]),
     });
   }
@@ -277,6 +306,38 @@ export async function getJobApplications(candidateId: string): Promise<JobApplic
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
   return normalizeJobApplications(data);
+}
+
+export async function getCandidateInterests(candidateId: string): Promise<CandidateInterestApi[]> {
+  const res = await fetch("/api/method/get_candidate_interest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ candidate_id: candidateId.trim() }),
+  });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+
+  const message = isRecord(data.message) ? data.message : null;
+  const rows: unknown[] = Array.isArray(message?.data)
+    ? (message.data as unknown[])
+    : Array.isArray(data.data)
+      ? data.data
+      : [];
+
+  return rows
+    .filter((r): r is Record<string, unknown> => isRecord(r))
+    .map((item) => ({
+      candidate_interest_for_rr: typeof item.candidate_interest_for_rr === "string" ? item.candidate_interest_for_rr : "",
+      rr: typeof item.rr === "string" ? item.rr : "",
+      profile: typeof item.profile === "string" ? item.profile : "",
+      customer: typeof item.customer === "string" ? item.customer : "",
+      job_title: typeof item.job_title === "string" ? item.job_title : "",
+      location: typeof item.location === "string" ? item.location : "",
+    }))
+    .filter((item) => item.rr);
 }
 
 export async function postProposalCandidateNegotiation(

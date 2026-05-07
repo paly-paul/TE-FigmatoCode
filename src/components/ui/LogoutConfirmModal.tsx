@@ -1,23 +1,21 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type UnsavedChangesModalProps = {
+type LogoutConfirmModalProps = {
   open: boolean;
-  submitBusy: boolean;
-  onSaveDraftAndContinue: () => void;
-  onLeaveWithoutSaving: () => void;
-  onStay: () => void;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
 };
 
-export default function UnsavedChangesModal({
+export default function LogoutConfirmModal({
   open,
-  submitBusy,
-  onSaveDraftAndContinue,
-  onLeaveWithoutSaving,
-  onStay,
-}: UnsavedChangesModalProps) {
+  busy,
+  onConfirm,
+  onCancel,
+}: LogoutConfirmModalProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -54,38 +52,41 @@ export default function UnsavedChangesModal({
         <span className="absolute h-32 w-32 rounded-full border border-emerald-200/60 animate-pulse [animation-delay:300ms]" />
 
         <div className="relative z-10 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700 shadow-sm animate-bounce">
-            <AlertTriangle className="h-7 w-7 animate-in zoom-in-75 duration-300" />
+          <style>{`
+            @keyframes te-logout-exit {
+              0%, 25%  { transform: translateX(0);    opacity: 1; }
+              55%      { transform: translateX(14px); opacity: 0; }
+              56%      { transform: translateX(-8px); opacity: 0; }
+              85%,100% { transform: translateX(0);    opacity: 1; }
+            }
+          `}</style>
+          <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600 shadow-sm">
+            <span className="absolute inset-0 rounded-full bg-red-400/25 animate-ping" />
+            <LogOut
+              className="h-7 w-7 relative"
+              style={{ animation: "te-logout-exit 2s ease-in-out infinite" }}
+            />
           </div>
           <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
-            Unsaved changes detected
+            Log out?
           </p>
           <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
-            Save draft before leaving, otherwise your latest edits will be lost.
+            Are you sure you want to log out?
           </p>
-          <div className="mx-auto mt-4 h-1.5 w-44 overflow-hidden rounded-full bg-amber-100">
-            <span className="block h-full w-full rounded-full bg-amber-500 animate-pulse" />
-          </div>
           <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
             <button
               type="button"
-              disabled={submitBusy}
-              onClick={onSaveDraftAndContinue}
-              className="rounded-xl bg-[#033CE5] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy}
+              onClick={onConfirm}
+              className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitBusy ? "Saving..." : "Save Draft & Continue"}
+              {busy ? "Logging out..." : "Log Out"}
             </button>
             <button
               type="button"
-              onClick={onLeaveWithoutSaving}
-              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-            >
-              Leave Without Saving
-            </button>
-            <button
-              type="button"
-              onClick={onStay}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              disabled={busy}
+              onClick={onCancel}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Stay Here
             </button>
