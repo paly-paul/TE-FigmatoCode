@@ -285,6 +285,35 @@ function omitProfileVersionField(payload: JsonRecord, fieldName: string): JsonRe
   return next;
 }
 
+function isTimestampMismatchError(data: JsonRecord): boolean {
+  const fields = [
+    data.exc,
+    data.exception,
+    data.error,
+    data._error_message,
+    parseApiErrorMessage(data),
+  ];
+  return fields.some(
+    (f) =>
+      typeof f === "string" &&
+      (f.toLowerCase().includes("timestampmismatch") ||
+        f.toLowerCase().includes("document has been modified"))
+  );
+}
+
+function stripModifiedTimestamps(payload: JsonRecord): JsonRecord {
+  const next: JsonRecord = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "modified" || key === "modified_by") continue;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      next[key] = stripModifiedTimestamps(value as JsonRecord);
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
 export async function POST(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -454,6 +483,18 @@ export async function POST(request: Request) {
             return res;
           }
         }
+      }
+    }
+
+    if (isTimestampMismatchError(data)) {
+      console.info("create_edit_profile retry", { reason: "timestamp mismatch", retry: "strip modified" });
+      const strippedPayload = stripModifiedTimestamps(canonicalPayload);
+      ({ upstream, data } = await postJson(url, headers, strippedPayload));
+      if (upstream.ok && !isLogicalFailure(data)) {
+        console.info("create_edit_profile proxy success", { via: "strip modified timestamps" });
+        const res = NextResponse.json(normalizeSuccessData(data), { status: upstream.status });
+        res.headers.set("x-upstream-url", url);
+        return res;
       }
     }
 

@@ -26,6 +26,9 @@ export type JobApplicationApi = {
   job_title: string;
   job_id: string;
   status: string;
+  company?: string;
+  stage?: string;
+  score?: number;
   date?: string;
 };
 
@@ -43,6 +46,15 @@ export type CandidateActionableInfoApi = {
   interview_type?: string;
   interview_round?: number;
   interview_slots?: CandidateActionableSlotApi[];
+};
+
+export type CandidateInterestApi = {
+  candidate_interest_for_rr: string;
+  rr: string;
+  profile: string;
+  customer: string;
+  job_title: string;
+  location: string;
 };
 
 export type CandidateActionableApi = {

@@ -6,7 +6,18 @@ function isSubmittedProfileState(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return false;
   return (
-    normalized === "open" ||
+    normalized === "submitted" ||
+    normalized === "published" ||
+    normalized === "completed"
+  );
+}
+
+// "active" is only meaningful for profile_status fields (set explicitly on wizard submit),
+// not for document workflow state fields where "open"/"active" fire on profile creation.
+function isSubmittedProfileStatus(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
     normalized === "active" ||
     normalized === "submitted" ||
     normalized === "published" ||
@@ -111,15 +122,15 @@ export async function isProfileWizardCompleteOnServer(
     const rootStatus =
       typeof root.profile_status === "string" ? root.profile_status.trim().toLowerCase() : "";
     const isSubmitted =
+      // Document workflow state: "open"/"active" fire on doc creation, not on wizard submit.
       isSubmittedProfileState(profileState) ||
       isSubmittedProfileState(versionState) ||
       isSubmittedProfileState(rootState) ||
-      isSubmittedProfileState(profileStatus) ||
-      isSubmittedProfileState(versionStatus) ||
-      isSubmittedProfileState(rootStatus) ||
-      // Use the already-mapped profileStatus from getCandidateProfileData as an
-      // additional signal — profile_status is set to "Active" on successful submit.
-      isSubmittedProfileState(data.profileStatus ?? "");
+      // profile_status fields: "Active" is set explicitly on wizard submit (action: "submit").
+      isSubmittedProfileStatus(profileStatus) ||
+      isSubmittedProfileStatus(versionStatus) ||
+      isSubmittedProfileStatus(rootStatus) ||
+      isSubmittedProfileStatus(data.profileStatus ?? "");
 
     // isDraft is only meaningful when there is no submitted signal at all.
     // A nested sub-document's "Draft" state must not override a submitted root state.
@@ -147,8 +158,9 @@ export async function isProfileWizardCompleteOnServer(
       email: data.email,
       currentLocation: data.currentLocation,
     });
-    // Route to dashboard when any submitted/published/active state signal is present.
-    return Boolean(!isDraft && isSubmitted);
+    // Route to dashboard only when the profile has been explicitly submitted AND has
+    // the minimum required wizard fields (title + at least one skill).
+    return Boolean(!isDraft && isSubmitted && Boolean(title) && skills > 0);
   } catch (error) {
     console.error("[profile-check] server-data:error", { profileName, error });
     return false;

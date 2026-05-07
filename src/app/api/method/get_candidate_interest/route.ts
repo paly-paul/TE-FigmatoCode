@@ -9,25 +9,24 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: Record<string, unknown>;
+  let body: Record<string, unknown> = {};
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    body = {};
   }
 
-  const candidateId = (body.candidate_id as string | undefined)?.trim();
-  const jobId = (body.job_id as string | undefined)?.trim();
+  const candidateId =
+    typeof body.candidate_id === "string" ? body.candidate_id.trim() : "";
 
-  if (!candidateId || !jobId) {
+  if (!candidateId) {
     return NextResponse.json(
-      { error: "candidate_id and job_id are required." },
+      { error: "candidate_id is required." },
       { status: 400 }
     );
   }
 
-  const url = `${backendBase}/api/method/im_interested_in_job`;
-
+  const url = `${backendBase}/api/method/get_candidate_interest`;
   const headers: HeadersInit = { "Content-Type": "application/json" };
   const auth = process.env.BACKEND_AUTHORIZATION;
   if (auth) headers.Authorization = auth;
@@ -40,14 +39,14 @@ export async function POST(request: Request) {
     body: JSON.stringify(body),
   });
   const text = await upstream.text();
-  let data: Record<string, unknown>;
+  let payload: Record<string, unknown>;
   try {
-    data = JSON.parse(text) as Record<string, unknown>;
+    payload = JSON.parse(text) as Record<string, unknown>;
   } catch {
-    data = { raw: text };
+    payload = { raw: text };
   }
 
-  const res = NextResponse.json(data, { status: upstream.status });
+  const res = NextResponse.json(payload, { status: upstream.status });
   res.headers.set("x-upstream-url", url);
   return res;
 }

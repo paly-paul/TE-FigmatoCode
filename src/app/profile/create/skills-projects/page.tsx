@@ -7,9 +7,10 @@ import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
-import { getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
+import { clearSessionLoginEmail, getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
-import { getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
+import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
+import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import {
   clearResumeWizardSession,
   hasProceededPastResumeUpload,
@@ -24,6 +25,7 @@ import { MOBILE_MQ } from "@/lib/mobileViewport";
 import type { ResumeProfileData } from "@/types/profile";
 import { StatusPopup } from "@/components/ui/StatusPopup";
 import UnsavedChangesModal from "@/components/timesheet/UnsavedChangesModal";
+import LogoutConfirmModal from "@/components/ui/LogoutConfirmModal";
 
 interface ResumeSkillsData {
   skills?: string[];
@@ -388,6 +390,8 @@ function SkillsProjectsPageContent() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
@@ -470,7 +474,11 @@ function SkillsProjectsPageContent() {
     const rest = all.filter((s) => !generatedSet.has(s.trim().toLowerCase()));
     const query = skillOptionSearch.trim().toLowerCase();
     const ordered = [...generatedFirst, ...rest];
-    return query ? ordered.filter((s) => s.toLowerCase().includes(query)) : ordered;
+    const filtered = query ? ordered.filter((s) => s.toLowerCase().includes(query)) : ordered;
+    const selectedSet = new Set(skills.map((skill) => skill.trim().toLowerCase()));
+    const selectedFirst = filtered.filter((skill) => selectedSet.has(skill.trim().toLowerCase()));
+    const unselected = filtered.filter((skill) => !selectedSet.has(skill.trim().toLowerCase()));
+    return [...selectedFirst, ...unselected];
   })();
   const hiddenAlreadySelectedCount = suggestedSkillOptions.filter((skill) => {
     const normalized = skill.trim().toLowerCase();
@@ -593,22 +601,24 @@ function SkillsProjectsPageContent() {
     return projects.every((p) => isProjectEmpty(p) || Object.keys(validateProjectEntry(p)).length === 0);
   }
 
-  const completionPercent = (() => {
-    const skillsDone = skills.length > 0;
-    const experienceDone = isExperiencesSectionComplete();
-    const projectsDone = isProjectsSectionComplete();
-
-    let completedSections = 0;
-    const totalSections = 3;
-
-    if (skillsDone) completedSections += 1;
-    if (experienceDone) completedSections += 1;
-    if (projectsDone) completedSections += 1;
-
-    const ratio = Math.min(1, completedSections / totalSections);
-    // This is the final step in the create flow; it should progress beyond 70%.
-    return 70 + ratio * 30;
-  })();
+  // Show only this step's progress (skills / experience / projects) so the circle
+  // starts at 0% on arrival rather than carrying over the previous steps' completion.
+  const completionPercent = Math.round(
+    ([
+      skills.some((s) => s.trim()),
+      experiences.some((e) => e.experience.trim() && e.experienceYears.trim()),
+      projects.some(
+        (p) =>
+          p.projectTitle.trim() &&
+          p.customerCompany.trim() &&
+          p.projectStartDate.trim() &&
+          p.projectDescription.trim() &&
+          p.responsibilities.trim()
+      ),
+    ].filter(Boolean).length /
+      3) *
+      100
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2015,16 +2025,6 @@ function SkillsProjectsPageContent() {
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
     const onNavigationAttempt = (event: Event) => {
       const customEvent = event as CustomEvent<{ url?: string }>;
       const destinationUrl = customEvent.detail?.url?.trim();
@@ -2066,21 +2066,42 @@ function SkillsProjectsPageContent() {
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
-    const state = { teUnsavedProfileChanges: true };
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const resolvedProfileName =
+      qs.get("profile")?.trim() ||
+      qs.get("profile_name")?.trim() ||
+      getProfileName() || "";
+    if (isLikelyDocId(resolvedProfileName)) return;
+
+    const state = { teSkillsHistoryTrap: true };
     window.history.pushState(state, document.title, window.location.href);
     const onPopState = () => {
       window.history.pushState(state, document.title, window.location.href);
-      setPendingNavigationUrl("/profile");
-      setShowUnsavedModal(true);
+      setShowLogoutConfirm(true);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [hasUnsavedChanges]);
+  }, []);
 
   function continueNavigation(target: string | null) {
     if (!target) return;
     window.location.assign(target);
+  }
+
+  async function handleLogoutConfirm() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/method/logout", { method: "POST" });
+    } catch {
+      // Still clear local session on failure.
+    }
+    clearAuthSession();
+    clearSessionLoginEmail();
+    clearResumeWizardSession();
+    clearAllRecommendedJobsCache();
+    window.location.replace("/login");
   }
 
   async function handleSaveDraftAndContinueNavigation() {
@@ -2119,6 +2140,11 @@ function SkillsProjectsPageContent() {
   }
 
   function handleGoToBasicDetails() {
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl("/profile/create/basic-details");
+      setShowUnsavedModal(true);
+      return;
+    }
     router.push("/profile/create/basic-details");
   }
 
@@ -2215,7 +2241,7 @@ function SkillsProjectsPageContent() {
                                     onClick={() => handleSkillsChange(opt)}
                                     className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
                                       isAlreadyAdded
-                                        ? "cursor-not-allowed text-gray-300"
+                                        ? "cursor-not-allowed bg-primary-50 text-primary-700 font-medium"
                                         : "text-gray-700 hover:bg-gray-50"
                                     }`}
                                   >
@@ -2494,7 +2520,7 @@ function SkillsProjectsPageContent() {
                             onChange={(e) =>
                               updateProject(entry.id, { projectDescription: e.target.value })
                             }
-                            maxLength={300}
+                            maxLength={500}
                             rows={5}
                             placeholder="Describe the project"
                             className={`${fieldClass(Boolean(fe?.projectDescription))} leading-6 resize-y`}
@@ -2505,7 +2531,7 @@ function SkillsProjectsPageContent() {
                             ) : (
                               <span />
                             )}
-                            <p className="text-xs text-gray-500">{entry.projectDescription.length} / 300</p>
+                            <p className="text-xs text-gray-500">{entry.projectDescription.length} / 500</p>
                           </div>
                         </label>
 
@@ -2516,7 +2542,7 @@ function SkillsProjectsPageContent() {
                             onChange={(e) =>
                               updateProject(entry.id, { responsibilities: e.target.value })
                             }
-                            maxLength={300}
+                            maxLength={500}
                             rows={5}
                             placeholder="List your key responsibilities"
                             className={`${fieldClass(Boolean(fe?.responsibilities))} leading-6 resize-y`}
@@ -2527,7 +2553,7 @@ function SkillsProjectsPageContent() {
                             ) : (
                               <span />
                             )}
-                            <p className="text-xs text-gray-500">{entry.responsibilities.length} / 300</p>
+                            <p className="text-xs text-gray-500">{entry.responsibilities.length} / 500</p>
                           </div>
                         </label>
                       </div>
@@ -2599,7 +2625,7 @@ function SkillsProjectsPageContent() {
                                   onClick={() => handleSkillsChange(opt)}
                                   className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
                                     isAlreadyAdded
-                                      ? "cursor-not-allowed text-gray-300"
+                                      ? "cursor-not-allowed bg-primary-50 text-primary-700 font-medium"
                                       : "text-gray-700 hover:bg-gray-50"
                                   }`}
                                 >
@@ -2836,7 +2862,7 @@ function SkillsProjectsPageContent() {
                         <textarea
                           value={entry.projectDescription}
                           onChange={(e) => updateProject(entry.id, { projectDescription: e.target.value })}
-                          maxLength={300}
+                          maxLength={500}
                           rows={5}
                           placeholder="Describe the project"
                           className={`${fieldClass(Boolean(fe?.projectDescription))} leading-6 resize-y`}
@@ -2847,7 +2873,7 @@ function SkillsProjectsPageContent() {
                           ) : (
                             <span />
                           )}
-                          <p className="text-xs text-gray-500">{entry.projectDescription.length} / 300</p>
+                          <p className="text-xs text-gray-500">{entry.projectDescription.length} / 500</p>
                         </div>
                       </label>
 
@@ -2856,7 +2882,7 @@ function SkillsProjectsPageContent() {
                         <textarea
                           value={entry.responsibilities}
                           onChange={(e) => updateProject(entry.id, { responsibilities: e.target.value })}
-                          maxLength={300}
+                          maxLength={500}
                           rows={5}
                           placeholder="List your key responsibilities"
                           className={`${fieldClass(Boolean(fe?.responsibilities))} leading-6 resize-y`}
@@ -2867,7 +2893,7 @@ function SkillsProjectsPageContent() {
                           ) : (
                             <span />
                           )}
-                          <p className="text-xs text-gray-500">{entry.responsibilities.length} / 300</p>
+                          <p className="text-xs text-gray-500">{entry.responsibilities.length} / 500</p>
                         </div>
                       </label>
                     </div>
@@ -2942,7 +2968,7 @@ function SkillsProjectsPageContent() {
 
       {isFinishModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-          <div className="relative w-full max-w-[570px] rounded-xl bg-white shadow-2xl">
+          <div className="relative w-full max-w-[570px] rounded-xl bg-[#F3F8FF] shadow-2xl border border-blue-100">
             <button
               type="button"
               onClick={() => setIsFinishModalOpen(false)}
@@ -2952,7 +2978,7 @@ function SkillsProjectsPageContent() {
               <X className="h-4 w-4" />
             </button>
 
-            <div className="px-6 pb-6 pt-10 sm:px-8 sm:pb-8">
+            <div className="px-5 pb-5 pt-7 sm:px-6 sm:pb-6 sm:pt-8">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-primary-600">
                 <CheckCircle2 className="h-8 w-8" />
               </div>
@@ -2968,12 +2994,12 @@ function SkillsProjectsPageContent() {
                 </p>
               </div>
 
-              <div className="mx-auto mt-5 flex max-w-[420px] items-center justify-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-gray-700">
+              <div className="mx-auto mt-4 flex max-w-[420px] items-center justify-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm text-gray-700">
                 <CheckCircle2 className="h-4 w-4 text-primary-600" />
                 <span>{lastSubmitWasEdit ? "Profile version updated." : "Profile Version V1.0 created!"}</span>
               </div>
 
-              <div className="mt-6 flex justify-end">
+              <div className="mt-5 flex justify-end">
                 <Button
                   fullWidth={false}
                   className="px-6 py-2.5 text-sm"
@@ -3005,6 +3031,12 @@ function SkillsProjectsPageContent() {
           setShowUnsavedModal(false);
           setPendingNavigationUrl(null);
         }}
+      />
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        busy={isLoggingOut}
+        onConfirm={() => void handleLogoutConfirm()}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </div>
   );

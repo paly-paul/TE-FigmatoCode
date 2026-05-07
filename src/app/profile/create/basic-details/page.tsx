@@ -31,6 +31,8 @@ import {
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import { StatusPopup } from "@/components/ui/StatusPopup";
 import UnsavedChangesModal from "@/components/timesheet/UnsavedChangesModal";
+import LogoutConfirmModal from "@/components/ui/LogoutConfirmModal";
+import { computeOverallProfileProgress } from "@/lib/profileProgress";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fallbackNationalityOptions = [
@@ -364,6 +366,7 @@ interface BasicDetailsForm {
 
 type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
   certifications?: string;
+  certificationIssueDateById?: Record<string, string>;
   certificationDateById?: Record<string, string>;
 };
 
@@ -478,6 +481,12 @@ function getMaxDobDate(): string {
   return d.toISOString().slice(0, 10);
 }
 
+function getYesterdayDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function withCurrentOption(options: string[], currentValue: string) {
   const value = currentValue.trim();
   return value && !options.includes(value) ? [value, ...options] : options;
@@ -571,9 +580,6 @@ function scrollToFirstValidationErrorField(prepare?: () => void): void {
       const firstVisibleInvalid = invalidInputs.find((element) => element.offsetParent !== null);
       if (!firstVisibleInvalid) return;
       firstVisibleInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
-      if ("focus" in firstVisibleInvalid) {
-        firstVisibleInvalid.focus({ preventScroll: true });
-      }
     });
   });
 }
@@ -951,6 +957,9 @@ function BasicDetailsPageContent() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
@@ -1575,18 +1584,36 @@ function BasicDetailsPageContent() {
     (entry) => entry.name.trim() && entry.issuing.trim()
   );
 
-  const completionPercent = (() => {
-    let completedSections = 0;
-    const totalSections = 4;
+  const isExternalLinksComplete = externalLinks.some(
+    (entry) => entry.label.trim() && entry.url.trim()
+  );
 
-    if (isProfessionalSectionComplete) completedSections += 1;
-    if (isPersonalSectionComplete) completedSections += 1;
-    if (isEducationComplete) completedSections += 1;
-    if (isCertificationsComplete) completedSections += 1;
-
-    const ratio = Math.min(1, completedSections / totalSections);
-    return 10 + ratio * 30;
-  })();
+  const completionPercent = computeOverallProfileProgress({
+    basicOverride: {
+      professionalTitle: form.professionalTitle,
+      experienceYears: form.expYears,
+      experienceMonths: form.expMonths,
+      salaryPerMonth: form.salary,
+      salaryCurrency: form.salaryCurrency,
+      summary: form.summary,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      dob: form.dob,
+      gender: form.gender,
+      countryCode: form.countryCode,
+      phone: form.contact,
+      email: form.email,
+      nationality: form.nationality,
+      currentLocation: form.currentLocation,
+      educationComplete: isEducationComplete,
+      certificationsComplete: isCertificationsComplete,
+      externalLinks: externalLinks.map((e) => ({ label: e.label, url: e.url })),
+    },
+    // Tool/skill experience is entered on the next screen — pass empty arrays so resume
+    // job history doesn't falsely count toward those sections on this step.
+    liveExperiences: [],
+    liveProjects: [],
+  });
 
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
     const normalizedValue =
@@ -1769,14 +1796,22 @@ function BasicDetailsPageContent() {
       nextErrors.contact = `Phone number must be 7 to ${PHONE_MAX_LENGTH} digits.`;
     }
 
+    const certificationIssueDateById: Record<string, string> = {};
     const certificationDateById: Record<string, string> = {};
+    const maxCertificationIssueDate = getYesterdayDate();
     for (const entry of certifications) {
       const issueDate = entry.issueDate?.trim();
       const expirationDate = entry.expirationDate?.trim();
+      if (issueDate && issueDate > maxCertificationIssueDate) {
+        certificationIssueDateById[entry.id] = "Issue date cannot be in the future.";
+      }
       if (!issueDate || !expirationDate) continue;
       if (expirationDate <= issueDate) {
         certificationDateById[entry.id] = "Expiration date must be after issue date.";
       }
+    }
+    if (Object.keys(certificationIssueDateById).length) {
+      nextErrors.certificationIssueDateById = certificationIssueDateById;
     }
     if (Object.keys(certificationDateById).length) {
       nextErrors.certificationDateById = certificationDateById;
@@ -1815,7 +1850,11 @@ function BasicDetailsPageContent() {
             ),
           certifications:
             prev.certifications ||
-            Boolean(nextErrors.certifications || nextErrors.certificationDateById),
+            Boolean(
+              nextErrors.certifications ||
+                nextErrors.certificationIssueDateById ||
+                nextErrors.certificationDateById
+            ),
         }));
       });
     }
@@ -1856,12 +1895,29 @@ function BasicDetailsPageContent() {
       prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry))
     );
     if (field === "issueDate" || field === "expirationDate") {
+      const currentEntry = certifications.find((entry) => entry.id === id);
+      const nextIssueDate = (field === "issueDate" ? value : currentEntry?.issueDate || "").trim();
+      const nextExpirationDate = (field === "expirationDate" ? value : currentEntry?.expirationDate || "").trim();
+      const maxCertificationIssueDate = getYesterdayDate();
       setErrors((prev) => {
+        const nextIssueDateErrors = { ...(prev.certificationIssueDateById ?? {}) };
         const nextDateErrors = { ...(prev.certificationDateById ?? {}) };
-        delete nextDateErrors[id];
+        if (nextIssueDate && nextIssueDate > maxCertificationIssueDate) {
+          nextIssueDateErrors[id] = "Issue date cannot be in the future.";
+        } else {
+          delete nextIssueDateErrors[id];
+        }
+        if (nextIssueDate && nextExpirationDate && nextExpirationDate <= nextIssueDate) {
+          nextDateErrors[id] = "Expiration date must be after issue date.";
+        } else {
+          delete nextDateErrors[id];
+        }
         return {
           ...prev,
           certifications: undefined,
+          certificationIssueDateById: Object.keys(nextIssueDateErrors).length
+            ? nextIssueDateErrors
+            : undefined,
           certificationDateById: Object.keys(nextDateErrors).length
             ? nextDateErrors
             : undefined,
@@ -2049,6 +2105,7 @@ function BasicDetailsPageContent() {
     const selected = parseMultiSelectString(form.preferredIndustry);
     if (selected.some((value) => value.toLowerCase() === option.toLowerCase())) return;
     setField("preferredIndustry", serializeMultiSelect([...selected, option]));
+    setOpenPreferredIndustryDropdown(false);
     setPreferredIndustrySearch("");
   }
 
@@ -2226,6 +2283,11 @@ function BasicDetailsPageContent() {
     const nextUrl = queryProfileName
       ? `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/skills-projects";
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl(nextUrl);
+      setShowUnsavedModal(true);
+      return;
+    }
     markCurrentAsSaved();
     router.push(nextUrl);
   }
@@ -2415,16 +2477,6 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
     const onNavigationAttempt = (event: Event) => {
       const customEvent = event as CustomEvent<{ url?: string }>;
       const destinationUrl = customEvent.detail?.url?.trim();
@@ -2467,37 +2519,19 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const resolvedProfileName =
+      qs.get("profile")?.trim() ||
+      qs.get("profile_name")?.trim() ||
+      getProfileName() || "";
+    if (isLikelyDocId(resolvedProfileName)) return;
+
     const state = { teBasicDetailsHistoryTrap: true };
     window.history.pushState(state, document.title, window.location.href);
 
     const onPopState = () => {
-      if (hasUnsavedChangesRef.current) {
-        window.history.pushState(state, document.title, window.location.href);
-        setPendingNavigationUrl("/profile/create");
-        setShowUnsavedModal(true);
-        return;
-      }
-
-      // No draft changes: hardware / browser "back" (or double-back) must not rewind to signup.
-      if (backLogoutInProgressRef.current) {
-        window.history.pushState(state, document.title, window.location.href);
-        return;
-      }
-      backLogoutInProgressRef.current = true;
       window.history.pushState(state, document.title, window.location.href);
-
-      void (async () => {
-        try {
-          await fetch("/api/method/logout", { method: "POST" });
-        } catch {
-          // Mirror AppNavbar: still clear local session.
-        }
-        clearAuthSession();
-        clearSessionLoginEmail();
-        clearResumeWizardSession();
-        clearAllRecommendedJobsCache();
-        window.location.replace("/login");
-      })();
+      setShowLogoutConfirm(true);
     };
 
     window.addEventListener("popstate", onPopState);
@@ -2510,7 +2544,9 @@ function BasicDetailsPageContent() {
   }
 
   async function handleSaveDraftAndContinueNavigation() {
+    setIsDraftSaving(true);
     const saved = await handleSaveDraft();
+    setIsDraftSaving(false);
     if (!saved) return;
     const target = pendingNavigationUrl;
     setShowUnsavedModal(false);
@@ -2524,6 +2560,21 @@ function BasicDetailsPageContent() {
     setShowUnsavedModal(false);
     setPendingNavigationUrl(null);
     continueNavigation(target);
+  }
+
+  async function handleLogoutConfirm() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/method/logout", { method: "POST" });
+    } catch {
+      // Still clear local session on failure.
+    }
+    clearAuthSession();
+    clearSessionLoginEmail();
+    clearResumeWizardSession();
+    clearAllRecommendedJobsCache();
+    window.location.replace("/login");
   }
 
   function handleUploadResumeShortcut() {
@@ -3256,8 +3307,14 @@ function BasicDetailsPageContent() {
                             onChange={(e) =>
                               updateCertificationEntry(entry.id, "issueDate", e.target.value)
                             }
-                            className={fieldClass(false)}
+                          max={getYesterdayDate()}
+                            className={fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))}
                           />
+                          {errors.certificationIssueDateById?.[entry.id] ? (
+                            <p className="text-xs text-red-500">
+                              {errors.certificationIssueDateById[entry.id]}
+                            </p>
+                          ) : null}
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Expiration Date</span>
@@ -3267,7 +3324,7 @@ function BasicDetailsPageContent() {
                             onChange={(e) =>
                               updateCertificationEntry(entry.id, "expirationDate", e.target.value)
                             }
-                            className={fieldClass(false)}
+                            className={fieldClass(Boolean(errors.certificationDateById?.[entry.id]))}
                           />
                           {errors.certificationDateById?.[entry.id] ? (
                             <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
@@ -3349,7 +3406,13 @@ function BasicDetailsPageContent() {
                                     e.preventDefault();
                                     handleWorkAuthorizationPick(option);
                                   }}
-                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                  className={`block w-full px-3 py-2 text-left text-sm ${
+                                    parseMultiSelectString(form.workAuthorization).some(
+                                      (value) => value.toLowerCase() === option.toLowerCase()
+                                    )
+                                      ? "bg-primary-50 text-primary-700 font-medium"
+                                      : "text-gray-700 hover:bg-gray-100"
+                                  }`}
                                 >
                                   {option}
                                 </button>
@@ -3427,7 +3490,13 @@ function BasicDetailsPageContent() {
                                     e.preventDefault();
                                     handlePreferredIndustryPick(option);
                                   }}
-                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                  className={`block w-full px-3 py-2 text-left text-sm ${
+                                    parseMultiSelectString(form.preferredIndustry).some(
+                                      (value) => value.toLowerCase() === option.toLowerCase()
+                                    )
+                                      ? "bg-primary-50 text-primary-700 font-medium"
+                                      : "text-gray-700 hover:bg-gray-100"
+                                  }`}
                                 >
                                   {option}
                                 </button>
@@ -4045,8 +4114,14 @@ function BasicDetailsPageContent() {
                           type="date"
                           value={entry.issueDate}
                           onChange={(e) => updateCertificationEntry(entry.id, "issueDate", e.target.value)}
-                          className={fieldClass(false)}
+                          max={getYesterdayDate()}
+                          className={fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))}
                         />
+                        {errors.certificationIssueDateById?.[entry.id] ? (
+                          <p className="text-xs text-red-500">
+                            {errors.certificationIssueDateById[entry.id]}
+                          </p>
+                        ) : null}
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Expiration Date</span>
@@ -4054,7 +4129,7 @@ function BasicDetailsPageContent() {
                           type="date"
                           value={entry.expirationDate}
                           onChange={(e) => updateCertificationEntry(entry.id, "expirationDate", e.target.value)}
-                          className={fieldClass(false)}
+                          className={fieldClass(Boolean(errors.certificationDateById?.[entry.id]))}
                         />
                         {errors.certificationDateById?.[entry.id] ? (
                           <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
@@ -4133,7 +4208,13 @@ function BasicDetailsPageContent() {
                                   e.preventDefault();
                                   handleWorkAuthorizationPick(option);
                                 }}
-                                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                className={`block w-full px-3 py-2 text-left text-sm ${
+                                  parseMultiSelectString(form.workAuthorization).some(
+                                    (value) => value.toLowerCase() === option.toLowerCase()
+                                  )
+                                    ? "bg-primary-50 text-primary-700 font-medium"
+                                    : "text-gray-700 hover:bg-gray-100"
+                                }`}
                               >
                                 {option}
                               </button>
@@ -4211,7 +4292,13 @@ function BasicDetailsPageContent() {
                                   e.preventDefault();
                                   handlePreferredIndustryPick(option);
                                 }}
-                                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                className={`block w-full px-3 py-2 text-left text-sm ${
+                                  parseMultiSelectString(form.preferredIndustry).some(
+                                    (value) => value.toLowerCase() === option.toLowerCase()
+                                  )
+                                    ? "bg-primary-50 text-primary-700 font-medium"
+                                    : "text-gray-700 hover:bg-gray-100"
+                                }`}
                               >
                                 {option}
                               </button>
@@ -4894,7 +4981,7 @@ function BasicDetailsPageContent() {
       />
       <UnsavedChangesModal
         open={showUnsavedModal}
-        submitBusy={false}
+        submitBusy={isDraftSaving}
         onSaveDraftAndContinue={() => {
           void handleSaveDraftAndContinueNavigation();
         }}
@@ -4903,6 +4990,12 @@ function BasicDetailsPageContent() {
           setShowUnsavedModal(false);
           setPendingNavigationUrl(null);
         }}
+      />
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        busy={isLoggingOut}
+        onConfirm={() => void handleLogoutConfirm()}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </div>
   );
