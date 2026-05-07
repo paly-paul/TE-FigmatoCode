@@ -701,7 +701,7 @@ export default function TalentEngineDashboard() {
         const nextActions: ActionCard[] = [];
         const scheduledInterviewItems: UpcomingInterviewDisplay[] = [];
 
-        for (const item of bestActionableByJob.values()) {
+        for (const item of Array.from(bestActionableByJob.values())) {
           if (isScheduledInterview(item)) {
             const slots = item.info?.interview_slots ?? [];
             const slot =
