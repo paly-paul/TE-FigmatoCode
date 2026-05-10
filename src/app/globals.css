@@ -105,7 +105,7 @@
  * display that collapses unless given an explicit min-height. Without this the
  * calendar picker field appears very small compared to other browsers.
  */
-input[type="date"] {
+input[type="date"]:not(.h-10):not(.h-11) {
   min-height: 42px;
 }
 
@@ -113,6 +113,24 @@ input[type="date"]::-webkit-date-and-time-value {
   min-height: 1.5em;
   text-align: left;
   display: block;
+}
+
+/*
+ * Safari: the popover calendar size tracks the input's effective font-size.
+ * Bump date inputs slightly so the widget looks correct but stays compact.
+ * (iOS is already forced to 16px elsewhere to avoid focus-zoom.)
+ */
+input[type="date"].te-date-input {
+  font-size: 15px;
+}
+
+/*
+ * Safari: native select controls can compute a smaller intrinsic height than
+ * text inputs even with the same padding/font-size. Give selects a baseline
+ * min-height unless a component already pins height via Tailwind `h-*`.
+ */
+select:not(.h-10):not(.h-11) {
+  min-height: 42px;
 }
 
 /*

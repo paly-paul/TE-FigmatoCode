@@ -780,14 +780,22 @@ export default function TalentEngineJobsPage() {
 
       try {
         const cachedRecommended = readRecommendedJobsCache(profileName);
+        const hasCachedJobs = Boolean(cachedRecommended?.jobs?.length);
         if (!active) return;
-        if (cachedRecommended?.jobs?.length) {
-          setApiRecommendedJobs(cachedRecommended.jobs.map((job) => mapRecommendedToJobsPageCard(job)));
+        if (hasCachedJobs) {
+          setApiRecommendedJobs(cachedRecommended!.jobs.map((job) => mapRecommendedToJobsPageCard(job)));
         }
         const recommended = await getRecommendedJobs(profileName);
-        writeRecommendedJobsCache(profileName, recommended);
+        // Don't overwrite a valid cache with an empty response — the backend may temporarily
+        // return no jobs while a profile is in draft-edit state.
+        if (recommended.length > 0 || !hasCachedJobs) {
+          writeRecommendedJobsCache(profileName, recommended);
+        }
         if (!active) return;
-        setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
+        // Only update state when we have results, or when there was nothing cached to show.
+        if (recommended.length > 0 || !hasCachedJobs) {
+          setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
+        }
       } catch {
         if (!active) return;
         const cachedRecommended = readRecommendedJobsCache(profileName);

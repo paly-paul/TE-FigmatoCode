@@ -127,13 +127,17 @@ export async function isProfileWizardCompleteOnServer(
       isSubmittedProfileState(versionState) ||
       isSubmittedProfileState(rootState) ||
       // profile_status fields: "Active" is set explicitly on wizard submit (action: "submit").
+      // This also handles the edit-draft case: a previously-submitted profile retains its
+      // profile_status even when the workflow state reverts to "draft" during editing.
       isSubmittedProfileStatus(profileStatus) ||
       isSubmittedProfileStatus(versionStatus) ||
       isSubmittedProfileStatus(rootStatus) ||
       isSubmittedProfileStatus(data.profileStatus ?? "");
 
     // isDraft is only meaningful when there is no submitted signal at all.
-    // A nested sub-document's "Draft" state must not override a submitted root state.
+    // A nested sub-document's "Draft" state must not override a submitted root state,
+    // and a profile being edited (draft state, but profile_status still "active") must
+    // still be treated as submitted so login routes to dashboard, not create.
     const isDraft = (profileState === "draft" || versionState === "draft") && !isSubmitted;
 
     const completionPercent =
