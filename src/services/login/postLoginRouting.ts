@@ -89,6 +89,50 @@ async function hasUploadedResume(profileName: string): Promise<boolean> {
   return Boolean(extractResumeRef(data));
 }
 
+function hasMeaningfulProfileProgress(input: unknown, depth = 0): boolean {
+  if (depth > 6 || input == null) return false;
+  if (Array.isArray(input)) return input.some((item) => hasMeaningfulProfileProgress(item, depth + 1));
+  if (typeof input !== "object") return false;
+
+  const record = input as UnknownRecord;
+  const titleCandidates = [
+    record.professional_title,
+    record.professionalTitle,
+    record.professional_summary,
+    record.professionalSummary,
+  ];
+  if (titleCandidates.some((value) => typeof value === "string" && value.trim().length > 0)) return true;
+
+  const listCandidates = [
+    record.key_skills,
+    record.keySkills,
+    record.skills_table,
+    record.projects_table,
+    record.education_qualifications,
+    record.work_experience,
+    record.certification_table,
+  ];
+  if (listCandidates.some((value) => Array.isArray(value) && value.length > 0)) return true;
+
+  const completionCandidates = [record.profile_completion, record.completion_percentage, record.profile_percent];
+  for (const candidate of completionCandidates) {
+    if (typeof candidate === "number" && candidate > 0) return true;
+    if (typeof candidate === "string" && Number.parseFloat(candidate) > 0) return true;
+  }
+
+  return Object.values(record).some((value) => hasMeaningfulProfileProgress(value, depth + 1));
+}
+
+async function hasStartedProfileFlow(profileName: string): Promise<boolean> {
+  const profileUrl = new URL("/api/method/get_data/", window.location.origin);
+  profileUrl.searchParams.set("doctype", "Profile");
+  profileUrl.searchParams.set("name", profileName);
+  const res = await fetch(profileUrl.toString(), { method: "GET" });
+  if (!res.ok) return false;
+  const data = (await res.json()) as UnknownRecord;
+  return hasMeaningfulProfileProgress(data);
+}
+
 export type PostLoginDestination = "/dashboard" | "/profile/create/basic-details" | "/profile/create";
 
 /**
@@ -139,14 +183,14 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
       return "/dashboard";
     }
     const resumeUploaded = await hasUploadedResume(profileName);
+    const profileStarted = resumeUploaded ? true : await hasStartedProfileFlow(profileName);
     console.log("[login-routing] decision", {
-      reason: resumeUploaded
+      reason: profileStarted
         ? "server-profile-incomplete:resume-uploaded"
-        : "server-profile-incomplete:existing-profile",
-      destination: "/profile/create/basic-details",
+        : "server-profile-incomplete:no-progress",
+      destination: profileStarted ? "/profile/create/basic-details" : "/profile/create",
     });
-    // If a Profile doc already exists for this user, continue from wizard details on any device.
-    return "/profile/create/basic-details";
+    return profileStarted ? "/profile/create/basic-details" : "/profile/create";
   } catch {
     /* treat as no server profile */
   }
