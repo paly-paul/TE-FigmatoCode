@@ -7,7 +7,7 @@ import { ProfileStepper } from "@/components/profile/ProfileStepper";
 import { ProfileProgressCard } from "@/components/profile/ProfileProgressCard";
 import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
-import { clearSessionLoginEmail, getSessionLoginEmail, markProfileComplete } from "@/lib/profileOnboarding";
+import { clearSessionLoginEmail, getSessionLoginEmail, isProfileComplete, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
 import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
@@ -2035,7 +2035,7 @@ function SkillsProjectsPageContent() {
   }
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && isProfileComplete()) return;
     const onNavigationAttempt = (event: Event) => {
       const customEvent = event as CustomEvent<{ url?: string }>;
       const destinationUrl = customEvent.detail?.url?.trim();
@@ -2043,6 +2043,18 @@ function SkillsProjectsPageContent() {
       const destination = new URL(destinationUrl, window.location.href);
       const current = new URL(window.location.href);
       if (destination.href === current.href) return;
+      const leavingCreateFlow = !destination.pathname.startsWith("/profile/create");
+      if (!isProfileComplete() && leavingCreateFlow) {
+        event.preventDefault();
+        setDraftPopup({
+          open: true,
+          variant: "error",
+          title: "Complete profile to continue",
+          message: "Please submit your profile before navigating to other pages.",
+        });
+        return;
+      }
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
       setPendingNavigationUrl(destination.href);
       setShowUnsavedModal(true);
@@ -2053,7 +2065,7 @@ function SkillsProjectsPageContent() {
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && isProfileComplete()) return;
     const onDocumentClick = (event: MouseEvent) => {
       if (event.defaultPrevented) return;
       if (event.button !== 0) return;
@@ -2068,6 +2080,18 @@ function SkillsProjectsPageContent() {
       const destination = new URL(anchor.href, window.location.href);
       const current = new URL(window.location.href);
       if (destination.href === current.href) return;
+      const leavingCreateFlow = !destination.pathname.startsWith("/profile/create");
+      if (!isProfileComplete() && leavingCreateFlow) {
+        event.preventDefault();
+        setDraftPopup({
+          open: true,
+          variant: "error",
+          title: "Complete profile to continue",
+          message: "Please submit your profile before navigating to other pages.",
+        });
+        return;
+      }
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
       setPendingNavigationUrl(destination.href);
       setShowUnsavedModal(true);

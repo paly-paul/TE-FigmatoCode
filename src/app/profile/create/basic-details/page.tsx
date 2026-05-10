@@ -28,6 +28,7 @@ import {
   clearSessionLoginEmail,
   getLoginIdentityPrefill,
   getSessionLoginEmail,
+  isProfileComplete,
 } from "@/lib/profileOnboarding";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import { StatusPopup } from "@/components/ui/StatusPopup";
@@ -2532,7 +2533,7 @@ function BasicDetailsPageContent() {
   }
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && isProfileComplete()) return;
     const onNavigationAttempt = (event: Event) => {
       const customEvent = event as CustomEvent<{ url?: string }>;
       const destinationUrl = customEvent.detail?.url?.trim();
@@ -2540,6 +2541,18 @@ function BasicDetailsPageContent() {
       const destination = new URL(destinationUrl, window.location.href);
       const current = new URL(window.location.href);
       if (destination.href === current.href) return;
+      const leavingCreateFlow = !destination.pathname.startsWith("/profile/create");
+      if (!isProfileComplete() && leavingCreateFlow) {
+        event.preventDefault();
+        setDraftPopup({
+          open: true,
+          variant: "error",
+          title: "Complete profile to continue",
+          message: "Please submit your profile before navigating to other pages.",
+        });
+        return;
+      }
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
       setPendingNavigationUrl(destination.href);
       setShowUnsavedModal(true);
@@ -2550,7 +2563,7 @@ function BasicDetailsPageContent() {
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && isProfileComplete()) return;
     const onDocumentClick = (event: MouseEvent) => {
       if (event.defaultPrevented) return;
       if (event.button !== 0) return;
@@ -2565,6 +2578,18 @@ function BasicDetailsPageContent() {
       const destination = new URL(anchor.href, window.location.href);
       const current = new URL(window.location.href);
       if (destination.href === current.href) return;
+      const leavingCreateFlow = !destination.pathname.startsWith("/profile/create");
+      if (!isProfileComplete() && leavingCreateFlow) {
+        event.preventDefault();
+        setDraftPopup({
+          open: true,
+          variant: "error",
+          title: "Complete profile to continue",
+          message: "Please submit your profile before navigating to other pages.",
+        });
+        return;
+      }
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
       setPendingNavigationUrl(destination.href);
       setShowUnsavedModal(true);
