@@ -5,6 +5,22 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+function extractAvailableDateSalaryRecord(data: Record<string, unknown>): Record<string, unknown> | null {
+  const msg = data.message;
+  if (isRecord(msg)) {
+    if (isRecord(msg.data)) return msg.data;
+    if ("available_date" in msg || "expected_salary" in msg || "availableDate" in msg || "expectedSalary" in msg) {
+      return msg;
+    }
+  }
+  const topData = data.data;
+  if (isRecord(topData) && ("available_date" in topData || "expected_salary" in topData)) {
+    return topData;
+  }
+  if ("available_date" in data || "expected_salary" in data) return data;
+  return null;
+}
+
 function asNumberOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -420,4 +436,31 @@ export async function postCandidateSourcingAcceptance(
   if (!res.ok) {
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
+}
+
+export type AvailableDateSalaryApi = {
+  available_date: string;
+  expected_salary: number;
+};
+
+export async function getAvailableDateSalary(profileId: string): Promise<AvailableDateSalaryApi> {
+  const url = new URL("/api/method/get_available_date_salary", window.location.origin);
+  url.searchParams.set("profile_id", profileId.trim());
+  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+  const inner = isRecord(data) ? extractAvailableDateSalaryRecord(data) : null;
+  const availableRaw =
+    inner != null
+      ? pickFirstString(inner, ["available_date", "availableDate"]) ??
+        (typeof inner.available_date === "string" ? inner.available_date.trim() : "")
+      : "";
+  const expectedRaw =
+    inner != null ? asNumberOrZero(inner.expected_salary ?? inner.expectedSalary) : 0;
+  return {
+    available_date: availableRaw,
+    expected_salary: expectedRaw,
+  };
 }

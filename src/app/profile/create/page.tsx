@@ -12,6 +12,7 @@ import { LightbulbIcon, UploadBoxIcon, SmallUploadIcon } from "@/components/icon
 import { clearProfileName, setCandidateId, setProfileName } from "@/lib/authSession";
 import {
   upsertResumeProfile,
+  replaceResumeProfile,
   clearResumeProfile,
   clearProceededPastResumeUpload,
   hasProceededPastResumeUpload,
@@ -568,7 +569,10 @@ export default function CreateProfilePage() {
       }
 
       if (backendProfile) {
-        upsertResumeProfile(backendProfile);
+        // Replace (not merge) so any draft data from "continue without resume" is fully
+        // discarded. Fields not returned by the backend (e.g. dob, phone) should not
+        // bleed through from a prior draft session.
+        replaceResumeProfile(backendProfile);
       }
 
       if (typeof window !== "undefined") {

@@ -390,10 +390,13 @@ function SkillsProjectsPageContent() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [navigateAfterSave, setNavigateAfterSave] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const editBackBypassRef = useRef(false);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
     experiences: false,
@@ -697,6 +700,10 @@ function SkillsProjectsPageContent() {
   useEffect(() => {
     setHasUnsavedChanges(buildCurrentSnapshot() !== savedSnapshot);
   }, [skills, experiences, projects, savedSnapshot]);
+
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     const queryProfileName =
@@ -1468,6 +1475,7 @@ function SkillsProjectsPageContent() {
       current_salary_currency: currentSalaryCurrencyValue,
       salary_per_hour: currentSalaryValue,
       salary_currency: currentSalaryCurrencyValue,
+      ...(storedProfile?.availableDate?.trim() ? { available_date: storedProfile.availableDate.trim() } : {}),
       professional_summary: storedProfile?.summary?.trim() || "",
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
@@ -1585,6 +1593,7 @@ function SkillsProjectsPageContent() {
       "nationality",
       "preferred_location",
       "work_authorized_countries",
+      "available_date",
       "profile_image",
       "skills_table",
       "key_skills",
@@ -1818,6 +1827,7 @@ function SkillsProjectsPageContent() {
       current_salary_currency: currentSalaryCurrencyValue,
       salary_per_hour: currentSalaryValue,
       salary_currency: currentSalaryCurrencyValue,
+      ...(storedProfile?.availableDate?.trim() ? { available_date: storedProfile.availableDate.trim() } : {}),
       professional_summary: storedProfile?.summary?.trim() || "",
       nationality: storedProfile?.nationality?.trim() || "",
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
@@ -1936,6 +1946,7 @@ function SkillsProjectsPageContent() {
       "nationality",
       "preferred_location",
       "work_authorized_countries",
+      "available_date",
       "profile_image",
       "skills_table",
       "key_skills",
@@ -2068,11 +2079,12 @@ function SkillsProjectsPageContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const qs = new URLSearchParams(window.location.search);
-    const resolvedProfileName =
+    // Only URL params can distinguish edit mode — session profile name is set even during
+    // the create flow after a draft save, so it cannot be used here.
+    const urlProfileName =
       qs.get("profile")?.trim() ||
-      qs.get("profile_name")?.trim() ||
-      getProfileName() || "";
-    if (isLikelyDocId(resolvedProfileName)) return;
+      qs.get("profile_name")?.trim() || "";
+    if (isLikelyDocId(urlProfileName)) return;
 
     const state = { teSkillsHistoryTrap: true };
     window.history.pushState(state, document.title, window.location.href);
@@ -2084,8 +2096,43 @@ function SkillsProjectsPageContent() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  // Edit mode: intercept back button to show UnsavedChangesModal instead of logout confirm.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const urlProfileName =
+      qs.get("profile")?.trim() || qs.get("profile_name")?.trim() || "";
+    if (!isLikelyDocId(urlProfileName)) return; // Create mode — handled above
+
+    const trapState = { teSkillsEditTrap: true };
+    window.history.pushState(trapState, document.title, window.location.href);
+
+    const onPopState = () => {
+      if (editBackBypassRef.current) {
+        editBackBypassRef.current = false;
+        return;
+      }
+      if (!hasUnsavedChangesRef.current) {
+        editBackBypassRef.current = true;
+        window.history.go(-1);
+        return;
+      }
+      window.history.pushState(trapState, document.title, window.location.href);
+      setPendingNavigationUrl("__back__");
+      setShowUnsavedModal(true);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   function continueNavigation(target: string | null) {
     if (!target) return;
+    if (target === "__back__") {
+      editBackBypassRef.current = true;
+      window.history.go(-3);
+      return;
+    }
     window.location.assign(target);
   }
 
@@ -2139,10 +2186,12 @@ function SkillsProjectsPageContent() {
     router.push("/profile/create");
   }
 
-  function handleGoToBasicDetails() {
+  async function handleGoToBasicDetails() {
     if (hasUnsavedChanges) {
-      setPendingNavigationUrl("/profile/create/basic-details");
-      setShowUnsavedModal(true);
+      setIsSubmittingProfile(true);
+      const saved = await handleSaveDraft();
+      setIsSubmittingProfile(false);
+      if (saved) setNavigateAfterSave("/profile/create/basic-details");
       return;
     }
     router.push("/profile/create/basic-details");
@@ -2946,10 +2995,11 @@ function SkillsProjectsPageContent() {
           <Button
             variant="outline"
             fullWidth={false}
-            onClick={handleGoToBasicDetails}
+            onClick={() => void handleGoToBasicDetails()}
             className="px-6 sm:px-8"
+            disabled={isSubmittingProfile}
           >
-            Previous
+            {isSubmittingProfile ? "Saving..." : "Previous"}
           </Button>
           <Button
             variant="outline"
@@ -3018,7 +3068,14 @@ function SkillsProjectsPageContent() {
         variant={draftPopup.variant}
         title={draftPopup.title}
         message={draftPopup.message}
-        onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+        onClose={() => {
+          setDraftPopup((prev) => ({ ...prev, open: false }));
+          if (navigateAfterSave) {
+            const target = navigateAfterSave;
+            setNavigateAfterSave(null);
+            router.push(target);
+          }
+        }}
       />
       <UnsavedChangesModal
         open={showUnsavedModal}

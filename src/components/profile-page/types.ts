@@ -65,6 +65,7 @@ export interface ProfileData {
   summary: string;
   experience: string;
   salary: string;
+  availableDate: string;
   profileStrength: number;
   visibilityScore: number;
   persona: string;
