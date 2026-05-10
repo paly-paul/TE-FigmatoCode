@@ -971,9 +971,9 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
 
   return {
     profileStatus:
-      pickString(profileRecord, "profile_status", "status") ??
-      pickString(profileVersion, "profile_status", "status") ??
-      pickString(root, "profile_status", "status"),
+      pickString(profileRecord, "profile_status") ??
+      pickString(profileVersion, "profile_status") ??
+      pickString(root, "profile_status"),
     professionalTitle: pickString(profileVersion, "professional_title", "professionalTitle", "designation"),
     experienceYears: experienceYearsValue,
     experienceMonths: experienceMonthsValue,

@@ -2792,7 +2792,7 @@ function BasicDetailsPageContent() {
                         value={form.dob}
                         onChange={(e) => setField("dob", e.target.value)}
                         max={getMaxDobDate()}
-                        className={fieldClass(Boolean(errors.dob))}
+                        className={`${fieldClass(Boolean(errors.dob))} te-date-input`}
                       />
                       {errors.dob && <p className="text-xs text-red-500">{errors.dob}</p>}
                     </label>
@@ -2862,11 +2862,7 @@ function BasicDetailsPageContent() {
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      handleCountryCodePick(code);
-                                    }}
-                                    onTouchStart={(e) => {
+                                    onPointerDown={(e) => {
                                       e.preventDefault();
                                       handleCountryCodePick(code);
                                     }}
@@ -2973,11 +2969,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
-                                }}
-                                onTouchStart={(e) => {
+                                onPointerDown={(e) => {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
@@ -3020,11 +3012,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("preferredLocation", option.id || option.label);
-                                }}
-                                onTouchStart={(e) => {
+                                onPointerDown={(e) => {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                                 }}
@@ -3145,7 +3133,7 @@ function BasicDetailsPageContent() {
                         onChange={(e) => setField("availableDate", e.target.value)}
                         min={getLocalIsoDate()}
                         max={getLocalIsoDate(3)}
-                        className={fieldClass(Boolean(errors.availableDate))}
+                        className={`${fieldClass(Boolean(errors.availableDate))} te-date-input`}
                       />
                       {errors.availableDate && <p className="text-xs text-red-500">{errors.availableDate}</p>}
                     </label>
@@ -3416,7 +3404,7 @@ function BasicDetailsPageContent() {
                               updateCertificationEntry(entry.id, "issueDate", e.target.value)
                             }
                           max={getYesterdayDate()}
-                            className={fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))}
+                            className={`${fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))} te-date-input`}
                           />
                           {errors.certificationIssueDateById?.[entry.id] ? (
                             <p className="text-xs text-red-500">
@@ -3432,7 +3420,7 @@ function BasicDetailsPageContent() {
                             onChange={(e) =>
                               updateCertificationEntry(entry.id, "expirationDate", e.target.value)
                             }
-                            className={fieldClass(Boolean(errors.certificationDateById?.[entry.id]))}
+                            className={`${fieldClass(Boolean(errors.certificationDateById?.[entry.id]))} te-date-input`}
                           />
                           {errors.certificationDateById?.[entry.id] ? (
                             <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
@@ -3506,11 +3494,7 @@ function BasicDetailsPageContent() {
                                 <button
                                   key={`work-auth-mobile-${option}`}
                                   type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handleWorkAuthorizationPick(option);
-                                  }}
-                                  onTouchStart={(e) => {
+                                  onPointerDown={(e) => {
                                     e.preventDefault();
                                     handleWorkAuthorizationPick(option);
                                   }}
@@ -3590,11 +3574,7 @@ function BasicDetailsPageContent() {
                                 <button
                                   key={`preferred-industry-mobile-${option}`}
                                   type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handlePreferredIndustryPick(option);
-                                  }}
-                                  onTouchStart={(e) => {
+                                  onPointerDown={(e) => {
                                     e.preventDefault();
                                     handlePreferredIndustryPick(option);
                                   }}
@@ -3981,7 +3961,7 @@ function BasicDetailsPageContent() {
                       onChange={(e) => setField("availableDate", e.target.value)}
                       min={getLocalIsoDate()}
                       max={getLocalIsoDate(3)}
-                      className={fieldClass(Boolean(errors.availableDate))}
+                      className={`${fieldClass(Boolean(errors.availableDate))} te-date-input`}
                     />
                     {errors.availableDate && <p className="text-xs text-red-500">{errors.availableDate}</p>}
                   </label>
@@ -4236,7 +4216,7 @@ function BasicDetailsPageContent() {
                           value={entry.issueDate}
                           onChange={(e) => updateCertificationEntry(entry.id, "issueDate", e.target.value)}
                           max={getYesterdayDate()}
-                          className={fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))}
+                          className={`${fieldClass(Boolean(errors.certificationIssueDateById?.[entry.id]))} te-date-input`}
                         />
                         {errors.certificationIssueDateById?.[entry.id] ? (
                           <p className="text-xs text-red-500">
@@ -4250,7 +4230,7 @@ function BasicDetailsPageContent() {
                           type="date"
                           value={entry.expirationDate}
                           onChange={(e) => updateCertificationEntry(entry.id, "expirationDate", e.target.value)}
-                          className={fieldClass(Boolean(errors.certificationDateById?.[entry.id]))}
+                          className={`${fieldClass(Boolean(errors.certificationDateById?.[entry.id]))} te-date-input`}
                         />
                         {errors.certificationDateById?.[entry.id] ? (
                           <p className="text-xs text-red-500">{errors.certificationDateById[entry.id]}</p>
@@ -4321,14 +4301,10 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`work-auth-desktop-${option}`}
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleWorkAuthorizationPick(option);
-                                }}
-                                onTouchStart={(e) => {
-                                  e.preventDefault();
-                                  handleWorkAuthorizationPick(option);
-                                }}
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                handleWorkAuthorizationPick(option);
+                              }}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.workAuthorization).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
@@ -4405,14 +4381,10 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`preferred-industry-desktop-${option}`}
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handlePreferredIndustryPick(option);
-                                }}
-                                onTouchStart={(e) => {
-                                  e.preventDefault();
-                                  handlePreferredIndustryPick(option);
-                                }}
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                handlePreferredIndustryPick(option);
+                              }}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.preferredIndustry).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
@@ -4844,11 +4816,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
-                                }}
-                                onTouchStart={(e) => {
+                                onPointerDown={(e) => {
                                   e.preventDefault();
                                   handleLocationSuggestionPick("currentLocation", option.id || option.label);
                                 }}
@@ -4889,11 +4857,7 @@ function BasicDetailsPageContent() {
                             <button
                               key={`${option.id}-${option.label}`}
                               type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleLocationSuggestionPick("preferredLocation", option.id || option.label);
-                              }}
-                              onTouchStart={(e) => {
+                              onPointerDown={(e) => {
                                 e.preventDefault();
                                 handleLocationSuggestionPick("preferredLocation", option.id || option.label);
                               }}
@@ -4954,11 +4918,7 @@ function BasicDetailsPageContent() {
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handleCountryCodePick(code);
-                                  }}
-                                  onTouchStart={(e) => {
+                                  onPointerDown={(e) => {
                                     e.preventDefault();
                                     handleCountryCodePick(code);
                                   }}

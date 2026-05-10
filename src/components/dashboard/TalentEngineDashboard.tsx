@@ -655,15 +655,20 @@ export default function TalentEngineDashboard() {
 
       try {
         const cachedRecommended = readRecommendedJobsCache(profileIdForActionables);
-        if (cachedRecommended?.jobs?.length) {
-          const cachedRecommendedJobs = cachedRecommended.jobs
+        const hasCachedJobs = Boolean(cachedRecommended?.jobs?.length);
+        if (hasCachedJobs) {
+          const cachedRecommendedJobs = cachedRecommended!.jobs
             .map((job) => mapRecommendedToDashboardJob(job))
             .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)));
           setApiRecommendedJobs(cachedRecommendedJobs);
         }
         let actionablesRes = await getCandidateActionables(profileIdForActionables);
         const recommendedJobsRes = await getRecommendedJobs(profileIdForActionables);
-        writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
+        // Don't overwrite a valid cache with an empty response — the backend may temporarily
+        // return no jobs while a profile is in draft-edit state.
+        if (recommendedJobsRes.length > 0 || !hasCachedJobs) {
+          writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
+        }
 
         // If the backend can't find actionables for `profile_id`, retry using the other
         // session identifier (`candidateId`).
@@ -848,16 +853,21 @@ export default function TalentEngineDashboard() {
           setApiGeneralCards(orderedGeneral);
         }
 
-        const orderedRecommended = [...filteredRecommendedJobs];
-        const recommendedSignature = [...orderedRecommended]
-          .sort((a, b) =>
-            (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
-          )
-          .map(jobListingSignature)
-          .join("::");
-        if (recommendedJobsSignatureRef.current !== recommendedSignature) {
-          recommendedJobsSignatureRef.current = recommendedSignature;
-          setApiRecommendedJobs(orderedRecommended);
+        // If the fresh fetch returned empty but we already had cached jobs, skip the state
+        // update — the cached jobs are already displayed and should remain visible until
+        // the profile is fully re-submitted and the backend returns actual results.
+        if (filteredRecommendedJobs.length > 0 || !hasCachedJobs) {
+          const orderedRecommended = [...filteredRecommendedJobs];
+          const recommendedSignature = [...orderedRecommended]
+            .sort((a, b) =>
+              (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
+            )
+            .map(jobListingSignature)
+            .join("::");
+          if (recommendedJobsSignatureRef.current !== recommendedSignature) {
+            recommendedJobsSignatureRef.current = recommendedSignature;
+            setApiRecommendedJobs(orderedRecommended);
+          }
         }
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
