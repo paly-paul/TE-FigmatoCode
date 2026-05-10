@@ -12,6 +12,48 @@ type StatusPopupProps = {
   onClose: () => void;
 };
 
+function formatPhoneForDisplay(value: string): string {
+  const normalized = value.trim();
+  if (!/^\+\d{8,15}$/.test(normalized)) return value;
+
+  const digits = normalized.slice(1);
+
+  // Common NANP pattern (+1XXXXXXXXXX)
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+
+  // Common India pattern (+91XXXXXXXXXX)
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+  }
+
+  return normalized;
+}
+
+function prettifyErrorText(value: string): string {
+  return value
+    .replace(/\bcontact_no\b/gi, "Contact Number")
+    .replace(/\bcountry_code\b/gi, "Country Code")
+    .replace(/\bfield\s+Contact Number\b/gi, "field Contact Number");
+}
+
+function renderMessageWithStrongSegments(message: string) {
+  const strongTagPattern = /<strong>(.*?)<\/strong>/gi;
+  const segments = message.split(strongTagPattern);
+  if (segments.length === 1) return prettifyErrorText(formatPhoneForDisplay(message));
+
+  return segments.map((segment, index) =>
+    index % 2 === 1 ? (
+      <strong key={`strong-${index}`} className="font-semibold text-gray-700">
+        {prettifyErrorText(formatPhoneForDisplay(segment))}
+      </strong>
+    ) : (
+      <span key={`text-${index}`}>{prettifyErrorText(formatPhoneForDisplay(segment))}</span>
+    )
+  );
+}
+
 export function StatusPopup({ open, variant, title, message, onClose }: StatusPopupProps) {
   if (!open) return null;
 
@@ -42,7 +84,7 @@ export function StatusPopup({ open, variant, title, message, onClose }: StatusPo
           <div className="mx-auto mt-5 max-w-[420px] text-center">
             <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
             {message ? (
-              <p className="mt-2 text-sm leading-6 text-gray-500">{message}</p>
+              <p className="mt-2 text-sm leading-6 text-gray-500">{renderMessageWithStrongSegments(message)}</p>
             ) : null}
           </div>
 

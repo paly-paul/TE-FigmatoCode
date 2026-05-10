@@ -6,6 +6,7 @@ function isSubmittedProfileState(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return false;
   return (
+    normalized === "open" ||
     normalized === "submitted" ||
     normalized === "published" ||
     normalized === "completed"
@@ -18,11 +19,103 @@ function isSubmittedProfileStatus(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return false;
   return (
-    normalized === "active" ||
     normalized === "submitted" ||
     normalized === "published" ||
     normalized === "completed"
   );
+}
+
+function isActiveProfileStatus(value: string): boolean {
+  return value.trim().toLowerCase() === "active";
+}
+
+function hasMultipleProfileVersions(profile: UnknownRecord, currentVersionName: string): boolean {
+  const history = Array.isArray(profile.history) ? profile.history : [];
+  if (history.length === 0) return false;
+  const names = history
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const record = entry as UnknownRecord;
+      const versionValue = record.profile_version;
+      return typeof versionValue === "string" ? versionValue.trim() : "";
+    })
+    .filter((name, index, arr) => Boolean(name) && arr.indexOf(name) === index);
+
+  if (!currentVersionName) return names.length > 1;
+  return names.some((name) => name !== currentVersionName);
+}
+
+async function hasAnyPreviouslySubmittedVersion(
+  profile: UnknownRecord,
+  currentVersionName: string
+): Promise<boolean> {
+  const history = Array.isArray(profile.history) ? profile.history : [];
+  if (history.length === 0) return false;
+
+  const versionNames = history
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const record = entry as UnknownRecord;
+      const versionValue = record.profile_version;
+      return typeof versionValue === "string" ? versionValue.trim() : "";
+    })
+    .filter((name, index, arr) => Boolean(name) && arr.indexOf(name) === index)
+    .filter((name) => name !== currentVersionName)
+    .slice(0, 8);
+
+  if (versionNames.length === 0) return false;
+
+  try {
+    const checks = await Promise.all(
+      versionNames.map(async (versionName) => {
+        const res = await fetch(
+          `/api/method/get_data/?doctype=${encodeURIComponent("Profile Version")}&name=${encodeURIComponent(versionName)}`,
+          { method: "GET" }
+        );
+        if (!res.ok) return false;
+
+        const payload = (await res.json()) as UnknownRecord;
+        const root =
+          payload.data && typeof payload.data === "object"
+            ? (payload.data as UnknownRecord)
+            : payload.message && typeof payload.message === "object"
+              ? (payload.message as UnknownRecord)
+              : payload;
+
+        const state = typeof root.state === "string" ? root.state : "";
+        const status = typeof root.profile_status === "string" ? root.profile_status : "";
+        return isSubmittedProfileState(state) || isSubmittedProfileStatus(status);
+      })
+    );
+    return checks.some(Boolean);
+  } catch {
+    return false;
+  }
+}
+
+async function isSubmittedProfileVersionByName(versionName: string): Promise<boolean> {
+  const normalized = versionName.trim();
+  if (!normalized) return false;
+  try {
+    const res = await fetch(
+      `/api/method/get_data/?doctype=${encodeURIComponent("Profile Version")}&name=${encodeURIComponent(normalized)}`,
+      { method: "GET" }
+    );
+    if (!res.ok) return false;
+
+    const payload = (await res.json()) as UnknownRecord;
+    const root =
+      payload.data && typeof payload.data === "object"
+        ? (payload.data as UnknownRecord)
+        : payload.message && typeof payload.message === "object"
+          ? (payload.message as UnknownRecord)
+          : payload;
+    const state = typeof root.state === "string" ? root.state : "";
+    const status = typeof root.profile_status === "string" ? root.profile_status : "";
+    return isSubmittedProfileState(state) || isSubmittedProfileStatus(status);
+  } catch {
+    return false;
+  }
 }
 
 function parseCompletionPercent(value: unknown): number | null {
@@ -121,24 +214,37 @@ export async function isProfileWizardCompleteOnServer(
         : "";
     const rootStatus =
       typeof root.profile_status === "string" ? root.profile_status.trim().toLowerCase() : "";
-    const isSubmitted =
+    const isSubmittedCurrent =
       // Document workflow state: "open"/"active" fire on doc creation, not on wizard submit.
       isSubmittedProfileState(profileState) ||
       isSubmittedProfileState(versionState) ||
       isSubmittedProfileState(rootState) ||
-      // profile_status fields: "Active" is set explicitly on wizard submit (action: "submit").
-      // This also handles the edit-draft case: a previously-submitted profile retains its
-      // profile_status even when the workflow state reverts to "draft" during editing.
+      // profile_status fields are supplementary, but do not treat "Active" as submit proof.
       isSubmittedProfileStatus(profileStatus) ||
       isSubmittedProfileStatus(versionStatus) ||
       isSubmittedProfileStatus(rootStatus) ||
       isSubmittedProfileStatus(data.profileStatus ?? "");
 
-    // isDraft is only meaningful when there is no submitted signal at all.
-    // A nested sub-document's "Draft" state must not override a submitted root state,
-    // and a profile being edited (draft state, but profile_status still "active") must
-    // still be treated as submitted so login routes to dashboard, not create.
-    const isDraft = (profileState === "draft" || versionState === "draft") && !isSubmitted;
+    const currentVersionName =
+      typeof profile.current_profile_version === "string" ? profile.current_profile_version.trim() : "";
+    const currentVersionSubmitted = currentVersionName
+      ? await isSubmittedProfileVersionByName(currentVersionName)
+      : false;
+    const hasSubmittedHistory = !(isSubmittedCurrent || currentVersionSubmitted)
+      ? await hasAnyPreviouslySubmittedVersion(profile, currentVersionName)
+      : false;
+    const hasActiveStatusSignal =
+      isActiveProfileStatus(profileStatus) ||
+      isActiveProfileStatus(versionStatus) ||
+      isActiveProfileStatus(rootStatus) ||
+      isActiveProfileStatus(data.profileStatus ?? "");
+    const editDraftActiveFallback =
+      hasActiveStatusSignal && hasMultipleProfileVersions(profile, currentVersionName);
+    const isSubmitted =
+      isSubmittedCurrent || currentVersionSubmitted || hasSubmittedHistory || editDraftActiveFallback;
+
+    // A draft with no submit signal (current or historical) is incomplete.
+    const isDraft = (profileState === "draft" || versionState === "draft" || rootState === "draft") && !isSubmitted;
 
     const completionPercent =
       extractCompletionPercent(profileVersion) ??
@@ -156,14 +262,19 @@ export async function isProfileWizardCompleteOnServer(
       versionStatus: versionStatus || null,
       rootStatus: rootStatus || null,
       mappedProfileStatus: data.profileStatus || null,
+      isSubmittedCurrent,
+      currentVersionSubmitted,
+      hasSubmittedHistory,
+      hasActiveStatusSignal,
+      editDraftActiveFallback,
       isSubmitted,
       isDraft,
       completionPercent,
       email: data.email,
       currentLocation: data.currentLocation,
     });
-    // Route to dashboard only when the profile has been explicitly submitted AND has
-    // the minimum required wizard fields (title + at least one skill).
+    // Route to dashboard only when the profile is not draft, has submitted signal, and
+    // has the minimum required wizard fields (title + at least one skill).
     return Boolean(!isDraft && isSubmitted && Boolean(title) && skills > 0);
   } catch (error) {
     console.error("[profile-check] server-data:error", { profileName, error });
