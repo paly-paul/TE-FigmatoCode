@@ -140,10 +140,13 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     }
     const resumeUploaded = await hasUploadedResume(profileName);
     console.log("[login-routing] decision", {
-      reason: resumeUploaded ? "server-profile-incomplete:resume-uploaded" : "server-profile-incomplete:no-resume",
-      destination: resumeUploaded ? "/profile/create/basic-details" : "/profile/create",
+      reason: resumeUploaded
+        ? "server-profile-incomplete:resume-uploaded"
+        : "server-profile-incomplete:existing-profile",
+      destination: "/profile/create/basic-details",
     });
-    return resumeUploaded ? "/profile/create/basic-details" : "/profile/create";
+    // If a Profile doc already exists for this user, continue from wizard details on any device.
+    return "/profile/create/basic-details";
   } catch {
     /* treat as no server profile */
   }
