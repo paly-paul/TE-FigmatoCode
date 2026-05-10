@@ -923,24 +923,28 @@ export default function TalentEngineJobsPage() {
   }, [skillSearch, baseSkills]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
-    const byId = new Map<string, string>();
+    const catalogById = new Map<string, string>();
     for (const location of allLocationOptions) {
       const id = location.id?.trim();
       const label = location.label?.trim();
       if (!id || !label) continue;
-      byId.set(id, label);
+      catalogById.set(id, label);
     }
 
-    const sourceJobs = apiRecommendedJobs;
-    for (const job of sourceJobs) {
+    const byId = new Map<string, string>();
+    for (const job of apiRecommendedJobs) {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
-      const label = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
-      if (!byId.has(id)) byId.set(id, label || id);
+      const fromCatalog = catalogById.get(id);
+      const fromJob = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
+      const label = fromCatalog || fromJob || id;
+      if (!byId.has(id)) byId.set(id, label);
     }
 
-    return Array.from(byId.entries()).map(([id, label]) => ({ id, label }));
-  }, [allLocationOptions, apiRecommendedJobs, hasAttemptedJobsLoad]);
+    return Array.from(byId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allLocationOptions, apiRecommendedJobs]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -955,6 +959,11 @@ export default function TalentEngineJobsPage() {
     ? locationLabelMap[selectedLocations[0]] || selectedLocations[0]
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
+
+  useEffect(() => {
+    const validIds = new Set(availableLocations.map((location) => location.id));
+    setSelectedLocations((previous) => previous.filter((id) => validIds.has(id)));
+  }, [availableLocations]);
 
   const activeFilterCount = [
     filters.skills.length > 0,

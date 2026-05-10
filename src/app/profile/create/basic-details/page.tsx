@@ -14,6 +14,7 @@ import {
   readResumeSkillsDraft,
   clearResumeWizardSession,
   hasProceededPastResumeUpload,
+  markProceededPastResumeUpload,
 } from "@/lib/profileSession";
 import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -223,6 +224,13 @@ function sanitizeSalaryInput(value: string): string {
   return `${integerPart}.${decimalPart}`;
 }
 
+function getLocalIsoDate(offsetMonths = 0): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  if (offsetMonths) local.setMonth(local.getMonth() + offsetMonths);
+  return local.toISOString().slice(0, 10);
+}
+
 interface EducationEntry {
   id: string;
   title: string;
@@ -348,6 +356,7 @@ interface BasicDetailsForm {
   expMonths: string;
   salary: string;
   salaryCurrency: string;
+  availableDate: string;
   summary: string;
   firstName: string;
   lastName: string;
@@ -374,7 +383,7 @@ function normalizeExperienceYears(value: string | undefined): string {
   if (value == null || value === "") return "";
   const n = parseInt(String(value), 10);
   if (Number.isNaN(n) || n < 1) return "";
-  return String(Math.min(16, n));
+  return String(Math.min(30, n));
 }
 
 function normalizeExperienceMonths(value: string | undefined): string {
@@ -517,7 +526,17 @@ function hasMeaningfulProfileValue(value: unknown): boolean {
 
 function mergeProfilePreferringExisting(existing: ResumeProfileData, incoming: ResumeProfileData): ResumeProfileData {
   const merged: ResumeProfileData = { ...incoming };
+  // Some fields should always reflect backend truth when available, even in create flow,
+  // otherwise stale session drafts can make UI disagree with get_data.
+  const preferIncomingWhenPresent = new Set<keyof ResumeProfileData>(["experienceYears", "experienceMonths"]);
   for (const [key, value] of Object.entries(existing)) {
+    const typedKey = key as keyof ResumeProfileData;
+    if (
+      preferIncomingWhenPresent.has(typedKey) &&
+      hasMeaningfulProfileValue((incoming as Record<string, unknown>)[key])
+    ) {
+      continue;
+    }
     if (hasMeaningfulProfileValue(value)) {
       (merged as Record<string, unknown>)[key] = value;
     }
@@ -537,6 +556,7 @@ const initialForm: BasicDetailsForm = {
   expMonths: "",
   salary: "",
   salaryCurrency: "",
+  availableDate: "",
   summary: "",
   firstName: "",
   lastName: "",
@@ -886,6 +906,9 @@ function MobileAccordionCard({
 function BasicDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isEditMode = isLikelyDocId(
+    searchParams.get("profile_name")?.trim() || searchParams.get("profile")?.trim() || ""
+  );
   const generateButtonRef = useRef<HTMLButtonElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<BasicDetailsForm>(initialForm);
@@ -958,11 +981,13 @@ function BasicDetailsPageContent() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
   const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [navigateAfterSave, setNavigateAfterSave] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
+  const editBackBypassRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -981,6 +1006,7 @@ function BasicDetailsPageContent() {
         expMonths: form.expMonths,
         salary: form.salary.trim(),
         salaryCurrency: form.salaryCurrency,
+        availableDate: form.availableDate,
         summary: form.summary.trim(),
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -1296,6 +1322,7 @@ function BasicDetailsPageContent() {
       expMonths: preferExistingFormValue(prev.expMonths, expMonthsNorm),
       salary: preferExistingFormValue(prev.salary, profile.salaryPerMonth ?? ""),
       salaryCurrency: preferExistingFormValue(prev.salaryCurrency, profile.salaryCurrency ?? ""),
+      availableDate: preferExistingFormValue(prev.availableDate, profile.availableDate ?? ""),
       summary: preferExistingFormValue(prev.summary, profile.summary ?? ""),
       firstName: preferExistingFormValue(prev.firstName, profile.firstName ?? ""),
       lastName: preferExistingFormValue(prev.lastName, profile.lastName ?? ""),
@@ -1420,17 +1447,25 @@ function BasicDetailsPageContent() {
 
         if (!profileName) return;
 
-        // In create flow, hydrate by profile name/id (get_data).
         const backendProfile = await getCandidateProfileData(profileName);
         if (!backendProfile) return;
         if (cancelled) return;
 
-        const existingSessionProfile = readResumeProfile() ?? {};
-        // Preserve in-session manual edits (draft behavior) while still hydrating
-        // latest backend data for any fields not yet edited locally.
-        const merged = mergeProfilePreferringExisting(existingSessionProfile, backendProfile);
-        upsertResumeProfile(merged);
-        applyProfileToForm(merged);
+        const isEditMode = isLikelyDocId(profileName);
+        if (isEditMode) {
+          // Edit mode: backend is the source of truth — never let stale session data
+          // override fields the user is coming back to edit.
+          markProceededPastResumeUpload();
+          upsertResumeProfile(backendProfile);
+          applyProfileToForm(backendProfile);
+        } else {
+          // Create flow: preserve in-session manual edits while hydrating backend data
+          // for any fields not yet edited locally.
+          const existingSessionProfile = readResumeProfile() ?? {};
+          const merged = mergeProfilePreferringExisting(existingSessionProfile, backendProfile);
+          upsertResumeProfile(merged);
+          applyProfileToForm(merged);
+        }
       } catch {
         const fallback = readResumeProfile();
         if (fallback) {
@@ -1609,10 +1644,11 @@ function BasicDetailsPageContent() {
       certificationsComplete: isCertificationsComplete,
       externalLinks: externalLinks.map((e) => ({ label: e.label, url: e.url })),
     },
-    // Tool/skill experience is entered on the next screen — pass empty arrays so resume
-    // job history doesn't falsely count toward those sections on this step.
-    liveExperiences: [],
-    liveProjects: [],
+    // In create mode: pass empty arrays so resume job history doesn't falsely count
+    // toward skills/projects sections before the user fills them in on the next step.
+    // In edit mode: omit overrides so the session profile (populated from backend)
+    // correctly reflects the already-completed skills and projects.
+    ...(isEditMode ? {} : { liveExperiences: [], liveProjects: [] }),
   });
 
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
@@ -1644,6 +1680,9 @@ function BasicDetailsPageContent() {
         break;
       case "salaryCurrency":
         patch.salaryCurrency = trimmed || undefined;
+        break;
+      case "availableDate":
+        patch.availableDate = value || undefined;
         break;
       case "summary":
         patch.summary = trimmed || undefined;
@@ -1747,6 +1786,18 @@ function BasicDetailsPageContent() {
 
     if (!form.salaryCurrency) nextErrors.salaryCurrency = "Select a currency.";
 
+    if (!form.availableDate) {
+      nextErrors.availableDate = "Available date is required.";
+    } else {
+      const todayStr = getLocalIsoDate();
+      const maxStr = getLocalIsoDate(3);
+      if (form.availableDate < todayStr) {
+        nextErrors.availableDate = "Available date cannot be in the past.";
+      } else if (form.availableDate > maxStr) {
+        nextErrors.availableDate = "Available date must be within 3 months from today.";
+      }
+    }
+
     if (!form.summary.trim()) {
       nextErrors.summary = "Summary is required.";
     } else if (form.summary.trim().length < 40) {
@@ -1846,6 +1897,7 @@ function BasicDetailsPageContent() {
                 nextErrors.expMonths ||
                 nextErrors.salary ||
                 nextErrors.salaryCurrency ||
+                nextErrors.availableDate ||
                 nextErrors.summary
             ),
           certifications:
@@ -2233,6 +2285,7 @@ function BasicDetailsPageContent() {
       experienceMonths: form.expMonths,
       salaryPerMonth: form.salary.trim(),
       salaryCurrency: form.salaryCurrency,
+      availableDate: form.availableDate.trim() || undefined,
       summary: form.summary.trim(),
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
@@ -2284,8 +2337,10 @@ function BasicDetailsPageContent() {
       ? `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/skills-projects";
     if (hasUnsavedChanges) {
-      setPendingNavigationUrl(nextUrl);
-      setShowUnsavedModal(true);
+      setIsDraftSaving(true);
+      const saved = await handleSaveDraft();
+      setIsDraftSaving(false);
+      if (saved) setNavigateAfterSave(nextUrl);
       return;
     }
     markCurrentAsSaved();
@@ -2441,6 +2496,7 @@ function BasicDetailsPageContent() {
           experience_months: form.expMonths || "",
           current_salary_currency: form.salaryCurrency || "",
           current_salary: form.salary.trim() || "",
+          available_date: form.availableDate.trim() || undefined,
           nationality: form.nationality || "",
           preferred_location: form.preferredLocation.trim() || "",
           work_authorized_countries: form.workAuthorization.trim() || "",
@@ -2520,11 +2576,12 @@ function BasicDetailsPageContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const qs = new URLSearchParams(window.location.search);
-    const resolvedProfileName =
+    // Only URL params can distinguish edit mode — session profile name is set even during
+    // the create flow after a draft save, so it cannot be used here.
+    const urlProfileName =
       qs.get("profile")?.trim() ||
-      qs.get("profile_name")?.trim() ||
-      getProfileName() || "";
-    if (isLikelyDocId(resolvedProfileName)) return;
+      qs.get("profile_name")?.trim() || "";
+    if (isLikelyDocId(urlProfileName)) return;
 
     const state = { teBasicDetailsHistoryTrap: true };
     window.history.pushState(state, document.title, window.location.href);
@@ -2538,8 +2595,46 @@ function BasicDetailsPageContent() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  // Edit mode: intercept back button to show UnsavedChangesModal instead of logout confirm.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const urlProfileName =
+      qs.get("profile")?.trim() || qs.get("profile_name")?.trim() || "";
+    if (!isLikelyDocId(urlProfileName)) return; // Create mode — handled above
+
+    const trapState = { teBasicDetailsEditTrap: true };
+    window.history.pushState(trapState, document.title, window.location.href);
+
+    const onPopState = () => {
+      if (editBackBypassRef.current) {
+        editBackBypassRef.current = false;
+        return;
+      }
+      if (!hasUnsavedChangesRef.current) {
+        // No unsaved changes — pass through past our guard entry
+        editBackBypassRef.current = true;
+        window.history.go(-1);
+        return;
+      }
+      // Has unsaved changes — re-trap and show modal
+      window.history.pushState(trapState, document.title, window.location.href);
+      setPendingNavigationUrl("__back__");
+      setShowUnsavedModal(true);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   function continueNavigation(target: string | null) {
     if (!target) return;
+    if (target === "__back__") {
+      // Skip past: re-trap push + guard push + original editPage entry → reach previous page
+      editBackBypassRef.current = true;
+      window.history.go(-3);
+      return;
+    }
     window.location.assign(target);
   }
 
@@ -2980,7 +3075,7 @@ function BasicDetailsPageContent() {
                           className={`${fieldClass(Boolean(errors.expYears))} bg-white`}
                         >
                           <option value="">Select years</option>
-                          {Array.from({ length: 16 }).map((_, idx) => (
+                          {Array.from({ length: 30 }).map((_, idx) => (
                             <option key={idx + 1} value={(idx + 1).toString()}>
                               {idx + 1}
                             </option>
@@ -3041,6 +3136,19 @@ function BasicDetailsPageContent() {
                         )}
                       </label>
                     </div>
+
+                    <label className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-gray-800">Available Date <span className="text-red-500">*</span></span>
+                      <input
+                        type="date"
+                        value={form.availableDate}
+                        onChange={(e) => setField("availableDate", e.target.value)}
+                        min={getLocalIsoDate()}
+                        max={getLocalIsoDate(3)}
+                        className={fieldClass(Boolean(errors.availableDate))}
+                      />
+                      {errors.availableDate && <p className="text-xs text-red-500">{errors.availableDate}</p>}
+                    </label>
                   </div>
 
                   <div className="border-t border-gray-200 pt-5 space-y-3">
@@ -3806,7 +3914,7 @@ function BasicDetailsPageContent() {
                         className={`${fieldClass(Boolean(errors.expYears))} bg-white`}
                       >
                         <option value="">Select years</option>
-                        {Array.from({ length: 16 }).map((_, idx) => (
+                        {Array.from({ length: 30 }).map((_, idx) => (
                           <option key={idx + 1} value={(idx + 1).toString()}>
                             {idx + 1}
                           </option>
@@ -3864,6 +3972,19 @@ function BasicDetailsPageContent() {
                       {errors.salaryCurrency && <p className="text-xs text-red-500">{errors.salaryCurrency}</p>}
                     </label>
                   </div>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-gray-800">Available Date <span className="text-red-500">*</span></span>
+                    <input
+                      type="date"
+                      value={form.availableDate}
+                      onChange={(e) => setField("availableDate", e.target.value)}
+                      min={getLocalIsoDate()}
+                      max={getLocalIsoDate(3)}
+                      className={fieldClass(Boolean(errors.availableDate))}
+                    />
+                    {errors.availableDate && <p className="text-xs text-red-500">{errors.availableDate}</p>}
+                  </label>
                 </div>
 
                 <div className="border-t border-gray-200 pt-5 space-y-3">
@@ -4907,8 +5028,8 @@ function BasicDetailsPageContent() {
           >
             Save Draft
           </Button>
-          <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext}>
-            Next
+          <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext} disabled={isDraftSaving}>
+            {isDraftSaving ? "Saving..." : "Next"}
           </Button>
         </div>
       </div>
@@ -4977,7 +5098,14 @@ function BasicDetailsPageContent() {
         variant={draftPopup.variant}
         title={draftPopup.title}
         message={draftPopup.message}
-        onClose={() => setDraftPopup((prev) => ({ ...prev, open: false }))}
+        onClose={() => {
+          setDraftPopup((prev) => ({ ...prev, open: false }));
+          if (navigateAfterSave) {
+            const target = navigateAfterSave;
+            setNavigateAfterSave(null);
+            router.push(target);
+          }
+        }}
       />
       <UnsavedChangesModal
         open={showUnsavedModal}

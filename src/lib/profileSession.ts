@@ -77,6 +77,32 @@ export function upsertResumeProfile(incoming: ResumeProfileData) {
   }
 }
 
+export function replaceResumeProfile(incoming: ResumeProfileData) {
+  if (typeof window === "undefined") return;
+  // Capture the old email key BEFORE overwriting session, so we can clean up the old
+  // localStorage draft entry (may be under a different email than the incoming data).
+  const oldEmail = getActiveDraftEmail();
+  if (oldEmail) {
+    try {
+      window.localStorage.removeItem(draftKeyForEmail(oldEmail));
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(incoming));
+  } catch {
+    // ignore
+  }
+  const newEmail = (incoming.email || oldEmail || "").trim().toLowerCase();
+  if (!newEmail) return;
+  try {
+    window.localStorage.setItem(draftKeyForEmail(newEmail), JSON.stringify(incoming));
+  } catch {
+    // ignore
+  }
+}
+
 export function clearResumeProfile() {
   if (typeof window === "undefined") return;
   const email = getActiveDraftEmail();

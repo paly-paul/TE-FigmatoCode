@@ -44,6 +44,7 @@ import {
 } from "@/services/jobs/rrGeneratedContent";
 import { getRrDetails, type RrDetailsApi } from "@/services/jobs/rrDetails";
 import { getProposalData, type ProposalDataApi } from "@/services/jobs/getProposalData";
+import { getAvailableDateSalary } from "@/services/jobs/actionCenter";
 import { getProfileName } from "@/lib/authSession";
 
 export interface ActionDrawerActionCard {
@@ -120,6 +121,32 @@ function isIsoDateString(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00`);
   return !Number.isNaN(parsed.getTime());
+}
+
+/** Map API `available_date` to `<input type="date" />` value (YYYY-MM-DD), clamping to min when needed. */
+function normalizeAvailableDateFromApi(raw: string | undefined, minIsoDate: string): string | null {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    if (!isIsoDateString(trimmed)) return null;
+    return trimmed < minIsoDate ? minIsoDate : trimmed;
+  }
+  const dmy = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, "0");
+    const month = dmy[2].padStart(2, "0");
+    const year = dmy[3].length === 2 ? `19${dmy[3]}` : dmy[3];
+    const iso = `${year}-${month}-${day}`;
+    if (!isIsoDateString(iso)) return null;
+    return iso < minIsoDate ? minIsoDate : iso;
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+    const iso = local.toISOString().slice(0, 10);
+    return iso < minIsoDate ? minIsoDate : iso;
+  }
+  return null;
 }
 
 function formatTimelineDate(value?: string): string | undefined {
@@ -235,7 +262,11 @@ export default function ActionDrawer({
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [apiExpectedSalary, setApiExpectedSalary] = useState<number | null>(null);
+  const [showSalaryPopup, setShowSalaryPopup] = useState(false);
+  const [salaryPopupVisible, setSalaryPopupVisible] = useState(false);
   const submitInFlightRef = useRef(false);
+  const salaryPopupConfirmedRef = useRef(false);
   const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
   const expectedSalaryFieldRef = useRef<HTMLDivElement | null>(null);
   const termsFieldRef = useRef<HTMLLabelElement | null>(null);
@@ -255,6 +286,15 @@ export default function ActionDrawer({
     const frame = window.requestAnimationFrame(() => setConfirmVisible(true));
     return () => window.cancelAnimationFrame(frame);
   }, [showAcceptConfirmation]);
+
+  useEffect(() => {
+    if (!showSalaryPopup) {
+      setSalaryPopupVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setSalaryPopupVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [showSalaryPopup]);
 
   useEffect(() => {
     if (open) {
@@ -300,6 +340,9 @@ export default function ActionDrawer({
       setIsSubmitting(false);
       submitInFlightRef.current = false;
       setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
+      setApiExpectedSalary(null);
+      setShowSalaryPopup(false);
+      salaryPopupConfirmedRef.current = false;
     }
   }, [open, action?.isSourcingAccepted, action?.title, minAvailableDate]);
 
@@ -338,7 +381,11 @@ export default function ActionDrawer({
     (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation
       ? action?.subtitle.split(" - ")[0]
       : action?.title) ?? "Senior Engineer";
-  const locationLabel = action?.subtitle.split(" - ")[1] ?? "Atlanta";
+  const locationLabel =
+    rrDetails?.location ||
+    (!(isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation)
+      ? (action?.subtitle.split(" - ")[1] ?? "")
+      : "");
 
   const resolveInterviewTags = (): string[] => {
     if (!action) return [...actionDrawerInterview.tags];
@@ -568,6 +615,33 @@ export default function ActionDrawer({
       cancelled = true;
     };
   }, [open, action?.jobDocumentId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isDirectJobApplyCard(action) && !isRecruiterInterestCard(action)) return;
+    const effectiveProfileId = profileId?.trim() || getProfileName()?.trim() || "";
+    if (!effectiveProfileId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await getAvailableDateSalary(effectiveProfileId);
+        if (cancelled) return;
+        if (result.expected_salary > 0) {
+          setApiExpectedSalary(result.expected_salary);
+          setExpectedSalary(sanitizeDecimalInput(String(result.expected_salary)));
+        }
+        const normalizedAvailable = normalizeAvailableDateFromApi(result.available_date, minAvailableDate);
+        if (normalizedAvailable) {
+          setAvailableDate(normalizedAvailable);
+        }
+      } catch {
+        // silently ignore — just don't pre-fill
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, action?.title, action?.type, profileId, minAvailableDate]);
 
   const interviewSubmitDisabled =
     isInterviewScheduled &&
@@ -1194,6 +1268,14 @@ export default function ActionDrawer({
         return;
       }
     }
+    if (
+      apiExpectedSalary !== null &&
+      !salaryPopupConfirmedRef.current &&
+      (isRecruiterInterestReceived || isDirectApply)
+    ) {
+      setShowSalaryPopup(true);
+      return;
+    }
     void (async () => {
       submitInFlightRef.current = true;
       setIsSubmitting(true);
@@ -1337,7 +1419,9 @@ export default function ActionDrawer({
 
   const mobileDrawerContent = (
     <>
-      <p className="-mt-1 text-sm text-[#5E7397]">{actionDrawerChrome.referenceId}</p>
+      <p className="-mt-1 text-sm text-[#5E7397]">
+        {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : jobDescriptionLoading ? "…" : "—"}
+      </p>
 
       <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -1369,6 +1453,14 @@ export default function ActionDrawer({
 
   const confirmTargetJobLabel = action?.subtitle.split(" - ")[0]?.trim() || roleTitle;
   const confirmTargetProposalLabel = action?.proposalName?.trim() || resolvedReferenceId;
+  const salaryVsRef: "above" | "below" | "match" | null =
+    apiExpectedSalary !== null
+      ? parsedExpectedSalary > apiExpectedSalary
+        ? "above"
+        : parsedExpectedSalary < apiExpectedSalary
+          ? "below"
+          : "match"
+      : null;
 
   return (
     <>
@@ -1384,7 +1476,9 @@ export default function ActionDrawer({
         footer={footerContent}
         headerActions={isMobileViewport ? undefined : (
           <div className="text-right">
-            <p className="text-xs text-[#5E7397] sm:text-sm">{actionDrawerChrome.referenceId}</p>
+            <p className="text-xs text-[#5E7397] sm:text-sm">
+              {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : jobDescriptionLoading ? "…" : "—"}
+            </p>
           </div>
         )}
       >
@@ -1549,6 +1643,111 @@ export default function ActionDrawer({
                 <button
                   type="button"
                   onClick={() => setShowAcceptConfirmation(false)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showSalaryPopup ? (
+        <div
+          className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${
+            salaryPopupVisible ? "bg-black/45 opacity-100" : "bg-black/0 opacity-0"
+          }`}
+        >
+          <div
+            className={`relative w-full max-w-md overflow-hidden rounded-2xl p-6 shadow-2xl transition-all duration-500 ${
+              salaryVsRef === "above"
+                ? "bg-gradient-to-br from-amber-50 via-white to-orange-50"
+                : salaryVsRef === "below"
+                  ? "bg-gradient-to-br from-blue-50 via-white to-indigo-50"
+                  : "bg-gradient-to-br from-green-50 via-white to-emerald-50"
+            } ${
+              salaryPopupVisible
+                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
+                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            }`}
+          >
+            <span className={`absolute left-10 top-10 h-2.5 w-2.5 rounded-full animate-ping ${salaryVsRef === "above" ? "bg-amber-300" : "bg-blue-300"}`} />
+            <span className={`absolute right-12 top-16 h-2 w-2 rounded-full animate-ping [animation-delay:200ms] ${salaryVsRef === "above" ? "bg-orange-300" : "bg-indigo-300"}`} />
+            <span className={`absolute bottom-14 left-14 h-2 w-2 rounded-full animate-ping [animation-delay:400ms] ${salaryVsRef === "above" ? "bg-yellow-300" : "bg-blue-200"}`} />
+            <span className={`absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full animate-ping [animation-delay:150ms] ${salaryVsRef === "above" ? "bg-amber-200" : "bg-cyan-300"}`} />
+            <span className={`absolute h-24 w-24 rounded-full border-2 animate-pulse ${salaryVsRef === "above" ? "border-amber-200/70" : "border-blue-200/70"}`} />
+            <span className={`absolute h-32 w-32 rounded-full border animate-pulse [animation-delay:300ms] ${salaryVsRef === "above" ? "border-orange-200/60" : "border-indigo-200/60"}`} />
+
+            <div className="relative z-10">
+              <div className="mb-4 flex items-center gap-3">
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full shadow-sm ${
+                  salaryVsRef === "above" ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
+                }`}>
+                  <Banknote className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="animate-in slide-in-from-bottom-1 text-base font-semibold text-slate-900 duration-300">
+                    Confirm Salary
+                  </p>
+                  <p className="text-xs text-slate-500">Review your expected salary before submitting</p>
+                </div>
+              </div>
+
+              <div className="animate-in slide-in-from-bottom-1 mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm duration-400">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Salary Summary
+                </p>
+                <div className="space-y-2.5 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-slate-500">Your Expected</span>
+                    <span className="text-right text-base font-bold text-blue-700">
+                      ${parsedExpectedSalary.toLocaleString()}
+                      <span className="ml-0.5 text-sm font-semibold text-blue-500">
+                        {" "}{actionDrawerRecruiterInterest.salaryRateSuffix}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-slate-500">Reference Rate</span>
+                    <span className="text-right font-medium text-slate-800">
+                      ${apiExpectedSalary?.toLocaleString()}
+                      <span className="ml-0.5 text-sm text-slate-500">
+                        {" "}{actionDrawerRecruiterInterest.salaryRateSuffix}
+                      </span>
+                    </span>
+                  </div>
+                  <div className={`mt-2.5 rounded-lg border px-3 py-2 text-xs font-medium ${
+                    salaryVsRef === "above"
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : salaryVsRef === "below"
+                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  }`}>
+                    {salaryVsRef === "above"
+                      ? "Your expected salary is above the reference rate for this role."
+                      : salaryVsRef === "below"
+                        ? "Your expected salary is below the reference rate for this role."
+                        : "Your expected salary matches the reference rate for this role."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="animate-in slide-in-from-bottom-1 flex flex-col gap-2 duration-500">
+                <button
+                  type="button"
+                  disabled={primarySubmitDisabled}
+                  onClick={() => {
+                    salaryPopupConfirmedRef.current = true;
+                    setShowSalaryPopup(false);
+                    runPrimaryAction();
+                  }}
+                  className="rounded-xl bg-[#033CE5] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSubmitting ? "Submitting..." : "Confirm & Submit"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSalaryPopup(false)}
                   className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Cancel

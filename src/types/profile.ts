@@ -53,6 +53,7 @@ export interface ResumeProfileData {
   summary?: string;
   salaryPerMonth?: string;
   salaryCurrency?: string;
+  availableDate?: string;
   firstName?: string;
   lastName?: string;
   dob?: string;

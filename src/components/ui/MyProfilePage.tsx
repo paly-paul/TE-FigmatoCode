@@ -75,6 +75,7 @@ const EMPTY_PROFILE: ProfileData = {
     summary: "",
     experience: "",
     salary: "",
+    availableDate: "",
     profileStrength: 0,
     visibilityScore: 0,
     persona: "",
@@ -328,6 +329,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
         summary: resume.summary || fallback.summary,
         experience: experienceParts || fallback.experience,
         salary: salaryText || fallback.salary,
+        availableDate: resume.availableDate?.trim() || fallback.availableDate,
         profileStrength:
             typeof resume.profileStrength === "number" && Number.isFinite(resume.profileStrength)
                 ? Math.max(0, Math.min(100, Math.round(resume.profileStrength)))
@@ -378,8 +380,8 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
             resume.certifications?.map((cert, idx) => ({
                 id: `cert-${idx + 1}`,
                 name: cert.name || "Certification",
-                issuer: cert.issuing || "Issuer",
-                issued: parseMaybeDate(cert.issueDate) || "Issued",
+                issuer: cert.issuing || "Issuer not specified",
+                issued: parseMaybeDate(cert.issueDate) || "Issued date not specified",
                 expiry: cert.expirationDate ? parseMaybeDate(cert.expirationDate) : null,
                 externalUrl: cert.url?.trim() || undefined,
             })) || fallback.certifications,
@@ -676,6 +678,12 @@ export default function MyProfilePage() {
                             <p className="text-[13px] text-[#5E7397]">Salary / month</p>
                             <p className="mt-1 text-[16px] text-[#202939]">{PROFILE.salary}</p>
                         </div>
+                        {PROFILE.availableDate && (
+                            <div>
+                                <p className="text-[13px] text-[#5E7397]">Available Date</p>
+                                <p className="mt-1 text-[16px] text-[#202939]">{PROFILE.availableDate}</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </section>
@@ -1326,6 +1334,9 @@ export default function MyProfilePage() {
                                 <div className="mt-4 grid gap-4 border-t border-[#e7ebf1] pt-4 sm:grid-cols-2">
                                     <MiniInfo label="Experience" value={PROFILE.experience} />
                                     <MiniInfo label="Salary / Hour" value={PROFILE.salary} />
+                                    {PROFILE.availableDate && (
+                                        <MiniInfo label="Available Date" value={PROFILE.availableDate} />
+                                    )}
                                 </div>
                             </div>
                         </SectionCard>

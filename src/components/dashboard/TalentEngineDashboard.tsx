@@ -1045,13 +1045,42 @@ export default function TalentEngineDashboard() {
   }, [candidateId, localSubmittedActionCards]);
 
   const availableLocations = useMemo<LocationOption[]>(() => {
-    return allLocationOptions
-      .map((location) => ({
-        id: normalizeLocationId(location.id),
-        label: location.label?.trim() ?? "",
-      }))
-      .filter((location) => Boolean(location.id) && Boolean(location.label));
-  }, [allLocationOptions]);
+    const catalogByNormalizedId = new Map<string, string>();
+    for (const location of allLocationOptions) {
+      const id = normalizeLocationId(location.id);
+      const label = location.label?.trim() ?? "";
+      if (!id || !label) continue;
+      catalogByNormalizedId.set(id, label);
+    }
+
+    const recommendedJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
+    const sourceJobs: JobListing[] =
+      activeTab === "Recommended"
+        ? recommendedJobs
+        : [...apiApplicationJobs, ...apiInterestJobs];
+
+    const byId = new Map<string, string>();
+    for (const job of sourceJobs) {
+      const id = normalizeLocationId(job.locationId);
+      if (!id || id === "—") continue;
+      if (byId.has(id)) continue;
+      const fromCatalog = catalogByNormalizedId.get(id);
+      const fromJob = formatJobLocation(job.location, job.locationFull).trim();
+      const label = fromCatalog || fromJob || id;
+      byId.set(id, label);
+    }
+
+    return Array.from(byId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [
+    activeTab,
+    allLocationOptions,
+    hasAttemptedJobsLoad,
+    apiRecommendedJobs,
+    apiApplicationJobs,
+    apiInterestJobs,
+  ]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -1066,6 +1095,13 @@ export default function TalentEngineDashboard() {
     ? locationLabelMap[normalizeLocationId(selectedLocations[0])] || "All locations"
     : "All locations";
   const extraCount = Math.max(selectedLocations.length - 1, 0);
+
+  useEffect(() => {
+    const validIds = new Set(availableLocations.map((location) => location.id));
+    setSelectedLocations((previous) =>
+      previous.filter((id) => validIds.has(normalizeLocationId(id)))
+    );
+  }, [availableLocations]);
 
   const activeFilterCount = [
     activeFilters.skills.length > 0,
