@@ -182,9 +182,21 @@ function mapApplicationStatusToStage(status: string): DashboardJobListing["stage
   return "Received";
 }
 
+function coerceMatchPercent(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const t = value.trim();
+    let n = Number(t);
+    if (Number.isFinite(n)) return n;
+    n = Number(t.replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
 export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJobListing {
   const locId = slugifyLocationId(row.job_id);
-  const score = typeof row.score === "number" && Number.isFinite(row.score) ? row.score : 0;
+  const score = coerceMatchPercent(row.score);
   const resolvedStage = (row.stage || "").trim() || mapApplicationStatusToStage(row.status);
   return {
     id: stableJobNumericId(row.id + row.job_id),
@@ -210,6 +222,7 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
 
 export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): DashboardJobListing {
   const locId = slugifyLocationId(item.location || item.rr);
+  const score = coerceMatchPercent(item.score);
   return {
     id: stableJobNumericId(item.candidate_interest_for_rr + item.rr),
     title: item.job_title || item.rr,
@@ -220,7 +233,7 @@ export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): 
     salary: "—",
     hourlyRate: 0,
     startDate: "—",
-    matchPercentage: 0,
+    matchPercentage: Math.max(0, Math.min(100, Math.round(score))),
     status: "New",
     stage: "Applied",
     postedTime: "—",

@@ -40,6 +40,8 @@ import {
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
 import {
+  getCandidateInterests,
+  getJobApplications,
   getRecommendedJobs,
   markInterestedInJob,
 } from "@/services/jobs/actionCenter";
@@ -729,6 +731,7 @@ export default function TalentEngineJobsPage() {
   const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
   const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
+  const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -736,6 +739,40 @@ export default function TalentEngineJobsPage() {
     // Candidate id is stored in sessionStorage on login.
     setCandidateIdState(getCandidateId());
   }, []);
+
+  useEffect(() => {
+    const cid = candidateId?.trim() || "";
+    if (!cid) {
+      setAppliedJobDocumentIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next = new Set<string>();
+      try {
+        const apps = await getJobApplications(cid);
+        for (const row of apps) {
+          const id = row.job_id?.trim();
+          if (id) next.add(id);
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        const interests = await getCandidateInterests(cid);
+        for (const row of interests) {
+          const id = row.rr?.trim();
+          if (id) next.add(id);
+        }
+      } catch {
+        // ignore
+      }
+      if (!cancelled) setAppliedJobDocumentIds(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1148,6 +1185,11 @@ export default function TalentEngineJobsPage() {
     });
     const msg = res?.message?.message?.trim();
     setDrawerSuccessMessage(msg || "Applied successfully.");
+    setAppliedJobDocumentIds((prev) => {
+      const n = new Set(prev);
+      n.add(jobDocumentId);
+      return n;
+    });
     setIsDrawerOpen(false);
     return true;
   };
@@ -1429,9 +1471,14 @@ export default function TalentEngineJobsPage() {
       <ActionDrawer
         open={isDrawerOpen}
         action={selectedAction}
+        profileId={getProfileName()}
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
         successMessage={drawerSuccessMessage}
+        jobAlreadyApplied={Boolean(
+          selectedAction?.jobDocumentId?.trim() &&
+            appliedJobDocumentIds.has(selectedAction.jobDocumentId.trim())
+        )}
       />
       <ReferFriendModal open={showReferModal} onClose={() => setShowReferModal(false)} />
       <JobSuccessPopup

@@ -55,6 +55,7 @@ export type CandidateInterestApi = {
   customer: string;
   job_title: string;
   location: string;
+  score?: number;
 };
 
 export type CandidateActionableApi = {
