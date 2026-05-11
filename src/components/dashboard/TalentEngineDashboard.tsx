@@ -650,6 +650,12 @@ export default function TalentEngineDashboard() {
         try {
           const interestsRes = await getCandidateInterests(currentCandidateId);
           setApiInterestJobs(interestsRes.map((item) => mapCandidateInterestToDashboardJob(item)));
+          const interestIds = interestsRes
+            .map((row) => row.rr?.trim())
+            .filter((v): v is string => Boolean(v));
+          if (interestIds.length > 0) {
+            setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...interestIds]));
+          }
         } catch {
           setApiInterestJobs([]);
         }
@@ -1513,6 +1519,12 @@ export default function TalentEngineDashboard() {
     try {
       const interestsRes = await getCandidateInterests(currentCandidateId);
       setApiInterestJobs(interestsRes.map((item) => mapCandidateInterestToDashboardJob(item)));
+      const interestIds = interestsRes
+        .map((row) => row.rr?.trim())
+        .filter((v): v is string => Boolean(v));
+      if (interestIds.length > 0) {
+        setAppliedJobDocumentIds((prev) => new Set([...Array.from(prev), ...interestIds]));
+      }
     } catch {
       // Keep existing UI state if refresh fails.
     }
@@ -1900,6 +1912,10 @@ export default function TalentEngineDashboard() {
         onClose={() => setIsDrawerOpen(false)}
         onPrimaryAction={handleDrawerPrimaryAction}
         onRequestClarification={handleDrawerClarification}
+        jobAlreadyApplied={Boolean(
+          selectedAction?.jobDocumentId?.trim() &&
+            appliedJobDocumentIds.has(selectedAction.jobDocumentId.trim())
+        )}
       />
       <JobSuccessPopup
         open={actionSuccessPopup.open}
@@ -2363,6 +2379,12 @@ export default function TalentEngineDashboard() {
                       <div>
                         <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
                         <p className="mt-1 text-sm text-gray-700">{job.company}</p>
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className="text-xs text-gray-500">Match Score</span>
+                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                            {job.matchPercentage}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2941,9 +2963,10 @@ export default function TalentEngineDashboard() {
                     visibleAppliedInterestJobs.length > 0 ? (
                       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                         <div className="hidden md:block">
-                          <div className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.5fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
+                          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-6 px-6 py-3 text-sm font-medium text-gray-600 border-b">
                             <span>Job/Title</span>
                             <span>Company</span>
+                            <span className="text-center">Match Score %</span>
                           </div>
 
                           {visibleAppliedInterestJobs.map((job) => (
@@ -2958,10 +2981,13 @@ export default function TalentEngineDashboard() {
                                   handleApplicationCardClick(job);
                                 }
                               }}
-                              className="grid grid-cols-[minmax(0,2.5fr)_minmax(0,1.5fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50 cursor-pointer"
+                              className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50 cursor-pointer"
                             >
                               <p className="font-medium text-gray-900">{job.title}</p>
                               <p className="text-sm text-gray-700">{job.company}</p>
+                              <p className="flex justify-center">
+                                <MatchCircle score={job.matchPercentage} />
+                              </p>
                             </div>
                           ))}
                         </div>
@@ -2983,6 +3009,12 @@ export default function TalentEngineDashboard() {
                             >
                               <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
                               <p className="text-sm text-gray-600">{job.company}</p>
+                              <div className="mt-3 flex items-center justify-between">
+                                <span className="text-xs text-gray-500">Match Score</span>
+                                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                                  {job.matchPercentage}%
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>

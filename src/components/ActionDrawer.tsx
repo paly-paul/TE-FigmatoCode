@@ -94,6 +94,11 @@ interface ActionDrawerProps {
     action: ActionDrawerActionCard,
     remarks: string
   ) => void | Promise<boolean>;
+  /**
+   * When true, the browse-and-apply (recommended job) flow treats the role as already applied:
+   * primary CTA shows "Applied" and does not submit again.
+   */
+  jobAlreadyApplied?: boolean;
 }
 
 const metaIcons = {
@@ -230,6 +235,7 @@ export default function ActionDrawer({
   profileId,
   onPrimaryAction,
   onRequestClarification,
+  jobAlreadyApplied = false,
 }: ActionDrawerProps) {
   const minAvailableDate = getTodayIsoDate();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -344,7 +350,7 @@ export default function ActionDrawer({
       setShowSalaryPopup(false);
       salaryPopupConfirmedRef.current = false;
     }
-  }, [open, action?.isSourcingAccepted, action?.title, minAvailableDate]);
+  }, [open, action?.isSourcingAccepted, action?.title, action?.jobDocumentId, minAvailableDate]);
 
   const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
     ? ["Job Description", "Timeline"]
@@ -659,7 +665,9 @@ export default function ActionDrawer({
   const recruiterSubmitDisabled =
     isRecruiterInterestReceived && (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms);
   const primarySubmitDisabled = Boolean(
-    isSubmitting || hasSubmitted
+    isSubmitting ||
+      hasSubmitted ||
+      (isDirectApply && jobAlreadyApplied && activeTab === "Job Action")
   );
   const resolvedMatchPercent =
     rrDetails?.match_score != null
@@ -1193,6 +1201,7 @@ export default function ActionDrawer({
   const runPrimaryAction = () => {
     if (!action) return;
     if (submitInFlightRef.current || isSubmitting || hasSubmitted) return;
+    if (isDirectApply && jobAlreadyApplied && activeTab === "Job Action") return;
     if (isRecruiterInterestReceived && activeTab !== "Job Action") {
       setValidationMessage(null);
       setActiveTab("Job Action");
@@ -1411,7 +1420,7 @@ export default function ActionDrawer({
         {isRecruiterInterestReceived
           ? (hasSubmitted ? "Interest sent by recruiter" : activeTab === "Job Action" ? "Accept" : "Next")
           : isDirectApply
-            ? (activeTab === "Job Action" ? "Apply" : "Next")
+            ? (activeTab === "Job Action" ? (hasSubmitted || jobAlreadyApplied ? "Applied" : "Apply") : "Next")
             : actionDrawerFooter.submit}
       </button>
     </div>

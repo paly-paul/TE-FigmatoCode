@@ -24,7 +24,12 @@ function extractAvailableDateSalaryRecord(data: Record<string, unknown>): Record
 function asNumberOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const parsed = Number(value.trim());
+    const trimmed = value.trim();
+    let parsed = Number(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
+    // Strip non-numeric noise (ZWSP, "52%", odd encodings) so backend string scores still parse.
+    const cleaned = trimmed.replace(/[^\d.-]/g, "");
+    parsed = Number(cleaned);
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
@@ -312,6 +317,44 @@ function normalizeJobApplications(payload: Record<string, unknown>): JobApplicat
   return out;
 }
 
+function collectCandidateInterestRows(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const buckets: unknown[] = [];
+  const push = (v: unknown) => {
+    if (v === undefined || v === null) return;
+    buckets.push(v);
+  };
+
+  push(payload.data);
+  if (isRecord(payload.data)) {
+    const d = payload.data;
+    push(d.data);
+    push(d.rows);
+    push(d.records);
+    if (isRecord(d.message)) push(d.message);
+  }
+
+  if (isRecord(payload.message)) {
+    const m = payload.message;
+    push(m.data);
+    push(m.rows);
+    push(m.records);
+    if (isRecord(m.message)) {
+      const inner = m.message;
+      push(inner.data);
+      push(inner.rows);
+    }
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+    for (const item of bucket) {
+      if (isRecord(item)) rows.push(item);
+    }
+  }
+  return rows;
+}
+
 export async function getJobApplications(candidateId: string): Promise<JobApplicationApi[]> {
   const url = new URL("/api/method/get_job_application", window.location.origin);
   url.searchParams.set("candidate_id", candidateId.trim());
@@ -336,24 +379,35 @@ export async function getCandidateInterests(candidateId: string): Promise<Candid
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
 
-  const message = isRecord(data.message) ? data.message : null;
-  const rows: unknown[] = Array.isArray(message?.data)
-    ? (message.data as unknown[])
-    : Array.isArray(data.data)
-      ? data.data
-      : [];
+  const rawRows = collectCandidateInterestRows(data);
+  const seenInterestKeys = new Set<string>();
 
-  return rows
-    .filter((r): r is Record<string, unknown> => isRecord(r))
-    .map((item) => ({
-      candidate_interest_for_rr: typeof item.candidate_interest_for_rr === "string" ? item.candidate_interest_for_rr : "",
-      rr: typeof item.rr === "string" ? item.rr : "",
+  const out: CandidateInterestApi[] = [];
+  for (const item of rawRows) {
+    const rr = typeof item.rr === "string" ? item.rr : "";
+    const candidate_interest_for_rr =
+      typeof item.candidate_interest_for_rr === "string" ? item.candidate_interest_for_rr : "";
+    const dedupeKey = `${candidate_interest_for_rr}\u0000${rr}`;
+    if (!rr || seenInterestKeys.has(dedupeKey)) continue;
+    seenInterestKeys.add(dedupeKey);
+
+    out.push({
+      candidate_interest_for_rr,
+      rr,
       profile: typeof item.profile === "string" ? item.profile : "",
       customer: typeof item.customer === "string" ? item.customer : "",
       job_title: typeof item.job_title === "string" ? item.job_title : "",
       location: typeof item.location === "string" ? item.location : "",
-    }))
-    .filter((item) => item.rr);
+      score: pickFiniteNumber(item, [
+        "score",
+        "match_score",
+        "matching_score",
+        "match_percentage",
+        "matching_percentage",
+      ]),
+    });
+  }
+  return out;
 }
 
 export async function postProposalCandidateNegotiation(
