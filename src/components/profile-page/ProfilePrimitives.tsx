@@ -58,17 +58,17 @@ export function MiniInfo({
 }
 
 export function CircleProgress({ value }: { value: number }) {
-  const radius = 17;
+  const radius = 25;
   const circumference = 2 * Math.PI * radius;
   const dash = (value / 100) * circumference;
 
   return (
-    <div className="relative flex h-12 w-12 items-center justify-center">
-      <svg className="-rotate-90 h-12 w-12" viewBox="0 0 48 48">
-        <circle cx="24" cy="24" r={radius} fill="none" stroke="#e3e8ef" strokeWidth="4" />
+    <div className="relative flex h-14 w-14 items-center justify-center">
+      <svg className="-rotate-90 h-14 w-14" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={radius} fill="none" stroke="#e3e8ef" strokeWidth="4" />
         <circle
-          cx="24"
-          cy="24"
+          cx="28"
+          cy="28"
           r={radius}
           fill="none"
           stroke="#174ee7"
@@ -77,7 +77,7 @@ export function CircleProgress({ value }: { value: number }) {
           strokeDasharray={`${dash} ${circumference}`}
         />
       </svg>
-      <span className="absolute text-xs font-semibold text-[#111827]">{value}%</span>
+      <span className="absolute text-sm font-semibold text-[#111827]">{value}%</span>
     </div>
   );
 }

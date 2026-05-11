@@ -33,7 +33,8 @@ export function MobileNewPasswordScreen() {
     setIsSubmitting(true);
     try {
       await resetUserPassword(email, newPassword);
-      router.push("/password-updated/");
+      const encodedEmail = encodeURIComponent(email);
+      router.push(`/password-updated/?email=${encodedEmail}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to reset password.");
     } finally {

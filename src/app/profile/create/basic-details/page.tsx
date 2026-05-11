@@ -908,7 +908,10 @@ function BasicDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEditMode = isLikelyDocId(
-    searchParams.get("profile_name")?.trim() || searchParams.get("profile")?.trim() || ""
+    searchParams.get("profile_name")?.trim() ||
+    searchParams.get("profile")?.trim() ||
+    getProfileName()?.trim() ||
+    ""
   );
   const generateButtonRef = useRef<HTMLButtonElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
@@ -1624,7 +1627,7 @@ function BasicDetailsPageContent() {
     (entry) => entry.label.trim() && entry.url.trim()
   );
 
-  const completionPercent = computeOverallProfileProgress({
+  const localOverallCompletionPercent = computeOverallProfileProgress({
     basicOverride: {
       professionalTitle: form.professionalTitle,
       experienceYears: form.expYears,
@@ -1645,12 +1648,18 @@ function BasicDetailsPageContent() {
       certificationsComplete: isCertificationsComplete,
       externalLinks: externalLinks.map((e) => ({ label: e.label, url: e.url })),
     },
-    // In create mode: pass empty arrays so resume job history doesn't falsely count
-    // toward skills/projects sections before the user fills them in on the next step.
-    // In edit mode: omit overrides so the session profile (populated from backend)
-    // correctly reflects the already-completed skills and projects.
-    ...(isEditMode ? {} : { liveExperiences: [], liveProjects: [] }),
   });
+  const backendCompletionPercentForEdit = (() => {
+    if (!isEditMode) return null;
+    const storedProfile = readResumeProfile();
+    const raw = storedProfile?.profileStrength;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  })();
+  const completionPercent =
+    isEditMode && backendCompletionPercentForEdit !== null && !hasUnsavedChanges
+      ? backendCompletionPercentForEdit
+      : localOverallCompletionPercent;
 
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
     const normalizedValue =
@@ -2704,6 +2713,21 @@ function BasicDetailsPageContent() {
       return;
     }
     router.push("/profile/create");
+  }
+
+  function handleCancelEditProfile() {
+    const profileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      getProfileName()?.trim() ||
+      "";
+    const target = profileName ? `/profile/${encodeURIComponent(profileName)}` : "/profile";
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl(target);
+      setShowUnsavedModal(true);
+      return;
+    }
+    router.push(target);
   }
 
   return (
@@ -5004,6 +5028,17 @@ function BasicDetailsPageContent() {
           ) : null}
         </div>
         <div className="flex items-center gap-3">
+          {isEditMode ? (
+            <Button
+              variant="outline"
+              fullWidth={false}
+              className="px-6 sm:px-8"
+              onClick={handleCancelEditProfile}
+              disabled={isDraftSaving}
+            >
+              Cancel
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             fullWidth={false}
