@@ -88,7 +88,7 @@ export default function VisibilityScoreCard({
         open={showPremiumPopup}
         variant="success"
         title="Premium Feature"
-        message="This feature is part of our Premium experience. Upgrade to explore smarter learning recommendations."
+        message="This feature is part of our Premium experience. Feature Coming Soon"
         onClose={() => setShowPremiumPopup(false)}
       />
     </div>

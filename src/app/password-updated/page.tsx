@@ -4,7 +4,16 @@ import { DesktopSuccessStoriesPanel } from "@/components/desktop/DesktopSuccessS
 import { Button } from "@/components/ui/Button";
 import { ProfileCheckIllustration } from "@/components/icons";
 
-export default function PasswordUpdatedPage() {
+type PasswordUpdatedPageProps = {
+  searchParams?: {
+    email?: string;
+  };
+};
+
+export default function PasswordUpdatedPage({ searchParams }: PasswordUpdatedPageProps) {
+  const resetEmail = typeof searchParams?.email === "string" ? searchParams.email.trim().toLowerCase() : "";
+  const loginHref = resetEmail ? `/login?email=${encodeURIComponent(resetEmail)}` : "/login";
+
   return (
     <AuthLayout rightPanel={<DesktopSuccessStoriesPanel />}>
       <div className="flex flex-col items-center text-center py-4">
@@ -23,7 +32,7 @@ export default function PasswordUpdatedPage() {
         </p>
 
         {/* CTA */}
-        <Link href="/login" className="w-full">
+        <Link href={loginHref} className="w-full">
           <Button type="button">Back to Login</Button>
         </Link>
       </div>

@@ -17,6 +17,7 @@ import {
   readResumeProfile,
   upsertResumeProfile,
 } from "@/lib/profileSession";
+import { computeOverallProfileProgress } from "@/lib/profileProgress";
 import { getCandidateProfileData, saveProfile } from "@/services/profile";
 import { getDropdownDetailsOptions } from "@/services/jobs/dropdownDetails";
 import { getVerifiedProjectTypeOptions } from "@/services/profile/getVerifiedProjectTypes";
@@ -362,6 +363,7 @@ function SkillsProjectsPageContent() {
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
   const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
+  const [backendCompletionPercent, setBackendCompletionPercent] = useState<number | null>(null);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -391,6 +393,7 @@ function SkillsProjectsPageContent() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
   const [navigateAfterSave, setNavigateAfterSave] = useState<string | null>(null);
+  const [isHydratingInitialData, setIsHydratingInitialData] = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUploadResumeShortcut, setShowUploadResumeShortcut] = useState(false);
@@ -604,24 +607,33 @@ function SkillsProjectsPageContent() {
     return projects.every((p) => isProjectEmpty(p) || Object.keys(validateProjectEntry(p)).length === 0);
   }
 
-  // Show only this step's progress (skills / experience / projects) so the circle
-  // starts at 0% on arrival rather than carrying over the previous steps' completion.
-  const completionPercent = Math.round(
-    ([
-      skills.some((s) => s.trim()),
-      experiences.some((e) => e.experience.trim() && e.experienceYears.trim()),
-      projects.some(
-        (p) =>
-          p.projectTitle.trim() &&
-          p.customerCompany.trim() &&
-          p.projectStartDate.trim() &&
-          p.projectDescription.trim() &&
-          p.responsibilities.trim()
-      ),
-    ].filter(Boolean).length /
-      3) *
-      100
-  );
+  const queryProfileNameForProgress =
+    searchParams.get("profile")?.trim() ||
+    searchParams.get("profile_name")?.trim() ||
+    "";
+  const effectiveProfileNameForProgress = queryProfileNameForProgress || getProfileName() || "";
+  const isEditModeForProgress = isLikelyDocId(effectiveProfileNameForProgress);
+  const overallCompletionPercent = computeOverallProfileProgress({
+    liveSkills: skills,
+    liveExperiences: experiences.map((entry) => ({
+      experience: entry.experience,
+      experienceYears: entry.experienceYears,
+      experienceReference: entry.experienceReference,
+    })),
+    liveProjects: projects.map((project) => ({
+      projectTitle: project.projectTitle,
+      customerCompany: project.customerCompany,
+      projectDescription: project.projectDescription,
+      responsibilities: project.responsibilities,
+      projectStartDate: project.projectStartDate,
+      projectEndDate: project.projectEndDate,
+      inProgress: project.inProgress,
+    })),
+  });
+  const completionPercent =
+    isEditModeForProgress && backendCompletionPercent !== null && !hasUnsavedChanges
+      ? backendCompletionPercent
+      : overallCompletionPercent;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -690,6 +702,8 @@ function SkillsProjectsPageContent() {
       }
     } catch {
       // ignore invalid JSON
+    } finally {
+      setIsHydratingInitialData(false);
     }
   }, [searchParamsKey]);
 
@@ -698,8 +712,16 @@ function SkillsProjectsPageContent() {
   }, [snapshotRevision]);
 
   useEffect(() => {
+    if (isHydratingInitialData) return;
     setHasUnsavedChanges(buildCurrentSnapshot() !== savedSnapshot);
-  }, [skills, experiences, projects, savedSnapshot]);
+  }, [skills, experiences, projects, savedSnapshot, isHydratingInitialData]);
+
+  useEffect(() => {
+    if (isHydratingInitialData) return;
+    // Establish post-hydration baseline so navigation doesn't treat preload data as unsaved edits.
+    setSavedSnapshot(buildCurrentSnapshot());
+    setHasUnsavedChanges(false);
+  }, [isHydratingInitialData]);
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -814,6 +836,11 @@ function SkillsProjectsPageContent() {
         const backendProfile = await getCandidateProfileData(profileName);
         if (!backendProfile) return;
         if (cancelled) return;
+        if (isEditMode && typeof backendProfile.profileStrength === "number" && Number.isFinite(backendProfile.profileStrength)) {
+          setBackendCompletionPercent(Math.max(0, Math.min(100, Math.round(backendProfile.profileStrength))));
+        } else if (!isEditMode) {
+          setBackendCompletionPercent(null);
+        }
         // Keep session profile synchronized without clobbering newer manual edits
         // captured in this browser session (e.g. basic-details certifications).
         const existingSessionProfile = readResumeProfile() ?? {};
@@ -1137,6 +1164,13 @@ function SkillsProjectsPageContent() {
         } else {
           setBackendSkillsStatus("Backend returned no key skills yet.");
         }
+        if (!cancelled) {
+          window.setTimeout(() => {
+            if (cancelled) return;
+            setSavedSnapshot(buildCurrentSnapshot());
+            setHasUnsavedChanges(false);
+          }, 0);
+        }
       } catch (error) {
         if (cancelled) return;
         setBackendSkillsStatus(
@@ -1439,7 +1473,7 @@ function SkillsProjectsPageContent() {
     const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
-    const profileCompletionPercentage = Math.round(completionPercent);
+    const profileCompletionPercentage = Math.round(overallCompletionPercent);
 
     const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
     const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
@@ -1789,7 +1823,7 @@ function SkillsProjectsPageContent() {
     const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
-    const profileCompletionPercentage = Math.round(completionPercent);
+    const profileCompletionPercentage = Math.round(overallCompletionPercent);
 
     const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
     const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
@@ -2211,14 +2245,37 @@ function SkillsProjectsPageContent() {
   }
 
   async function handleGoToBasicDetails() {
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      getProfileName() ||
+      "";
+    const previousUrl = queryProfileName
+      ? `/profile/create/basic-details?profile=${encodeURIComponent(queryProfileName)}`
+      : "/profile/create/basic-details";
     if (hasUnsavedChanges) {
       setIsSubmittingProfile(true);
       const saved = await handleSaveDraft();
       setIsSubmittingProfile(false);
-      if (saved) setNavigateAfterSave("/profile/create/basic-details");
+      if (saved) setNavigateAfterSave(previousUrl);
       return;
     }
-    router.push("/profile/create/basic-details");
+    router.push(previousUrl);
+  }
+
+  function handleCancelEditProfile() {
+    const profileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      getProfileName()?.trim() ||
+      "";
+    const target = profileName ? `/profile/${encodeURIComponent(profileName)}` : "/profile";
+    if (hasUnsavedChanges) {
+      setPendingNavigationUrl(target);
+      setShowUnsavedModal(true);
+      return;
+    }
+    router.push(target);
   }
 
   return (
@@ -3016,6 +3073,17 @@ function SkillsProjectsPageContent() {
           ) : null}
         </div>
         <div className="flex items-center gap-3">
+          {isEditModeForProgress ? (
+            <Button
+              variant="outline"
+              fullWidth={false}
+              onClick={handleCancelEditProfile}
+              className="px-6 sm:px-8"
+              disabled={isSubmittingProfile}
+            >
+              Cancel
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             fullWidth={false}
@@ -3079,7 +3147,7 @@ function SkillsProjectsPageContent() {
                   className="px-6 py-2.5 text-sm"
                   onClick={handleContinueToDashboard}
                 >
-                  Continue
+                  Continue to Dashboard
                 </Button>
               </div>
             </div>

@@ -315,6 +315,22 @@ function formatActionSubtitleForMobile(subtitle: string) {
   return subtitle.replace(/\s*-\s*/g, " | ");
 }
 
+function splitActionSubtitle(subtitle: string): { role: string; secondary: string } {
+  const normalized = subtitle.replace(/\s+—\s+/g, " - ").trim();
+  if (!normalized) return { role: "", secondary: "" };
+  const [role, ...rest] = normalized.split(" - ");
+  return {
+    role: (role || "").trim(),
+    secondary: rest.join(" - ").trim(),
+  };
+}
+
+function looksLikeJobReference(value: string): boolean {
+  const token = value.trim();
+  if (!token) return false;
+  return /^(?:[A-Z]{2,8}-\d+|[A-Z0-9-]{8,})$/i.test(token);
+}
+
 type ActionableDisplayKind = "recruiter-interest" | "interview" | "salary-negotiation";
 
 function isScheduledInterview(actionable: Pick<CandidateActionableApi, "stage" | "status">): boolean {
@@ -531,6 +547,7 @@ export default function TalentEngineDashboard() {
   const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
   const [apiInterestJobs, setApiInterestJobs] = useState<JobListing[]>([]);
   const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
@@ -882,6 +899,25 @@ export default function TalentEngineDashboard() {
     }
   };
 
+  const triggerDashboardRefresh = async () => {
+    const { candidateId: latestCandidateId, profileName: latestProfileName } = latestDashboardIdsRef.current;
+    if (!latestCandidateId && !latestProfileName) return;
+    await refreshDashboardData({
+      candidateId: latestCandidateId,
+      profileName: latestProfileName,
+    });
+  };
+
+  const handleManualRefresh = async () => {
+    if (isManualRefreshing) return;
+    setIsManualRefreshing(true);
+    try {
+      await triggerDashboardRefresh();
+    } finally {
+      setIsManualRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -992,30 +1028,26 @@ export default function TalentEngineDashboard() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const refreshFromLatestIds = () => {
-      const { candidateId: latestCandidateId, profileName: latestProfileName } =
-        latestDashboardIdsRef.current;
-      if (!latestCandidateId && !latestProfileName) return;
-      void refreshDashboardData({
-        candidateId: latestCandidateId,
-        profileName: latestProfileName,
-      });
-    };
-
     const handleFocus = () => {
-      refreshFromLatestIds();
+      void triggerDashboardRefresh();
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        refreshFromLatestIds();
+        void triggerDashboardRefresh();
       }
     };
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void triggerDashboardRefresh();
+    }, 120_000);
 
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      window.clearInterval(intervalId);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -1416,6 +1448,39 @@ export default function TalentEngineDashboard() {
     return "bg-amber-50 text-amber-700 border-amber-200";
   };
 
+  const actionCompanyByJobId = useMemo(() => {
+    const byId = new Map<string, string>();
+    const write = (job?: JobListing) => {
+      const jobId = job?.jobDocumentId?.trim();
+      const company = job?.company?.trim();
+      if (!jobId || !company || company === "—") return;
+      if (!byId.has(jobId)) byId.set(jobId, company);
+    };
+    apiApplicationJobs.forEach(write);
+    apiInterestJobs.forEach(write);
+    apiRecommendedJobs.forEach(write);
+    return byId;
+  }, [apiApplicationJobs, apiInterestJobs, apiRecommendedJobs]);
+
+  const getActionRole = (card: ActionCard) => {
+    const parsed = splitActionSubtitle(card.subtitle);
+    return parsed.role || card.title;
+  };
+
+  const getActionCompany = (card: ActionCard) => {
+    const jobId = card.jobDocumentId?.trim() || "";
+    const fromJobLookup = jobId ? actionCompanyByJobId.get(jobId) : "";
+    if (fromJobLookup) return fromJobLookup;
+    const parsed = splitActionSubtitle(card.subtitle);
+    if (parsed.secondary && !looksLikeJobReference(parsed.secondary)) return parsed.secondary;
+    return "—";
+  };
+
+  const getActionStatusLabel = (card: ActionCard) => {
+    const status = card.title.trim();
+    return status || "Update available";
+  };
+
   const MatchCircle = ({ score }: { score: number }) => {
     const color = score >= 70 ? "#22c55e" : score >= 50 ? "#f59e0b" : "#ef4444";
     const radius = 22;
@@ -1654,6 +1719,37 @@ export default function TalentEngineDashboard() {
     if (!action.proposalName) return false;
     try {
       await postProposalCandidateNegotiation(action.proposalName, remarks);
+      const targetJobId = action.jobDocumentId?.trim() || "";
+      const targetProposalName = action.proposalName?.trim() || "";
+      const targetId = action.id;
+
+      // Keep UX consistent with other action submissions by marking and removing
+      // the current actionable row immediately, then refresh from backend.
+      setLocalSubmittedActionCards((prev) => {
+        const nextCard: PersistedActionCard = {
+          ...action,
+          timestamp: "Submitted",
+        };
+        const next = prev.filter(
+          (card) =>
+            !(
+              (targetJobId && card.jobDocumentId?.trim() === targetJobId) ||
+              (targetProposalName && card.proposalName?.trim() === targetProposalName) ||
+              card.id === targetId
+            )
+        );
+        next.unshift(nextCard);
+        return next;
+      });
+      setApiActionCards((prev) =>
+        prev.filter((card) => {
+          const sameJob = targetJobId && card.jobDocumentId?.trim() === targetJobId;
+          const sameProposal = targetProposalName && card.proposalName?.trim() === targetProposalName;
+          const sameId = card.id === targetId;
+          return !(sameJob || sameProposal || sameId);
+        })
+      );
+      void triggerDashboardRefresh();
       return true;
     } catch {
       return false;
@@ -1768,18 +1864,27 @@ export default function TalentEngineDashboard() {
           </button>
         ))}
       </div>
-      {hasMoreActions ? (
+      <div className="ml-auto flex w-full items-center justify-end gap-3 sm:w-auto">
         <button
           type="button"
-          onClick={() => setActionCenterSeeAll((prev) => !prev)}
-          className="flex shrink-0 items-center justify-center gap-1 text-sm font-medium text-blue-600 sm:justify-start"
+          onClick={() => void handleManualRefresh()}
+          disabled={isManualRefreshing}
+          className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {actionCenterSeeAll ? "Show less" : "See All"}
-          {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <Repeat size={14} className={isManualRefreshing ? "animate-spin" : ""} />
+          {isManualRefreshing ? "Refreshing..." : "Refresh"}
         </button>
-      ) : (
-        <span className="hidden sm:block sm:w-[88px]" aria-hidden />
-      )}
+        {hasMoreActions ? (
+          <button
+            type="button"
+            onClick={() => setActionCenterSeeAll((prev) => !prev)}
+            className="flex shrink-0 items-center justify-center gap-1 text-sm font-medium text-blue-600 sm:justify-start"
+          >
+            {actionCenterSeeAll ? "Show less" : "See All"}
+            {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 
@@ -1902,10 +2007,21 @@ export default function TalentEngineDashboard() {
                     </div>
                     <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
                   </div>
-                  <h3 className="mb-1 text-base font-semibold text-gray-900">{card.title}</h3>
-                  <p className="text-sm text-slate-500">
-                    {formatActionSubtitleForMobile(card.subtitle)}
-                  </p>
+                  <div className="space-y-2.5">
+                    <p className="text-base text-slate-700">
+                      <span className="font-semibold text-slate-600">Role: </span>
+                      <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                    </p>
+                    <p className="text-base text-slate-700">
+                      <span className="font-semibold text-slate-600">Company: </span>
+                      <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                    </p>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                    >
+                      Status: {getActionStatusLabel(card)}
+                    </span>
+                  </div>
                 </button>
               );
             })
@@ -2090,7 +2206,8 @@ export default function TalentEngineDashboard() {
           </>
         ) : (
           <>
-            <div className="mb-4 flex border-b border-[#D8E2F1]">
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#D8E2F1]">
+              <div className="flex">
               {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
                 <button
                   key={subTab}
@@ -2105,6 +2222,16 @@ export default function TalentEngineDashboard() {
                   {subTab}
                 </button>
               ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleManualRefresh()}
+                disabled={isManualRefreshing}
+                className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
+                {isManualRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
             </div>
 
             <div className="relative mb-3">
@@ -2342,8 +2469,21 @@ export default function TalentEngineDashboard() {
                       <span className="text-xs text-gray-500">{card.timestamp}</span>
                     </div>
 
-                    <h3 className="text-sm font-semibold mb-1">{card.title}</h3>
-                    <p className="text-xs text-gray-600 mb-4">{card.subtitle}</p>
+                    <div className="mb-4 space-y-2">
+                      <p className="text-sm text-slate-700">
+                        <span className="font-semibold text-slate-600">Role: </span>
+                        <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                      </p>
+                      <p className="text-sm text-slate-700">
+                        <span className="font-semibold text-slate-600">Company: </span>
+                        <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                      </p>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                      >
+                        Status: {getActionStatusLabel(card)}
+                      </span>
+                    </div>
 
                     <button
                       onClick={() => {
@@ -2599,10 +2739,10 @@ export default function TalentEngineDashboard() {
                         }}
                         className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
-                        <div className="flex justify-between mb-4">
-                          <span className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(job.status)}`}>
+                        <div className="flex justify-end mb-4">
+                          {/* <span className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(job.status)}`}>
                             {job.status}
-                          </span>
+                          </span> */}
                           <span className="text-xs text-gray-500">{job.postedTime}</span>
                         </div>
 
@@ -2688,7 +2828,8 @@ export default function TalentEngineDashboard() {
                 )
               ) : (
                 <>
-                  <div className="mb-4 flex gap-2 border-b border-gray-200">
+                  <div className="mb-4 flex items-center justify-between gap-3 border-b border-gray-200">
+                    <div className="flex gap-2">
                     {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
                       <button
                         key={subTab}
@@ -2703,6 +2844,16 @@ export default function TalentEngineDashboard() {
                         {subTab}
                       </button>
                     ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleManualRefresh()}
+                      disabled={isManualRefreshing}
+                      className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
+                      {isManualRefreshing ? "Refreshing..." : "Refresh"}
+                    </button>
                   </div>
 
                   {applicationSubTab === "Shortlisted" ? (

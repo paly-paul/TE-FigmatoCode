@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MobileAuthHeader } from "@/components/mobile/MobileAuthHeader";
 import { MobileSuccessStoriesSection } from "@/components/mobile/MobileSuccessStories";
 import {
@@ -19,11 +19,19 @@ import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetai
 
 export function MobileLoginScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const { submit, isLoading, error } = useCandidateLogin();
   const [isRedirecting, setIsRedirecting] = useState(false);
+
+  useEffect(() => {
+    const emailFromQuery = (searchParams.get("email") || "").trim().toLowerCase();
+    if (emailFromQuery) {
+      setEmail(emailFromQuery);
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
