@@ -109,6 +109,32 @@ function recencyScoreFromPostedTime(postedTime: string): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
+function normalizeRotationForJobFilter(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
+  if (
+    normalized === "no" ||
+    normalized === "false" ||
+    normalized === "0" ||
+    normalized === "no rotation" ||
+    normalized.includes("0 weeks on / 0 weeks off")
+  ) {
+    return "no";
+  }
+  if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
+  if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
+  if (normalized.includes("on:") || normalized.includes("weeks on")) {
+    return "yes";
+  }
+  return normalized;
+}
+
+function rotationBucketFromJobCard(job: JobCard): string {
+  const fromStartDate = normalizeRotationForJobFilter(job.startDate);
+  if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
+  return normalizeRotationForJobFilter(job.seniorityLevel);
+}
+
 const JOBS: JobCard[] = [
   {
     id: 1,
@@ -958,6 +984,42 @@ export default function TalentEngineJobsPage() {
     };
   }, [skillSearch, baseSkills]);
 
+  /** Jobs that match search/skills/salary/etc. but not location — used so the drawer only lists locations that can appear in the list. */
+  const jobsMatchingNonLocationFilters = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const selectedRotations = new Set(filters.seniorityLevels.map(normalizeRotationForJobFilter));
+    return jobsSource.filter((job) => {
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        [job.title, job.location, job.locationFull]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery);
+
+      const matchesSkills =
+        filters.skills.length === 0 || filters.skills.some((skill) => job.skills.includes(skill));
+      const matchesEmployment =
+        filters.employmentTypes.length === 0 ||
+        filters.employmentTypes.includes(job.employmentType);
+      const matchesSeniority =
+        filters.seniorityLevels.length === 0 ||
+        selectedRotations.has(rotationBucketFromJobCard(job));
+      const matchesSalary =
+        job.compensationValue >= filters.salaryMin &&
+        job.compensationValue <= filters.salaryMax;
+      const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+
+      return (
+        matchesSearch &&
+        matchesSkills &&
+        matchesEmployment &&
+        matchesSeniority &&
+        matchesSalary &&
+        matchesSaved
+      );
+    });
+  }, [filters, jobsSource, searchQuery, showSavedOnly, savedJobIds]);
+
   const availableLocations = useMemo<LocationOption[]>(() => {
     const catalogById = new Map<string, string>();
     for (const location of allLocationOptions) {
@@ -968,7 +1030,7 @@ export default function TalentEngineJobsPage() {
     }
 
     const byId = new Map<string, string>();
-    for (const job of apiRecommendedJobs) {
+    for (const job of jobsMatchingNonLocationFilters) {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
       const fromCatalog = catalogById.get(id);
@@ -980,7 +1042,7 @@ export default function TalentEngineJobsPage() {
     return Array.from(byId.entries())
       .map(([id, label]) => ({ id, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [allLocationOptions, apiRecommendedJobs]);
+  }, [allLocationOptions, jobsMatchingNonLocationFilters]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -1011,34 +1073,7 @@ export default function TalentEngineJobsPage() {
 
   const filteredJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const normalizeRotation = (value: string) => {
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
-      if (
-        normalized === "no" ||
-        normalized === "false" ||
-        normalized === "0" ||
-        normalized === "no rotation" ||
-        normalized.includes("0 weeks on / 0 weeks off")
-      ) {
-        return "no";
-      }
-      if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
-      if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
-      if (
-        normalized.includes("on:") ||
-        normalized.includes("weeks on")
-      ) {
-        return "yes";
-      }
-      return normalized;
-    };
-    const selectedRotations = new Set(filters.seniorityLevels.map(normalizeRotation));
-    const rotationFromJob = (job: JobCard) => {
-      const fromStartDate = normalizeRotation(job.startDate);
-      if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
-      return normalizeRotation(job.seniorityLevel);
-    };
+    const selectedRotations = new Set(filters.seniorityLevels.map(normalizeRotationForJobFilter));
 
     const results = jobsSource.filter((job) => {
       const matchesSearch =
@@ -1059,7 +1094,7 @@ export default function TalentEngineJobsPage() {
         filters.employmentTypes.includes(job.employmentType);
       const matchesSeniority =
         filters.seniorityLevels.length === 0 ||
-        selectedRotations.has(rotationFromJob(job));
+        selectedRotations.has(rotationBucketFromJobCard(job));
       const matchesSalary =
         job.compensationValue >= filters.salaryMin &&
         job.compensationValue <= filters.salaryMax;
