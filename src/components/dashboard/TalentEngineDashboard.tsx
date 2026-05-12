@@ -443,6 +443,32 @@ function normalizeLocationId(value: string | undefined): string {
     .replace(/\s+/g, "-");
 }
 
+function normalizeRotationForDashboardFilter(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
+  if (
+    normalized === "no" ||
+    normalized === "false" ||
+    normalized === "0" ||
+    normalized === "no rotation" ||
+    normalized.includes("0 weeks on / 0 weeks off")
+  ) {
+    return "no";
+  }
+  if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
+  if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
+  if (normalized.includes("on:") || normalized.includes("weeks on")) {
+    return "yes";
+  }
+  return normalized;
+}
+
+function rotationBucketFromJobListing(job: JobListing): string {
+  const fromStartDate = normalizeRotationForDashboardFilter(job.startDate);
+  if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
+  return normalizeRotationForDashboardFilter(job.seniorityLevel);
+}
+
 function formatAppliedDate(appliedDate?: string): string {
   const raw = appliedDate?.trim();
   if (!raw) return "—";
@@ -1178,6 +1204,69 @@ export default function TalentEngineDashboard() {
     }
   }, [candidateId, localSubmittedActionCards]);
 
+  /** Same job set as the list uses for filtering, but ignoring location — avoids orphan locations when search/skills hide all jobs in a place. */
+  const jobsForLocationFacets = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const selectedRotations = new Set(
+      activeFilters.seniorityLevels.map(normalizeRotationForDashboardFilter)
+    );
+
+    const filterExceptLocation = (sourceJobs: JobListing[]) =>
+      sourceJobs.filter((job) => {
+        const matchesSearch =
+          normalizedQuery.length === 0 ||
+          [
+            job.title,
+            job.company,
+            job.location,
+            job.locationFull,
+            ...job.skills,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+
+        const matchesSkills =
+          activeFilters.skills.length === 0 ||
+          activeFilters.skills.some((skill) => job.skills.includes(skill));
+
+        const matchesEmployment =
+          activeFilters.employmentTypes.length === 0 ||
+          activeFilters.employmentTypes.includes(job.employmentType);
+
+        const matchesSeniority =
+          activeFilters.seniorityLevels.length === 0 ||
+          selectedRotations.has(rotationBucketFromJobListing(job));
+
+        const matchesSalary =
+          job.hourlyRate >= activeFilters.salaryMin &&
+          job.hourlyRate <= activeFilters.salaryMax;
+
+        const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+
+        return (
+          matchesSearch &&
+          matchesSkills &&
+          matchesEmployment &&
+          matchesSeniority &&
+          matchesSalary &&
+          matchesSaved
+        );
+      });
+
+    if (activeTab === "Recommended") return filterExceptLocation(apiRecommendedJobs);
+    return filterExceptLocation([...apiApplicationJobs, ...apiInterestJobs]);
+  }, [
+    activeTab,
+    activeFilters,
+    apiApplicationJobs,
+    apiInterestJobs,
+    apiRecommendedJobs,
+    savedJobIds,
+    searchQuery,
+    showSavedOnly,
+  ]);
+
   const availableLocations = useMemo<LocationOption[]>(() => {
     const catalogByNormalizedId = new Map<string, string>();
     for (const location of allLocationOptions) {
@@ -1187,14 +1276,8 @@ export default function TalentEngineDashboard() {
       catalogByNormalizedId.set(id, label);
     }
 
-    const recommendedJobs = activeTab === "Recommended" ? apiRecommendedJobs : [];
-    const sourceJobs: JobListing[] =
-      activeTab === "Recommended"
-        ? recommendedJobs
-        : [...apiApplicationJobs, ...apiInterestJobs];
-
     const byId = new Map<string, string>();
-    for (const job of sourceJobs) {
+    for (const job of jobsForLocationFacets) {
       const id = normalizeLocationId(job.locationId);
       if (!id || id === "—") continue;
       if (byId.has(id)) continue;
@@ -1207,13 +1290,7 @@ export default function TalentEngineDashboard() {
     return Array.from(byId.entries())
       .map(([id, label]) => ({ id, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [
-    activeTab,
-    allLocationOptions,
-    apiRecommendedJobs,
-    apiApplicationJobs,
-    apiInterestJobs,
-  ]);
+  }, [allLocationOptions, jobsForLocationFacets]);
 
   const locationLabelMap = useMemo<Record<string, string>>(
     () =>
@@ -1295,34 +1372,9 @@ export default function TalentEngineDashboard() {
 
   const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const normalizeRotation = (value: string) => {
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "yes" || normalized === "true" || normalized === "1") return "yes";
-      if (
-        normalized === "no" ||
-        normalized === "false" ||
-        normalized === "0" ||
-        normalized === "no rotation" ||
-        normalized.includes("0 weeks on / 0 weeks off")
-      ) {
-        return "no";
-      }
-      if (normalized.includes("rotation") && /\bno\b/.test(normalized)) return "no";
-      if (normalized.includes("rotation") && /\byes\b/.test(normalized)) return "yes";
-      if (
-        normalized.includes("on:") ||
-        normalized.includes("weeks on")
-      ) {
-        return "yes";
-      }
-      return normalized;
-    };
-    const selectedRotations = new Set(activeFilters.seniorityLevels.map(normalizeRotation));
-    const rotationFromJob = (job: JobListing) => {
-      const fromStartDate = normalizeRotation(job.startDate);
-      if (fromStartDate === "yes" || fromStartDate === "no") return fromStartDate;
-      return normalizeRotation(job.seniorityLevel);
-    };
+    const selectedRotations = new Set(
+      activeFilters.seniorityLevels.map(normalizeRotationForDashboardFilter)
+    );
 
     const filterList = (sourceJobs: JobListing[]) =>
       sourceJobs.filter((job) => {
@@ -1356,7 +1408,7 @@ export default function TalentEngineDashboard() {
 
         const matchesSeniority =
           activeFilters.seniorityLevels.length === 0 ||
-          selectedRotations.has(rotationFromJob(job));
+          selectedRotations.has(rotationBucketFromJobListing(job));
 
         const matchesSalary =
           job.hourlyRate >= activeFilters.salaryMin &&
