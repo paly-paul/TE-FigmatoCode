@@ -1209,38 +1209,54 @@ function isDraftProfileVersionDoc(doc: UnknownRecord): boolean {
   return state === "draft";
 }
 
+// Deduplicates concurrent requests for the same version name within a navigation cycle.
+const _versionDocCache = new Map<string, Promise<UnknownRecord | null>>();
+
 async function fetchProfileVersionDocument(versionName: string): Promise<UnknownRecord | null> {
   const trimmed = versionName.trim();
   if (!trimmed) return null;
-  try {
-    const res = await fetch(
-      `/api/method/get_data/?doctype=${encodeURIComponent("Profile Version")}&name=${encodeURIComponent(trimmed)}`,
-      { method: "GET", credentials: "same-origin", cache: "no-store" }
-    );
-    let payload: UnknownRecord = {};
+  const cached = _versionDocCache.get(trimmed);
+  if (cached) return cached;
+  const req = (async (): Promise<UnknownRecord | null> => {
     try {
-      payload = (await res.json()) as UnknownRecord;
+      const res = await fetch(
+        `/api/method/get_data/?doctype=${encodeURIComponent("Profile Version")}&name=${encodeURIComponent(trimmed)}`,
+        { method: "GET", credentials: "same-origin", cache: "no-store" }
+      );
+      let payload: UnknownRecord = {};
+      try {
+        payload = (await res.json()) as UnknownRecord;
+      } catch {
+        return null;
+      }
+      if (!res.ok || payload.status === "error" || payload.code === "UNAUTHORIZED") return null;
+      if (typeof payload.exc === "string" && payload.exc) return null;
+      return extractDataRoot(payload);
     } catch {
       return null;
+    } finally {
+      // Evict after 30 s so stale data doesn't persist across page navigations.
+      window.setTimeout(() => _versionDocCache.delete(trimmed), 30_000);
     }
-    if (!res.ok || payload.status === "error" || payload.code === "UNAUTHORIZED") return null;
-    if (typeof payload.exc === "string" && payload.exc) return null;
-    return extractDataRoot(payload);
-  } catch {
-    return null;
-  }
+  })();
+  _versionDocCache.set(trimmed, req);
+  return req;
 }
 
 /**
  * If the expanded profile version on the Profile doc is a draft, replace `root.profile_version`
  * with the newest submitted version found in `profile.history` (when available).
+ *
+ * Strategy (single fetch preferred):
+ * 1. If history entries carry inline state/status, find the latest submitted entry and fetch
+ *    only that one document.
+ * 2. Otherwise fall back to checking versions one by one (capped at 3).
  */
 async function preferSubmittedProfileVersionRoot(root: UnknownRecord): Promise<UnknownRecord> {
   const pv = root.profile_version;
   if (!pv || typeof pv !== "object" || Array.isArray(pv)) return root;
 
   const versionDoc = pv as UnknownRecord;
-  // Use embedded version as-is when it is clearly not a draft workflow row.
   if (isSubmittedProfileVersionDoc(versionDoc) && !isDraftProfileVersionDoc(versionDoc)) {
     return root;
   }
@@ -1256,7 +1272,10 @@ async function preferSubmittedProfileVersionRoot(root: UnknownRecord): Promise<U
     "";
 
   const history = Array.isArray(profile.history) ? profile.history : [];
-  const candidates: string[] = [];
+
+  // Pass 1: use inline state/status fields in history entries to pick the latest submitted
+  // version without fetching every document.
+  let inlineSubmittedName: string | undefined;
   for (let i = history.length - 1; i >= 0; i--) {
     const entry = history[i];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
@@ -1265,15 +1284,49 @@ async function preferSubmittedProfileVersionRoot(root: UnknownRecord): Promise<U
       typeof record.profile_version === "string"
         ? record.profile_version.trim()
         : pickString(record, "profile_version", "version", "name");
-    if (vn && vn !== currentName && !candidates.includes(vn)) {
-      candidates.push(vn);
+    if (!vn || vn === currentName) continue;
+
+    const inlineState = typeof record.state === "string" ? record.state.trim().toLowerCase() : "";
+    const inlineStatus = typeof record.profile_status === "string" ? record.profile_status.trim().toLowerCase() : "";
+    const submittedInline =
+      inlineState === "open" || inlineState === "submitted" || inlineState === "published" || inlineState === "completed" ||
+      inlineStatus === "submitted" || inlineStatus === "published" || inlineStatus === "completed";
+    const draftInline = inlineState === "draft";
+
+    if (submittedInline && !draftInline) {
+      inlineSubmittedName = vn;
+      break;
     }
   }
 
-  const maxChecks = 12;
-  for (const vn of candidates.slice(0, maxChecks)) {
-    const doc = await fetchProfileVersionDocument(vn);
-    if (doc && isSubmittedProfileVersionDoc(doc) && !isDraftProfileVersionDoc(doc)) {
+  if (inlineSubmittedName) {
+    const doc = await fetchProfileVersionDocument(inlineSubmittedName);
+    // Accept any non-draft doc — the API often omits explicit state/status fields.
+    if (doc && !isDraftProfileVersionDoc(doc)) {
+      return { ...root, profile_version: doc };
+    }
+  }
+
+  // Pass 2 (fallback): history entries have no inline state — use the single newest
+  // non-current version without iterating further.
+  let newestCandidate: string | undefined;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as UnknownRecord;
+    const vn =
+      typeof record.profile_version === "string"
+        ? record.profile_version.trim()
+        : pickString(record, "profile_version", "version", "name");
+    if (vn && vn !== currentName) {
+      newestCandidate = vn;
+      break;
+    }
+  }
+
+  if (newestCandidate) {
+    const doc = await fetchProfileVersionDocument(newestCandidate);
+    if (doc && !isDraftProfileVersionDoc(doc)) {
       return { ...root, profile_version: doc };
     }
   }

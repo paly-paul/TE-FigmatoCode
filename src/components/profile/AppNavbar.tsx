@@ -73,7 +73,7 @@ export default function AppNavbar() {
     let cancelled = false;
     void (async () => {
       try {
-        const profile = await getCandidateProfileData(profileName, { preferSubmittedVersion: true });
+        const profile = await getCandidateProfileData(profileName);
         if (cancelled) return;
         const fromApi = profile.profileImageUrl?.trim() || "";
         if (fromApi) setProfileImageUrl(fromApi);
