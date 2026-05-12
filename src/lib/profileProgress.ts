@@ -25,6 +25,8 @@ type BasicInputs = {
   email?: string;
   nationality?: string;
   currentLocation?: string;
+  workAuthorization?: string;
+  preferredIndustry?: string;
   education?: ResumeEducationEntry[];
   certifications?: ResumeCertificationEntry[];
   externalLinks?: ResumeExternalLinkEntry[];
@@ -36,16 +38,18 @@ function truthyTrim(value: unknown): boolean {
 }
 
 // Professional Info — max 20 pts
-// title=4, expYears=3, expMonths=2, salary=4, currency=2, summary(>=40)=5
+// title=3, expYears=3, expMonths=1, salary=3, currency=1, summary(>=40)=4, workAuthorization=3, preferredIndustry=2
 function scoreProfessional(b: BasicInputs): number {
   let pts = 0;
-  if (truthyTrim(b.professionalTitle)) pts += 4;
+  if (truthyTrim(b.professionalTitle)) pts += 3;
   if (truthyTrim(b.experienceYears)) pts += 3;
-  if (truthyTrim(b.experienceMonths)) pts += 2;
-  if (truthyTrim(b.salaryPerMonth)) pts += 4;
-  if (truthyTrim(b.salaryCurrency)) pts += 2;
+  if (truthyTrim(b.experienceMonths)) pts += 1;
+  if (truthyTrim(b.salaryPerMonth)) pts += 3;
+  if (truthyTrim(b.salaryCurrency)) pts += 1;
   const summary = typeof b.summary === "string" ? b.summary.trim() : "";
-  if (summary.length >= 40) pts += 5;
+  if (summary.length >= 40) pts += 4;
+  if (truthyTrim(b.workAuthorization)) pts += 3;
+  if (truthyTrim(b.preferredIndustry)) pts += 2;
   return pts;
 }
 
@@ -65,34 +69,31 @@ function scorePersonal(b: BasicInputs): number {
   return pts;
 }
 
-// Education — best single entry, max 10 pts (title=6, institute=4)
-function scoreBestEducation(entries: ResumeEducationEntry[] | undefined): number {
+// Education — first entry only, max 10 pts (title=6, institute=4)
+function scoreFirstEducation(entries: ResumeEducationEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map((e) => (truthyTrim(e.title) ? 6 : 0) + (truthyTrim(e.institute) ? 4 : 0))
-  );
+  const e = entries[0];
+  return (truthyTrim(e.title) ? 6 : 0) + (truthyTrim(e.institute) ? 4 : 0);
 }
 
-// Certifications — best single entry, max 5 pts (name=3, issuing=2)
-function scoreBestCertification(entries: ResumeCertificationEntry[] | undefined): number {
+// Certifications — first entry only, max 5 pts (name=3, issuing=2)
+function scoreFirstCertification(entries: ResumeCertificationEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map((e) => (truthyTrim(e.name) ? 3 : 0) + (truthyTrim(e.issuing) ? 2 : 0))
-  );
+  const e = entries[0];
+  return (truthyTrim(e.name) ? 3 : 0) + (truthyTrim(e.issuing) ? 2 : 0);
 }
 
-// External Links — best single entry, max 5 pts (label=2, url=3)
-function scoreBestExternalLink(entries: ResumeExternalLinkEntry[] | undefined): number {
+// External Links — first entry only, max 5 pts (label=2, url=3)
+function scoreFirstExternalLink(entries: ResumeExternalLinkEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map((e) => (truthyTrim(e.label) ? 2 : 0) + (truthyTrim(e.url) ? 3 : 0))
-  );
+  const e = entries[0];
+  return (truthyTrim(e.label) ? 2 : 0) + (truthyTrim(e.url) ? 3 : 0);
 }
 
-// Languages — best single entry, max 5 pts (language name=5)
-function scoreBestLanguage(entries: ResumeLanguageEntry[] | undefined): number {
+// Languages — first entry only, max 5 pts (language name=5)
+function scoreFirstLanguage(entries: ResumeLanguageEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(...entries.map((e) => (truthyTrim(e.language) ? 5 : 0)));
+  return truthyTrim(entries[0].language) ? 5 : 0;
 }
 
 // Key Skills — binary, max 10 pts
@@ -100,35 +101,30 @@ function scoreKeySkills(skills: string[] | undefined): number {
   return Array.isArray(skills) && skills.some((s) => truthyTrim(s)) ? 10 : 0;
 }
 
-// Work Experience (session entries) — best single entry, max 10 pts
+// Work Experience (session entries) — first entry only, max 10 pts
 // (jobTitle or company)=5, duration=5
-function scoreBestWorkExperience(entries: ResumeWorkExperienceEntry[] | undefined): number {
+function scoreFirstWorkExperience(entries: ResumeWorkExperienceEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map(
-      (e) =>
-        (truthyTrim(e.jobTitle) || truthyTrim(e.company) ? 5 : 0) +
-        (truthyTrim(e.duration) ? 5 : 0)
-    )
+  const e = entries[0];
+  return (
+    (truthyTrim(e.jobTitle) || truthyTrim(e.company) ? 5 : 0) +
+    (truthyTrim(e.duration) ? 5 : 0)
   );
 }
 
-// Live experience entries (skills-projects screen) — best single entry, max 10 pts
+// Live experience entries (skills-projects screen) — first entry only, max 10 pts
 // experience=5, experienceYears=5
-function scoreBestLiveExperience(
+function scoreFirstLiveExperience(
   entries: Array<{ experience?: string; experienceYears?: string; experienceReference?: string }> | undefined
 ): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map(
-      (e) => (truthyTrim(e.experience) ? 5 : 0) + (truthyTrim(e.experienceYears) ? 5 : 0)
-    )
-  );
+  const e = entries[0];
+  return (truthyTrim(e.experience) ? 5 : 0) + (truthyTrim(e.experienceYears) ? 5 : 0);
 }
 
-// Projects — best single entry, max 10 pts
+// Projects — first entry only, max 10 pts
 // title=2, company=2, startDate=2, description(>=30)=2, responsibilities(>=20)=2
-function scoreBestProject(
+function scoreFirstProject(
   entries:
     | Array<{
         projectTitle?: string;
@@ -141,19 +137,16 @@ function scoreBestProject(
     | undefined
 ): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return Math.max(
-    ...entries.map((p) => {
-      let pts = 0;
-      if (truthyTrim(p.projectTitle)) pts += 2;
-      if (truthyTrim(p.customerCompany)) pts += 2;
-      if (truthyTrim((p as { projectStartDate?: string }).projectStartDate)) pts += 2;
-      const desc = typeof p.projectDescription === "string" ? p.projectDescription.trim() : "";
-      if (desc.length >= 30) pts += 2;
-      const resp = typeof p.responsibilities === "string" ? p.responsibilities.trim() : "";
-      if (resp.length >= 20) pts += 2;
-      return pts;
-    })
-  );
+  const p = entries[0];
+  let pts = 0;
+  if (truthyTrim(p.projectTitle)) pts += 2;
+  if (truthyTrim(p.customerCompany)) pts += 2;
+  if (truthyTrim((p as { projectStartDate?: string }).projectStartDate)) pts += 2;
+  const desc = typeof p.projectDescription === "string" ? p.projectDescription.trim() : "";
+  if (desc.length >= 30) pts += 2;
+  const resp = typeof p.responsibilities === "string" ? p.responsibilities.trim() : "";
+  if (resp.length >= 20) pts += 2;
+  return pts;
 }
 
 export function computeOverallProfileProgress(args?: {
@@ -189,6 +182,8 @@ export function computeOverallProfileProgress(args?: {
     email: profile.email,
     nationality: profile.nationality,
     currentLocation: profile.currentLocation,
+    workAuthorization: profile.workAuthorization,
+    preferredIndustry: profile.preferredIndustry,
     education: profile.education,
     certifications: profile.certifications,
     externalLinks: profile.externalLinks,
@@ -202,10 +197,10 @@ export function computeOverallProfileProgress(args?: {
   const basicPts =
     scoreProfessional(basic) +
     scorePersonal(basic) +
-    scoreBestEducation(basic.education) +
-    scoreBestCertification(basic.certifications) +
-    scoreBestExternalLink(basic.externalLinks) +
-    scoreBestLanguage(basic.languages);
+    scoreFirstEducation(basic.education) +
+    scoreFirstCertification(basic.certifications) +
+    scoreFirstExternalLink(basic.externalLinks) +
+    scoreFirstLanguage(basic.languages);
 
   // Skills & Projects: 10 + 10 + 10 = 30 pts
   const liveSkills = args?.liveSkills;
@@ -215,10 +210,10 @@ export function computeOverallProfileProgress(args?: {
   const skillsPts = scoreKeySkills(liveSkills ?? profile.keySkills ?? []);
 
   const workExpPts = liveExperiences
-    ? scoreBestLiveExperience(liveExperiences)
-    : scoreBestWorkExperience(profile.workExperience);
+    ? scoreFirstLiveExperience(liveExperiences)
+    : scoreFirstWorkExperience(profile.workExperience);
 
-  const projectsPts = scoreBestProject(liveProjects ?? profile.projects);
+  const projectsPts = scoreFirstProject(liveProjects ?? profile.projects);
 
   const skillsSectionPts = skillsPts + workExpPts + projectsPts;
 
