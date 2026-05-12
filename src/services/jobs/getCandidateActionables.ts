@@ -97,6 +97,7 @@ function parseActionablesPayload(data: Record<string, unknown>): {
       ]) || "";
     // Some proposal actionables may omit job fields; keep them so the UI can still render a card.
     // Use stable fallbacks so they can be grouped/deduped, but avoid breaking true job-based flows.
+    const customer = firstString(item, ["customer", "company", "client", "organization"]);
     const rr_candidate = typeof item.rr_candidate === "string" ? item.rr_candidate : "";
     const derivedJobId = job_id || rr_candidate || name;
     const derivedJobTitle = job_title || (rr_candidate ? "Proposal update" : "");
@@ -117,6 +118,7 @@ function parseActionablesPayload(data: Record<string, unknown>): {
     actions.push({
       job_title: derivedJobTitle,
       job_id: derivedJobId,
+      customer,
       rr_candidate,
       // Some backends/environments may emit stage/status under rr_candidate_* keys.
       // Also helps when stage/status are accidentally swapped upstream.

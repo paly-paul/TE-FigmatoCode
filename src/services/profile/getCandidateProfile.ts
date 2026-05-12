@@ -674,7 +674,10 @@ function mapToolsTableToWorkExperience(value: unknown): ResumeProfileData["workE
         pickDisplayString(record, "tool_name", "toolName", "skill", "name") ??
         parsedSkillTokens[0] ??
         undefined;
-      const years = pickString(record, "experience_years", "experience", "years", "duration");
+      const years =
+        typeof record.experience === "number" && Number.isFinite(record.experience)
+          ? String(record.experience)
+          : pickString(record, "experience_years", "experience", "years", "duration");
       if (!toolName && !years) return null;
       return {
         jobTitle: toolName,
@@ -1178,7 +1181,110 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
   };
 }
 
-export async function getCandidateProfileData(candidateId: string): Promise<ResumeProfileData> {
+export type GetCandidateProfileOptions = {
+  /**
+   * When true (e.g. public profile / navbar), if the Profile’s embedded `profile_version`
+   * is still a **draft**, load the latest **submitted** `Profile Version` from history instead
+   * so the UI matches last submitted data, not wizard save-draft.
+   */
+  preferSubmittedVersion?: boolean;
+};
+
+function isSubmittedProfileVersionDoc(doc: UnknownRecord): boolean {
+  const state = typeof doc.state === "string" ? doc.state.trim().toLowerCase() : "";
+  const status = typeof doc.profile_status === "string" ? doc.profile_status.trim().toLowerCase() : "";
+  return (
+    state === "open" ||
+    state === "submitted" ||
+    state === "published" ||
+    state === "completed" ||
+    status === "submitted" ||
+    status === "published" ||
+    status === "completed"
+  );
+}
+
+function isDraftProfileVersionDoc(doc: UnknownRecord): boolean {
+  const state = typeof doc.state === "string" ? doc.state.trim().toLowerCase() : "";
+  return state === "draft";
+}
+
+async function fetchProfileVersionDocument(versionName: string): Promise<UnknownRecord | null> {
+  const trimmed = versionName.trim();
+  if (!trimmed) return null;
+  try {
+    const res = await fetch(
+      `/api/method/get_data/?doctype=${encodeURIComponent("Profile Version")}&name=${encodeURIComponent(trimmed)}`,
+      { method: "GET", credentials: "same-origin", cache: "no-store" }
+    );
+    let payload: UnknownRecord = {};
+    try {
+      payload = (await res.json()) as UnknownRecord;
+    } catch {
+      return null;
+    }
+    if (!res.ok || payload.status === "error" || payload.code === "UNAUTHORIZED") return null;
+    if (typeof payload.exc === "string" && payload.exc) return null;
+    return extractDataRoot(payload);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * If the expanded profile version on the Profile doc is a draft, replace `root.profile_version`
+ * with the newest submitted version found in `profile.history` (when available).
+ */
+async function preferSubmittedProfileVersionRoot(root: UnknownRecord): Promise<UnknownRecord> {
+  const pv = root.profile_version;
+  if (!pv || typeof pv !== "object" || Array.isArray(pv)) return root;
+
+  const versionDoc = pv as UnknownRecord;
+  // Use embedded version as-is when it is clearly not a draft workflow row.
+  if (isSubmittedProfileVersionDoc(versionDoc) && !isDraftProfileVersionDoc(versionDoc)) {
+    return root;
+  }
+
+  const profile =
+    root.profile && typeof root.profile === "object" && !Array.isArray(root.profile)
+      ? (root.profile as UnknownRecord)
+      : {};
+
+  const currentName =
+    pickString(versionDoc, "name") ||
+    (typeof profile.current_profile_version === "string" ? profile.current_profile_version.trim() : "") ||
+    "";
+
+  const history = Array.isArray(profile.history) ? profile.history : [];
+  const candidates: string[] = [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as UnknownRecord;
+    const vn =
+      typeof record.profile_version === "string"
+        ? record.profile_version.trim()
+        : pickString(record, "profile_version", "version", "name");
+    if (vn && vn !== currentName && !candidates.includes(vn)) {
+      candidates.push(vn);
+    }
+  }
+
+  const maxChecks = 12;
+  for (const vn of candidates.slice(0, maxChecks)) {
+    const doc = await fetchProfileVersionDocument(vn);
+    if (doc && isSubmittedProfileVersionDoc(doc) && !isDraftProfileVersionDoc(doc)) {
+      return { ...root, profile_version: doc };
+    }
+  }
+
+  return root;
+}
+
+export async function getCandidateProfileData(
+  candidateId: string,
+  options?: GetCandidateProfileOptions
+): Promise<ResumeProfileData> {
   const url = new URL("/api/method/get_data", window.location.origin);
   url.searchParams.set("doctype", "Profile");
   url.searchParams.set("name", candidateId.trim());
@@ -1207,7 +1313,11 @@ export async function getCandidateProfileData(candidateId: string): Promise<Resu
     throw new Error(parseApiErrorMessage(data));
   }
 
-  return mapToResumeProfileData(extractDataRoot(data));
+  let root = extractDataRoot(data);
+  if (options?.preferSubmittedVersion) {
+    root = await preferSubmittedProfileVersionRoot(root);
+  }
+  return mapToResumeProfileData(root);
 }
 
 

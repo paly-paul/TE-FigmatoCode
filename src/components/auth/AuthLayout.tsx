@@ -9,6 +9,10 @@ interface AuthLayoutProps {
   footerLinkLabel?: string;
   footerLinkHref?: string;
   showFooter?: boolean;
+  /** Extra footer row rendered above the primary footer link, separated by "or". */
+  extraFooterText?: string;
+  extraFooterLinkLabel?: string;
+  extraFooterLinkHref?: string;
   /** Renders below the white card (e.g. success stories on reset-password sent). */
   belowCard?: ReactNode;
   /** When true, the decorative right panel is hidden (avoids duplicating success stories with `belowCard`). */
@@ -25,6 +29,9 @@ export function AuthLayout({
   footerLinkLabel,
   footerLinkHref,
   showFooter = false,
+  extraFooterText,
+  extraFooterLinkLabel,
+  extraFooterLinkHref,
   belowCard,
   hideRightPanel = false,
   rightPanel,
@@ -70,14 +77,30 @@ export function AuthLayout({
 
             {/* Footer strip */}
             {showFooter && footerText && footerLinkLabel && footerLinkHref && (
-              <div className="bg-gray-50 px-8 py-4 text-center text-sm text-gray-500">
-                {footerText}{" "}
-                <Link
-                  href={footerLinkHref}
-                  className="font-semibold text-primary-600 hover:text-primary-700"
-                >
-                  {footerLinkLabel}
-                </Link>
+              <div className="bg-gray-50 px-8 py-4 text-center text-sm text-gray-500 flex flex-col gap-2">
+                {extraFooterText && extraFooterLinkLabel && extraFooterLinkHref && (
+                  <>
+                    <span>
+                      {extraFooterText}{" "}
+                      <Link
+                        href={extraFooterLinkHref}
+                        className="font-semibold text-primary-600 hover:text-primary-700"
+                      >
+                        {extraFooterLinkLabel}
+                      </Link>
+                    </span>
+                    <span className="text-gray-400">or</span>
+                  </>
+                )}
+                <span>
+                  {footerText}{" "}
+                  <Link
+                    href={footerLinkHref}
+                    className="font-semibold text-primary-600 hover:text-primary-700"
+                  >
+                    {footerLinkLabel}
+                  </Link>
+                </span>
               </div>
             )}
           </div>

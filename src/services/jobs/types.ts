@@ -61,6 +61,7 @@ export type CandidateInterestApi = {
 export type CandidateActionableApi = {
   job_title: string;
   job_id: string;
+  customer?: string;
   rr_candidate: string;
   stage: string;
   status: string;

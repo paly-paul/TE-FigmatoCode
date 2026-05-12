@@ -58,10 +58,6 @@ export default function NewPasswordPageClient() {
 
   return (
     <AuthLayout
-      showFooter
-      footerText="Don't have an account?"
-      footerLinkLabel="Sign Up"
-      footerLinkHref="/signup"
       leftPanelGrid
       rightPanel={<DesktopSuccessStoriesPanel />}
     >

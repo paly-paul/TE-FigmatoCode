@@ -63,23 +63,23 @@ export default function AppNavbar() {
   }, [pathname]);
 
   useEffect(() => {
-    const fromSession = readResumeProfile()?.profileImageUrl?.trim() || "";
-    if (fromSession) {
-      setProfileImageUrl(fromSession);
-    }
-
     const profileName = getProfileName()?.trim();
-    if (!profileName) return;
+    if (!profileName) {
+      const fromSession = readResumeProfile()?.profileImageUrl?.trim() || "";
+      if (fromSession) setProfileImageUrl(fromSession);
+      return;
+    }
 
     let cancelled = false;
     void (async () => {
       try {
-        const profile = await getCandidateProfileData(profileName);
+        const profile = await getCandidateProfileData(profileName, { preferSubmittedVersion: true });
         if (cancelled) return;
         const fromApi = profile.profileImageUrl?.trim() || "";
         if (fromApi) setProfileImageUrl(fromApi);
       } catch {
-        // Keep session/local fallback avatar if API read fails.
+        const fromSession = readResumeProfile()?.profileImageUrl?.trim() || "";
+        if (fromSession) setProfileImageUrl(fromSession);
       }
     })();
 

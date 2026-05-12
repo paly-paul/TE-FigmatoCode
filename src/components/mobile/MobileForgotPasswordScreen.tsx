@@ -67,14 +67,26 @@ export function MobileForgotPasswordScreen() {
         </form>
       </main>
 
-      <div className="mt-auto border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-sm text-gray-500">
-        Remember your password?{" "}
-        <Link
-          href="/login/"
-          className="font-semibold text-primary-600 hover:text-primary-700"
-        >
-          Login
-        </Link>
+      <div className="mt-auto border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-sm text-gray-500 flex flex-col gap-2">
+        <span>
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/signup/"
+            className="font-semibold text-primary-600 hover:text-primary-700"
+          >
+            Sign Up
+          </Link>
+        </span>
+        <span className="text-gray-400">or</span>
+        <span>
+          Remember your password?{" "}
+          <Link
+            href="/login/"
+            className="font-semibold text-primary-600 hover:text-primary-700"
+          >
+            Login
+          </Link>
+        </span>
       </div>
 
       <MobileSuccessStoriesSection heading="Simple to use with relevant job listings" />

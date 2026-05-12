@@ -56,9 +56,8 @@ import {
   postProposalCandidateNegotiation,
 } from "@/services/jobs/actionCenter";
 import { activateJobSearch, postJobPause } from "@/services/jobs/jobSearchStatus";
-import { isLikelyJobOpeningDocName, postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
-import type { CandidateActionableApi } from "@/services/jobs/types";
-import type { CandidateActionableSlotApi } from "@/services/jobs/types";
+import { getInterviewDetails, getProfileInterviewsDetailed, isLikelyJobOpeningDocName, postInterviewSelectSlot } from "@/services/jobs/interviewsApi";
+import type { CandidateActionableApi, CandidateActionableSlotApi, RecommendedJobApi } from "@/services/jobs/types";
 import {
   mapApplicationToDashboardJob,
   mapCandidateInterestToDashboardJob,
@@ -487,6 +486,11 @@ function toIsoDateYmd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+const AUTO_REFRESH_INTERVAL_SECS = Math.max(
+  1,
+  Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_INTERVAL_SECONDS) || 5
+);
+
 export default function TalentEngineDashboard() {
   const isMobile = useIsMobile();
   const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
@@ -548,6 +552,8 @@ export default function TalentEngineDashboard() {
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_INTERVAL_SECS);
+  const countdownResetRef = useRef<() => void>(() => {});
   const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
   const [apiInterestJobs, setApiInterestJobs] = useState<JobListing[]>([]);
   const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
@@ -632,6 +638,9 @@ export default function TalentEngineDashboard() {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     try {
+      const recommendedJobsEarlyPromise: Promise<RecommendedJobApi[]> | null =
+        profileIdForActionables ? getRecommendedJobs(profileIdForActionables) : null;
+
       if (currentCandidateId) {
         try {
           const applicationsRes = await getJobApplications(currentCandidateId);
@@ -685,8 +694,14 @@ export default function TalentEngineDashboard() {
             .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)));
           setApiRecommendedJobs(cachedRecommendedJobs);
         }
-        let actionablesRes = await getCandidateActionables(profileIdForActionables);
-        const recommendedJobsRes = await getRecommendedJobs(profileIdForActionables);
+        const safeRecommendedPromise = (
+          recommendedJobsEarlyPromise ?? Promise.resolve([] as RecommendedJobApi[])
+        ).catch(() => [] as RecommendedJobApi[]);
+        const [actionablesResInitial, recommendedJobsRes] = await Promise.all([
+          getCandidateActionables(profileIdForActionables),
+          safeRecommendedPromise,
+        ]);
+        let actionablesRes = actionablesResInitial;
         // Don't overwrite a valid cache with an empty response — the backend may temporarily
         // return no jobs while a profile is in draft-edit state.
         if (recommendedJobsRes.length > 0 || !hasCachedJobs) {
@@ -737,6 +752,8 @@ export default function TalentEngineDashboard() {
             scheduledInterviewItems.push({
               id: item.name?.trim() || `${item.job_id}|interview-scheduled`,
               jobTitle: item.job_title || item.job_id || "Interview",
+              candidateId: item.rr_candidate?.trim() || profileIdForActionables || undefined,
+              jobId: item.job_id?.trim() || undefined,
               interviewRound: item.info?.interview_round,
               interviewType: item.info?.interview_type,
               interviewMode: item.info?.interview_mode,
@@ -751,7 +768,9 @@ export default function TalentEngineDashboard() {
               id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
               type: "Job",
               title: toActionTitle(item),
-              subtitle: `${item.job_title} - ${item.job_id}`,
+              subtitle: item.customer
+                ? `${item.job_title} - ${item.customer}`
+                : `${item.job_title} - ${item.job_id}`,
               timestamp: item.stage || item.status || "Now",
               jobDocumentId: item.job_id,
               rrCandidateName: item.rr_candidate,
@@ -861,7 +880,6 @@ export default function TalentEngineDashboard() {
         if (actionCardsSignatureRef.current !== actionSignature) {
           actionCardsSignatureRef.current = actionSignature;
           setApiActionCards(orderedActions);
-          setApiScheduledInterviews(scheduledInterviewItems);
         }
 
         const orderedGeneral = [...nextGeneral];
@@ -892,6 +910,39 @@ export default function TalentEngineDashboard() {
             setApiRecommendedJobs(orderedRecommended);
           }
         }
+
+        // Fallback: get_interviews_by_profile already returns full row data per round.
+        // Use it to surface any scheduled rounds missing from actionables (e.g. Round 2+).
+        // Run after recommended jobs are shown so the jobs list is not blocked on this call.
+        try {
+          const profileRows = await getProfileInterviewsDetailed(profileIdForActionables);
+          for (const row of profileRows) {
+            if (row.rr_candidate_status?.toLowerCase() !== "scheduled") continue;
+            const jobId = row.rr?.trim();
+            if (!jobId) continue;
+            const alreadyShown = scheduledInterviewItems.some(
+              (i) => i.jobId === jobId && i.interviewRound === row.round
+            );
+            if (alreadyShown) continue;
+            scheduledInterviewItems.push({
+              id: `${jobId}|round-${row.round}`,
+              jobTitle: jobId,
+              candidateId: row.rr_candidate?.trim() || profileIdForActionables,
+              jobId,
+              interviewRound: row.round,
+              interviewType: row.interview_type,
+              interviewMode: row.interview_mode,
+              slotDate: row.agreed_interview_date,
+              slotTime: row.agreed_interview_time,
+              slotTimezone: row.agreed_interview_timezone,
+            });
+          }
+        } catch {
+          // Non-fatal: actionables-sourced items are shown as-is
+        }
+
+        setApiScheduledInterviews(scheduledInterviewItems);
+
         setHasAttemptedActionablesLoad(true);
         setHasAttemptedJobsLoad(true);
       } catch {
@@ -916,6 +967,7 @@ export default function TalentEngineDashboard() {
 
   const handleManualRefresh = async () => {
     if (isManualRefreshing) return;
+    countdownResetRef.current();
     setIsManualRefreshing(true);
     try {
       await triggerDashboardRefresh();
@@ -1023,6 +1075,22 @@ export default function TalentEngineDashboard() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const profileKey = profileId?.trim() || candidateId?.trim() || "";
+    if (!profileKey) return;
+    const cached = readRecommendedJobsCache(profileKey);
+    if (!cached?.jobs?.length) return;
+    setApiRecommendedJobs(
+      cached.jobs
+        .map((job) => mapRecommendedToDashboardJob(job))
+        .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)))
+    );
+    // Intentionally omit appliedJobDocumentIds: including it re-applies stale cache after a
+    // successful refresh and can shrink the list. `refreshDashboardData` re-filters on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once per profile key
+  }, [profileId, candidateId]);
+
+  useEffect(() => {
     latestDashboardIdsRef.current = {
       candidateId,
       profileName: profileId,
@@ -1034,26 +1102,44 @@ export default function TalentEngineDashboard() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    let countdown = AUTO_REFRESH_INTERVAL_SECS;
+
+    const resetCountdown = () => {
+      countdown = AUTO_REFRESH_INTERVAL_SECS;
+      setRefreshCountdown(AUTO_REFRESH_INTERVAL_SECS);
+    };
+    countdownResetRef.current = resetCountdown;
+
     const handleFocus = () => {
+      resetCountdown();
       void triggerDashboardRefresh();
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
+        resetCountdown();
         void triggerDashboardRefresh();
       }
     };
 
-    const intervalId = window.setInterval(() => {
+    // 1-second tick: drives the countdown display and fires the auto-refresh.
+    const tickId = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void triggerDashboardRefresh();
-    }, 120_000);
+      countdown -= 1;
+      if (countdown <= 0) {
+        countdown = AUTO_REFRESH_INTERVAL_SECS;
+        setRefreshCountdown(AUTO_REFRESH_INTERVAL_SECS);
+        void triggerDashboardRefresh();
+      } else {
+        setRefreshCountdown(countdown);
+      }
+    }, 1000);
 
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.clearInterval(intervalId);
+      window.clearInterval(tickId);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -1101,7 +1187,7 @@ export default function TalentEngineDashboard() {
       catalogByNormalizedId.set(id, label);
     }
 
-    const recommendedJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
+    const recommendedJobs = activeTab === "Recommended" ? apiRecommendedJobs : [];
     const sourceJobs: JobListing[] =
       activeTab === "Recommended"
         ? recommendedJobs
@@ -1124,7 +1210,6 @@ export default function TalentEngineDashboard() {
   }, [
     activeTab,
     allLocationOptions,
-    hasAttemptedJobsLoad,
     apiRecommendedJobs,
     apiApplicationJobs,
     apiInterestJobs,
@@ -1205,7 +1290,7 @@ export default function TalentEngineDashboard() {
     });
   }, [actionTabCounts]);
 
-  const recommendedSourceJobs = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
+  const recommendedSourceJobs = apiRecommendedJobs;
   const applicationSourceJobs = apiApplicationJobs;
 
   const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
@@ -1877,6 +1962,9 @@ export default function TalentEngineDashboard() {
         ))}
       </div>
       <div className="ml-auto flex w-full items-center justify-end gap-3 sm:w-auto">
+        {!isManualRefreshing && (
+          <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
+        )}
         <button
           type="button"
           onClick={() => void handleManualRefresh()}
@@ -2239,15 +2327,20 @@ export default function TalentEngineDashboard() {
                 </button>
               ))}
               </div>
-              <button
-                type="button"
-                onClick={() => void handleManualRefresh()}
-                disabled={isManualRefreshing}
-                className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
-                {isManualRefreshing ? "Refreshing..." : "Refresh"}
-              </button>
+              <div className="mb-2 flex items-center gap-2">
+                {!isManualRefreshing && (
+                  <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleManualRefresh()}
+                  disabled={isManualRefreshing}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
+                  {isManualRefreshing ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
             </div>
 
             <div className="relative mb-3">
@@ -2297,7 +2390,13 @@ export default function TalentEngineDashboard() {
               </button>
             </div>
 
-            {applicationSubTab === "Shortlisted" ? (
+            {!hasAttemptedJobsLoad ? (
+              <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                <p className="mb-1 text-sm font-semibold text-gray-900">Loading your applications…</p>
+                <p className="text-sm text-gray-500">Fetching your shortlisted and applied jobs.</p>
+              </div>
+            ) : applicationSubTab === "Shortlisted" ? (
               visibleApplicationJobs.length > 0 ? (
                 <div className="flex flex-col gap-4">
                   {visibleApplicationJobs
@@ -2378,6 +2477,9 @@ export default function TalentEngineDashboard() {
                       </div>
                       <div>
                         <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                        {job.jobDocumentId && (
+                          <p className="text-xs text-gray-400 mt-0.5">{job.jobDocumentId}</p>
+                        )}
                         <p className="mt-1 text-sm text-gray-700">{job.company}</p>
                         <div className="mt-3 flex items-center justify-between">
                           <span className="text-xs text-gray-500">Match Score</span>
@@ -2867,18 +2969,29 @@ export default function TalentEngineDashboard() {
                       </button>
                     ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleManualRefresh()}
-                      disabled={isManualRefreshing}
-                      className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
-                      {isManualRefreshing ? "Refreshing..." : "Refresh"}
-                    </button>
+                    <div className="mb-2 flex items-center gap-2">
+                      {!isManualRefreshing && (
+                        <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleManualRefresh()}
+                        disabled={isManualRefreshing}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
+                        {isManualRefreshing ? "Refreshing..." : "Refresh"}
+                      </button>
+                    </div>
                   </div>
 
-                  {applicationSubTab === "Shortlisted" ? (
+                  {!hasAttemptedJobsLoad ? (
+                    <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
+                      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                      <p className="mb-1 text-sm font-semibold text-gray-900">Loading your applications…</p>
+                      <p className="text-sm text-gray-500">Fetching your shortlisted and applied jobs.</p>
+                    </div>
+                  ) : applicationSubTab === "Shortlisted" ? (
                     visibleApplicationJobs.length > 0 ? (
                       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                         <div className="hidden md:block">
@@ -2983,7 +3096,12 @@ export default function TalentEngineDashboard() {
                               }}
                               className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-6 items-center px-6 py-4 border-b last:border-none hover:bg-gray-50 cursor-pointer"
                             >
-                              <p className="font-medium text-gray-900">{job.title}</p>
+                              <div>
+                                <p className="font-medium text-gray-900">{job.title}</p>
+                                {job.jobDocumentId && (
+                                  <p className="text-xs text-gray-400 mt-0.5">{job.jobDocumentId}</p>
+                                )}
+                              </div>
                               <p className="text-sm text-gray-700">{job.company}</p>
                               <p className="flex justify-center">
                                 <MatchCircle score={job.matchPercentage} />
@@ -3007,7 +3125,10 @@ export default function TalentEngineDashboard() {
                               }}
                               className="p-4 hover:bg-gray-50"
                             >
-                              <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                              <h3 className="font-medium text-gray-900">{job.title}</h3>
+                              {job.jobDocumentId && (
+                                <p className="text-xs text-gray-400 mt-0.5 mb-1">{job.jobDocumentId}</p>
+                              )}
                               <p className="text-sm text-gray-600">{job.company}</p>
                               <div className="mt-3 flex items-center justify-between">
                                 <span className="text-xs text-gray-500">Match Score</span>

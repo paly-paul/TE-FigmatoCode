@@ -1,11 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { Calendar, Clock, Globe, Layers, Monitor, Phone, Video, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Calendar,
+  Clock,
+  ExternalLink,
+  Globe,
+  Layers,
+  MapPin,
+  MessageSquare,
+  Monitor,
+  Phone,
+  User,
+  Video,
+  X,
+} from "lucide-react";
+import {
+  extractUrlFromHtml,
+  getInterviewDetails,
+  type InterviewDetailsApi,
+} from "@/services/jobs/interviewsApi";
 
 export type UpcomingInterviewDisplay = {
   id: string;
   jobTitle: string;
+  candidateId?: string;
+  jobId?: string;
   interviewRound?: number;
   interviewType?: string;
   interviewMode?: string;
@@ -75,133 +95,266 @@ function modeBgColor(mode?: string): string {
 
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
+function DetailRow({
+  icon,
+  label,
+  children,
+  iconBg = "bg-gray-50",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+  iconBg?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="min-w-0 pt-0.5">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide leading-none mb-1">
+          {label}
+        </p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function InterviewDetailModal({
   interview,
   onClose,
+  onDetailsLoaded,
 }: {
   interview: UpcomingInterviewDisplay;
   onClose: () => void;
+  onDetailsLoaded?: (det: InterviewDetailsApi) => void;
 }) {
-  const dateLabel = formatSlotDate(interview.slotDate);
-  const timeLabel = formatSlotTime(interview.slotTime);
+  const [details, setDetails] = useState<InterviewDetailsApi | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!interview.candidateId || !interview.jobId) {
+      setDetailsError("Interview details unavailable (missing candidate or job ID).");
+      return;
+    }
+    setDetailsLoading(true);
+    setDetailsError(null);
+    getInterviewDetails(interview.candidateId, interview.jobId)
+      .then((det) => {
+        setDetails(det);
+        onDetailsLoaded?.(det);
+      })
+      .catch((err: unknown) => {
+        setDetails(null);
+        setDetailsError(err instanceof Error ? err.message : "Failed to load interview details.");
+      })
+      .finally(() => setDetailsLoading(false));
+  }, [interview.candidateId, interview.jobId]);
+
+  // Match the schedule entry for the round shown on this card, fall back to first entry
+  const schedule =
+    details?.interview_schedule?.find((s) => s.round === interview.interviewRound) ??
+    details?.interview_schedule?.[0];
+
+  const round = schedule?.round ?? interview.interviewRound;
+  const type = schedule?.interview_type ?? interview.interviewType;
+  const mode = schedule?.interview_mode ?? interview.interviewMode;
+  const date = schedule?.agreed_interview_date ?? interview.slotDate;
+  const time = schedule?.agreed_interview_time ?? interview.slotTime;
+  const timezone = schedule?.agreed_interview_timezone ?? interview.slotTimezone;
+  const meetingUrl =
+    extractUrlFromHtml(schedule?.meeting_invite_content) ??
+    (schedule?.meeting_link?.trim() || schedule?.join_url?.trim() || null);
+  const remarks = schedule?.remarks;
+  const interviewers = schedule?.interviewers ?? [];
+  const customer = schedule?.customer;
+
+  const dateLabel = formatSlotDate(date);
+  const timeLabel = formatSlotTime(time);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Interview details for ${interview.jobTitle}`}
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden
       />
 
       {/* Panel */}
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4 border-b border-gray-100">
-          <div>
-            <div className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 mb-2">
-              <Calendar className="h-3.5 w-3.5" aria-hidden />
-              Interview Scheduled
+      <div className="relative z-10 w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+
+        {/* Coloured header strip */}
+        <div className="shrink-0 bg-gradient-to-r from-blue-600 to-indigo-600 px-5 pt-5 pb-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white mb-2">
+                <Calendar className="h-3.5 w-3.5" aria-hidden />
+                Interview Scheduled
+              </span>
+              <h2 className="text-xl font-bold text-white leading-snug">
+                {interview.jobTitle}
+              </h2>
+              {interview.jobId && (
+                <p className="text-sm text-blue-200 mt-0.5">{interview.jobId}</p>
+              )}
             </div>
-            <h2 className="text-lg font-bold text-gray-900 leading-snug">
-              {interview.jobTitle}
-            </h2>
+            <button
+              onClick={onClose}
+              className="shrink-0 rounded-xl p-1.5 text-white/70 hover:bg-white/20 hover:text-white transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4 flex flex-col gap-4">
-          {/* Round & Type */}
-          {(interview.interviewRound != null || interview.interviewType) && (
-            <div className="flex flex-col gap-3">
-              {interview.interviewRound != null && (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50">
-                    <Layers className="h-4.5 w-4.5 text-violet-500" aria-hidden />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 leading-none mb-0.5">Round</p>
-                    <p className="text-sm font-semibold text-violet-700">
-                      Round {interview.interviewRound}
-                    </p>
-                  </div>
-                </div>
-              )}
+        <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-5">
 
-              {interview.interviewType && (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                    <span className="text-sm font-bold text-blue-500">T</span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400 leading-none mb-0.5">Type</p>
-                    <p className="text-sm font-semibold text-blue-700">{interview.interviewType}</p>
-                  </div>
-                </div>
-              )}
+        {/* Join Meeting CTA — shown only when link is available */}
+        {meetingUrl && (
+          <a
+            href={meetingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-sm font-semibold py-3 shadow-md shadow-emerald-200 transition-colors"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden />
+            Join Meeting
+          </a>
+        )}
+
+          {detailsLoading && (
+            <div className="flex items-center gap-2 justify-center py-2">
+              <div className="h-4 w-4 rounded-full border-2 border-blue-300 border-t-blue-600 animate-spin" />
+              <p className="text-xs text-gray-400">Loading details…</p>
             </div>
           )}
 
-          {/* Mode */}
-          {interview.interviewMode && (
-            <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${modeBgColor(interview.interviewMode)}`}>
-              <ModeIcon mode={interview.interviewMode} size="lg" />
-              <div>
-                <p className="text-xs text-gray-400 leading-none mb-0.5">Interview Mode</p>
-                <p className={`text-sm font-semibold ${modeTextColor(interview.interviewMode)}`}>
-                  {interview.interviewMode}
-                </p>
+          {detailsError && !detailsLoading && (
+            <p className="text-xs text-red-500 text-center rounded-lg bg-red-50 border border-red-100 px-3 py-2">
+              {detailsError}
+            </p>
+          )}
+
+          {/* Interview meta — Round, Type, Mode */}
+          {(round != null || type || mode) && (
+            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 flex flex-col gap-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                Interview Details
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {round != null && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 border border-violet-100 px-3 py-1.5 text-sm font-semibold text-violet-700">
+                    <Layers className="h-3.5 w-3.5" aria-hidden />
+                    Round {round}
+                  </span>
+                )}
+                {type && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5 text-sm font-semibold text-blue-700">
+                    {type}
+                  </span>
+                )}
+                {mode && (
+                  <span className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold ${modeBgColor(mode)} ${modeTextColor(mode)}`}>
+                    <ModeIcon mode={mode} />
+                    {mode}
+                  </span>
+                )}
               </div>
             </div>
           )}
 
           {/* Date & Time */}
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <Calendar className="h-5 w-5 shrink-0 text-indigo-500" aria-hidden />
-              <div>
-                <p className="text-xs text-gray-400 leading-none mb-0.5">Date</p>
-                <p className="text-sm font-semibold text-indigo-700">{dateLabel}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Clock className="h-5 w-5 shrink-0 text-blue-500" aria-hidden />
-              <div>
-                <p className="text-xs text-gray-400 leading-none mb-0.5">Time</p>
-                <p className="text-sm font-semibold text-blue-700">{timeLabel}</p>
-              </div>
-            </div>
-
-            {interview.slotTimezone && (
-              <div className="flex items-center gap-3">
-                <Globe className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 flex flex-col gap-3">
+            <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wide">
+              Schedule
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 shrink-0 text-indigo-500" aria-hidden />
                 <div>
-                  <p className="text-xs text-gray-400 leading-none mb-0.5">Timezone</p>
-                  <p className="text-sm font-medium text-gray-600">{interview.slotTimezone}</p>
+                  <p className="text-xs text-indigo-400 leading-none mb-0.5">Date</p>
+                  <p className="text-sm font-semibold text-indigo-700 leading-snug">{dateLabel}</p>
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 shrink-0 text-blue-500" aria-hidden />
+                <div>
+                  <p className="text-xs text-blue-400 leading-none mb-0.5">Time</p>
+                  <p className="text-sm font-semibold text-blue-700">{timeLabel}</p>
+                </div>
+              </div>
+            </div>
+            {timezone && (
+              <div className="flex items-center gap-2 pt-1 border-t border-indigo-100">
+                <Globe className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+                <p className="text-sm text-gray-500">{timezone}</p>
               </div>
             )}
           </div>
+
+          {/* Extra details from API */}
+          {schedule && (
+            <div className="flex flex-col gap-4">
+              {/* Interviewers */}
+              {interviewers.length > 0 && (
+                <DetailRow
+                  icon={<User className="h-4.5 w-4.5 text-gray-500" aria-hidden />}
+                  label={interviewers.length > 1 ? "Interviewers" : "Interviewer"}
+                  iconBg="bg-gray-100"
+                >
+                  {interviewers.map((iv, i) => (
+                    <div key={i} className={i > 0 ? "mt-1" : ""}>
+                      <p className="text-sm font-semibold text-gray-800">{iv.full_name ?? iv.user}</p>
+                      {iv.email && <p className="text-xs text-gray-500">{iv.email}</p>}
+                    </div>
+                  ))}
+                </DetailRow>
+              )}
+
+              {/* Customer / Company */}
+              {customer && (
+                <DetailRow
+                  icon={<MapPin className="h-4.5 w-4.5 text-orange-500" aria-hidden />}
+                  label="Company"
+                  iconBg="bg-orange-50"
+                >
+                  <p className="text-sm font-semibold text-gray-800">{customer}</p>
+                </DetailRow>
+              )}
+
+              {/* Remarks */}
+              {remarks && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="h-4 w-4 text-amber-500 shrink-0" aria-hidden />
+                    <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
+                      Remarks
+                    </p>
+                  </div>
+                  <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-line">
+                    {remarks}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-5 pb-5">
+        <div className="shrink-0 px-5 pb-5 pt-2 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
             Close
           </button>
@@ -215,9 +368,11 @@ function InterviewDetailModal({
 
 function InterviewCard({
   interview,
+  cachedMeetingUrl,
   onClick,
 }: {
   interview: UpcomingInterviewDisplay;
+  cachedMeetingUrl?: string | null;
   onClick: () => void;
 }) {
   const dateLabel = formatSlotDateShort(interview.slotDate);
@@ -230,10 +385,18 @@ function InterviewCard({
       className="w-full text-left rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-blue-200 hover:bg-blue-50/30 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
       aria-label={`View details for ${interview.jobTitle} interview`}
     >
-      {/* Badge */}
-      <div className="mb-3 inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-        <Calendar className="h-3.5 w-3.5" aria-hidden />
-        Interview Scheduled
+      {/* Top row: badge + meeting chip */}
+      <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+        <div className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+          <Calendar className="h-3.5 w-3.5" aria-hidden />
+          Interview Scheduled
+        </div>
+        {cachedMeetingUrl && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+            <ExternalLink className="h-3 w-3" aria-hidden />
+            Meeting link
+          </span>
+        )}
       </div>
 
       {/* Job title */}
@@ -288,13 +451,6 @@ function InterviewCard({
             )}
           </span>
         </div>
-
-        {interview.slotTimezone && (
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-            <span className="text-gray-500">{interview.slotTimezone}</span>
-          </div>
-        )}
       </div>
 
       {/* Tap hint */}
@@ -307,6 +463,14 @@ function InterviewCard({
 
 export function InterviewActionCardsSection({ items }: { items: UpcomingInterviewDisplay[] }) {
   const [selected, setSelected] = useState<UpcomingInterviewDisplay | null>(null);
+  // Cache meeting URLs keyed by interview id so cards can show the chip after first open
+  const [meetingUrlCache, setMeetingUrlCache] = useState<Record<string, string>>({});
+
+  const handleDetailsLoaded = (id: string, det: InterviewDetailsApi) => {
+    const schedule = det.interview_schedule?.[0];
+    const url = extractUrlFromHtml(schedule?.meeting_invite_content) ?? null;
+    if (url) setMeetingUrlCache((prev) => ({ ...prev, [id]: url }));
+  };
 
   if (items.length === 0) {
     return (
@@ -325,6 +489,7 @@ export function InterviewActionCardsSection({ items }: { items: UpcomingIntervie
           <InterviewCard
             key={interview.id}
             interview={interview}
+            cachedMeetingUrl={meetingUrlCache[interview.id]}
             onClick={() => setSelected(interview)}
           />
         ))}
@@ -334,6 +499,7 @@ export function InterviewActionCardsSection({ items }: { items: UpcomingIntervie
         <InterviewDetailModal
           interview={selected}
           onClose={() => setSelected(null)}
+          onDetailsLoaded={(det) => handleDetailsLoaded(selected.id, det)}
         />
       )}
     </>
