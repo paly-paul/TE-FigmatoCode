@@ -858,7 +858,7 @@ export default function TalentEngineDashboard() {
             type: "General",
             title: job.job_title || "New Matching Roles Added",
             subtitle: `${job.job_title} - ${job.location || job.job_id}`,
-            timestamp: job.status || "Recommended",
+            timestamp: "",
             jobDocumentId: job.job_id,
           }));
         const nextRecommendedJobs: JobListing[] = recommendedJobsRes.map((job) =>
@@ -2117,14 +2117,16 @@ export default function TalentEngineDashboard() {
                       <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
                     </p>
                     <p className="text-base text-slate-700">
-                      <span className="font-semibold text-slate-600">Company: </span>
+                      <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
                       <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
                     </p>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
-                    >
-                      Status: {getActionStatusLabel(card)}
-                    </span>
+                    {card.type !== "General" && (
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                      >
+                        Status: {getActionStatusLabel(card)}
+                      </span>
+                    )}
                   </div>
                 </button>
               );
@@ -2230,13 +2232,6 @@ export default function TalentEngineDashboard() {
                     }}
                     className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
                   >
-                    <div className="mb-3 flex justify-between">
-                      <span className={`rounded-full px-3 py-1 text-xs ${getStatusColor(job.status)}`}>
-                        {job.status}
-                      </span>
-                      <span className="text-xs text-gray-500">{job.postedTime}</span>
-                    </div>
-
                     <div className="mb-3">
                       <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
                     </div>
@@ -2599,14 +2594,16 @@ export default function TalentEngineDashboard() {
                         <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
                       </p>
                       <p className="text-sm text-slate-700">
-                        <span className="font-semibold text-slate-600">Company: </span>
+                        <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
                         <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
                       </p>
-                      <span
-                        className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
-                      >
-                        Status: {getActionStatusLabel(card)}
-                      </span>
+                      {card.type !== "General" && (
+                        <span
+                          className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                        >
+                          Status: {getActionStatusLabel(card)}
+                        </span>
+                      )}
                     </div>
 
                     <button
@@ -2863,13 +2860,6 @@ export default function TalentEngineDashboard() {
                         }}
                         className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
-                        <div className="flex justify-end mb-4">
-                          {/* <span className={`text-xs px-2 sm:px-3 py-1 rounded-full ${getStatusColor(job.status)}`}>
-                            {job.status}
-                          </span> */}
-                          <span className="text-xs text-gray-500">{job.postedTime}</span>
-                        </div>
-
                         <div className="mb-4">
                           <h3 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{job.title}</h3>
                           <div className="flex flex-wrap gap-2 mb-3">

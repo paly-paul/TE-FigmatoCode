@@ -1116,6 +1116,60 @@ export default function MyProfilePage() {
                             </button>
                         </div>
                     </nav>
+
+                    {showPremiumFeaturePopup ? (
+                        <div
+                            className={`fixed inset-0 z-[70] flex items-center justify-center px-4 transition-all duration-300 ${
+                                premiumPopupVisible ? "bg-black/45 opacity-100" : "bg-black/0 opacity-0"
+                            }`}
+                        >
+                            <div
+                                className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-violet-50 p-6 shadow-2xl transition-all duration-500 ${
+                                    premiumPopupVisible
+                                        ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
+                                        : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                                }`}
+                            >
+                                <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
+                                <span className="absolute right-12 top-16 h-2 w-2 rounded-full bg-violet-300 animate-ping" />
+                                <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-indigo-300 animate-ping" />
+                                <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full bg-cyan-300 animate-ping" />
+                                <span className="absolute h-24 w-24 rounded-full border-2 border-blue-200/70 animate-pulse" />
+                                <span className="absolute h-32 w-32 rounded-full border border-violet-200/60 animate-pulse [animation-delay:300ms]" />
+
+                                <div className="relative z-10 text-center">
+                                    <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-violet-100 text-violet-600 shadow-sm">
+                                        <span className="absolute inset-0 rounded-full bg-violet-400/25 animate-ping" />
+                                        <Sparkles className="relative h-7 w-7" />
+                                    </div>
+                                    <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+                                        Premium Feature
+                                    </p>
+                                    <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
+                                        Persona and Active Profile controls are available with Premium. Upgrade to unlock these features.
+                                    </p>
+                                    <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPremiumFeaturePopup(false)}
+                                            disabled={true}
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+                                        >
+                                            <Lock className="h-4 w-4" />
+                                            Upgrade to Premium (Coming Soon)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPremiumFeaturePopup(false)}
+                                            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                        >
+                                            Maybe Later
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             </CandidateAppShell>
         );

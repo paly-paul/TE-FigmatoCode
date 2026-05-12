@@ -985,6 +985,7 @@ function BasicDetailsPageContent() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
   const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [isSaveDraftButtonSaving, setIsSaveDraftButtonSaving] = useState(false);
   const [navigateAfterSave, setNavigateAfterSave] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -5029,10 +5030,13 @@ function BasicDetailsPageContent() {
             variant="outline"
             fullWidth={false}
             className="px-6 sm:px-8"
-            onClick={() => void handleSaveDraft()}
-            disabled={!hasUnsavedChanges}
+            onClick={() => {
+              setIsSaveDraftButtonSaving(true);
+              void handleSaveDraft().finally(() => setIsSaveDraftButtonSaving(false));
+            }}
+            disabled={!hasUnsavedChanges || isSaveDraftButtonSaving}
           >
-            Save Draft
+            {isSaveDraftButtonSaving ? "Saving..." : "Save Draft"}
           </Button>
           <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext} disabled={isDraftSaving}>
             {isDraftSaving ? "Saving..." : "Next"}

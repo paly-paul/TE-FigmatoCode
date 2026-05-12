@@ -55,6 +55,16 @@ export type ActionCenterCard = {
   matchScore?: number;
 };
 
+function formatRelativeDaysAgo(date?: string): string {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  const diffDays = Math.floor((Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 1) return "Today";
+  if (diffDays === 1) return "1 day ago";
+  return `${diffDays} days ago`;
+}
+
 function recommendedStatusFromScore(score: number): DashboardJobListing["status"] {
   if (score >= 85) return "Strong Match";
   if (score >= 70) return "Early Applicants";
@@ -133,14 +143,14 @@ export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJob
     location: j.location,
     locationId: locId,
     locationFull: j.location,
-    company: "—",
+    company: j.customer || "—",
     salary: label,
     hourlyRate: value,
     startDate: j.rotation ? `Rotation: ${j.rotation}` : "—",
     matchPercentage: score,
     status: recommendedStatusFromScore(score),
     stage: "Received",
-    postedTime: j.status || "—",
+    postedTime: j.posted_time || formatRelativeDaysAgo(j.creation),
     skills: j.key_skills ?? [],
     employmentType: billingFrequencyLabel(j),
     seniorityLevel: rotationYesNo(j),
@@ -211,7 +221,7 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
     matchPercentage: Math.max(0, Math.min(100, Math.round(score))),
     status: "New",
     stage: resolvedStage,
-    postedTime: row.date || "—",
+    postedTime: formatRelativeDaysAgo(row.date),
     skills: [],
     employmentType: "—",
     seniorityLevel: "—",
