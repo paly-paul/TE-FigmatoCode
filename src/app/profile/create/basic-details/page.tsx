@@ -907,12 +907,8 @@ function MobileAccordionCard({
 function BasicDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isEditMode = isLikelyDocId(
-    searchParams.get("profile_name")?.trim() ||
-    searchParams.get("profile")?.trim() ||
-    getProfileName()?.trim() ||
-    ""
-  );
+  /** Cancel only for explicit edit entry (`profile_name=…` from My Profile, etc.). Wizard handoff uses `profile=…` — never show Cancel there, including while saving draft. */
+  const showCancelEditProfile = isLikelyDocId(searchParams.get("profile_name")?.trim() || "");
   const generateButtonRef = useRef<HTMLButtonElement>(null);
   const profilePicInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<BasicDetailsForm>(initialForm);
@@ -2325,8 +2321,11 @@ function BasicDetailsPageContent() {
       searchParams.get("profile_name")?.trim() ||
       getProfileName() ||
       "";
+    const useProfileNameInWizardUrls = isLikelyDocId(searchParams.get("profile_name")?.trim() || "");
     const nextUrl = queryProfileName
-      ? `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
+      ? useProfileNameInWizardUrls
+        ? `/profile/create/skills-projects?profile_name=${encodeURIComponent(queryProfileName)}`
+        : `/profile/create/skills-projects?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/skills-projects";
     if (hasUnsavedChanges) {
       setIsDraftSaving(true);
@@ -2704,8 +2703,8 @@ function BasicDetailsPageContent() {
 
   function handleCancelEditProfile() {
     const profileName =
-      searchParams.get("profile")?.trim() ||
       searchParams.get("profile_name")?.trim() ||
+      searchParams.get("profile")?.trim() ||
       getProfileName()?.trim() ||
       "";
     const target = profileName ? `/profile/${encodeURIComponent(profileName)}` : "/profile";
@@ -5017,7 +5016,7 @@ function BasicDetailsPageContent() {
           ) : null}
         </div>
         <div className="flex items-center gap-3">
-          {isEditMode ? (
+          {showCancelEditProfile ? (
             <Button
               variant="outline"
               fullWidth={false}
