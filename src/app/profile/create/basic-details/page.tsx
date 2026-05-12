@@ -1633,6 +1633,8 @@ function BasicDetailsPageContent() {
       email: form.email,
       nationality: form.nationality,
       currentLocation: form.currentLocation,
+      workAuthorization: form.workAuthorization,
+      preferredIndustry: form.preferredIndustry,
       education: education.map((e) => ({ title: e.title, institute: e.institute })),
       certifications: certifications.map((e) => ({ name: e.name, issuing: e.issuing })),
       externalLinks: externalLinks.map((e) => ({ label: e.label, url: e.url })),
