@@ -69,31 +69,44 @@ function scorePersonal(b: BasicInputs): number {
   return pts;
 }
 
-// Education — first entry only, max 10 pts (title=6, institute=4)
-function scoreFirstEducation(entries: ResumeEducationEntry[] | undefined): number {
-  if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const e = entries[0];
-  return (truthyTrim(e.title) ? 6 : 0) + (truthyTrim(e.institute) ? 4 : 0);
+// Averages scores across all entries so incomplete additional sets reduce the section score.
+function avgScore(scores: number[], maxPerEntry: number): number {
+  if (scores.length === 0) return 0;
+  const total = scores.reduce((s, n) => s + n, 0);
+  return Math.round(total / scores.length);
 }
 
-// Certifications — first entry only, max 5 pts (name=3, issuing=2)
-function scoreFirstCertification(entries: ResumeCertificationEntry[] | undefined): number {
+// Education — all entries averaged, max 10 pts per entry (title=6, institute=4)
+function scoreEducation(entries: ResumeEducationEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const e = entries[0];
-  return (truthyTrim(e.name) ? 3 : 0) + (truthyTrim(e.issuing) ? 2 : 0);
+  return avgScore(
+    entries.map((e) => (truthyTrim(e.title) ? 6 : 0) + (truthyTrim(e.institute) ? 4 : 0)),
+    10
+  );
 }
 
-// External Links — first entry only, max 5 pts (label=2, url=3)
-function scoreFirstExternalLink(entries: ResumeExternalLinkEntry[] | undefined): number {
+// Certifications — all entries averaged, max 5 pts per entry (name=3, issuing=2)
+function scoreCertification(entries: ResumeCertificationEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const e = entries[0];
-  return (truthyTrim(e.label) ? 2 : 0) + (truthyTrim(e.url) ? 3 : 0);
+  return avgScore(
+    entries.map((e) => (truthyTrim(e.name) ? 3 : 0) + (truthyTrim(e.issuing) ? 2 : 0)),
+    5
+  );
 }
 
-// Languages — first entry only, max 5 pts (language name=5)
-function scoreFirstLanguage(entries: ResumeLanguageEntry[] | undefined): number {
+// External Links — all entries averaged, max 5 pts per entry (label=2, url=3)
+function scoreExternalLink(entries: ResumeExternalLinkEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  return truthyTrim(entries[0].language) ? 5 : 0;
+  return avgScore(
+    entries.map((e) => (truthyTrim(e.label) ? 2 : 0) + (truthyTrim(e.url) ? 3 : 0)),
+    5
+  );
+}
+
+// Languages — all entries averaged, max 5 pts per entry (language name=5)
+function scoreLanguage(entries: ResumeLanguageEntry[] | undefined): number {
+  if (!Array.isArray(entries) || entries.length === 0) return 0;
+  return avgScore(entries.map((e) => (truthyTrim(e.language) ? 5 : 0)), 5);
 }
 
 // Key Skills — binary, max 10 pts
@@ -101,30 +114,35 @@ function scoreKeySkills(skills: string[] | undefined): number {
   return Array.isArray(skills) && skills.some((s) => truthyTrim(s)) ? 10 : 0;
 }
 
-// Work Experience (session entries) — first entry only, max 10 pts
+// Work Experience (session entries) — all entries averaged, max 10 pts per entry
 // (jobTitle or company)=5, duration=5
-function scoreFirstWorkExperience(entries: ResumeWorkExperienceEntry[] | undefined): number {
+function scoreWorkExperience(entries: ResumeWorkExperienceEntry[] | undefined): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const e = entries[0];
-  return (
-    (truthyTrim(e.jobTitle) || truthyTrim(e.company) ? 5 : 0) +
-    (truthyTrim(e.duration) ? 5 : 0)
+  return avgScore(
+    entries.map(
+      (e) =>
+        (truthyTrim(e.jobTitle) || truthyTrim(e.company) ? 5 : 0) +
+        (truthyTrim(e.duration) ? 5 : 0)
+    ),
+    10
   );
 }
 
-// Live experience entries (skills-projects screen) — first entry only, max 10 pts
+// Live experience entries (skills-projects screen) — all entries averaged, max 10 pts per entry
 // experience=5, experienceYears=5
-function scoreFirstLiveExperience(
+function scoreLiveExperience(
   entries: Array<{ experience?: string; experienceYears?: string; experienceReference?: string }> | undefined
 ): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const e = entries[0];
-  return (truthyTrim(e.experience) ? 5 : 0) + (truthyTrim(e.experienceYears) ? 5 : 0);
+  return avgScore(
+    entries.map((e) => (truthyTrim(e.experience) ? 5 : 0) + (truthyTrim(e.experienceYears) ? 5 : 0)),
+    10
+  );
 }
 
-// Projects — first entry only, max 10 pts
+// Projects — all entries averaged, max 10 pts per entry
 // title=2, company=2, startDate=2, description(>=30)=2, responsibilities(>=20)=2
-function scoreFirstProject(
+function scoreProject(
   entries:
     | Array<{
         projectTitle?: string;
@@ -137,16 +155,20 @@ function scoreFirstProject(
     | undefined
 ): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
-  const p = entries[0];
-  let pts = 0;
-  if (truthyTrim(p.projectTitle)) pts += 2;
-  if (truthyTrim(p.customerCompany)) pts += 2;
-  if (truthyTrim((p as { projectStartDate?: string }).projectStartDate)) pts += 2;
-  const desc = typeof p.projectDescription === "string" ? p.projectDescription.trim() : "";
-  if (desc.length >= 30) pts += 2;
-  const resp = typeof p.responsibilities === "string" ? p.responsibilities.trim() : "";
-  if (resp.length >= 20) pts += 2;
-  return pts;
+  return avgScore(
+    entries.map((p) => {
+      let pts = 0;
+      if (truthyTrim(p.projectTitle)) pts += 2;
+      if (truthyTrim(p.customerCompany)) pts += 2;
+      if (truthyTrim((p as { projectStartDate?: string }).projectStartDate)) pts += 2;
+      const desc = typeof p.projectDescription === "string" ? p.projectDescription.trim() : "";
+      if (desc.length >= 30) pts += 2;
+      const resp = typeof p.responsibilities === "string" ? p.responsibilities.trim() : "";
+      if (resp.length >= 20) pts += 2;
+      return pts;
+    }),
+    10
+  );
 }
 
 export function computeOverallProfileProgress(args?: {
@@ -197,10 +219,10 @@ export function computeOverallProfileProgress(args?: {
   const basicPts =
     scoreProfessional(basic) +
     scorePersonal(basic) +
-    scoreFirstEducation(basic.education) +
-    scoreFirstCertification(basic.certifications) +
-    scoreFirstExternalLink(basic.externalLinks) +
-    scoreFirstLanguage(basic.languages);
+    scoreEducation(basic.education) +
+    scoreCertification(basic.certifications) +
+    scoreExternalLink(basic.externalLinks) +
+    scoreLanguage(basic.languages);
 
   // Skills & Projects: 10 + 10 + 10 = 30 pts
   const liveSkills = args?.liveSkills;
@@ -210,10 +232,10 @@ export function computeOverallProfileProgress(args?: {
   const skillsPts = scoreKeySkills(liveSkills ?? profile.keySkills ?? []);
 
   const workExpPts = liveExperiences
-    ? scoreFirstLiveExperience(liveExperiences)
-    : scoreFirstWorkExperience(profile.workExperience);
+    ? scoreLiveExperience(liveExperiences)
+    : scoreWorkExperience(profile.workExperience);
 
-  const projectsPts = scoreFirstProject(liveProjects ?? profile.projects);
+  const projectsPts = scoreProject(liveProjects ?? profile.projects);
 
   const skillsSectionPts = skillsPts + workExpPts + projectsPts;
 
