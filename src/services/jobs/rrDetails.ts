@@ -72,6 +72,8 @@ function resolveRotationCycle(row: Record<string, unknown>): string {
 
 export type RrDetailsApi = {
   rr_name: string;
+  /** Client / end customer (Resource Requirement `customer`). */
+  customer: string;
   location: string;
   location_full: string;
   position_start_date: string;
@@ -99,6 +101,7 @@ export async function getRrDetails(rrName: string): Promise<RrDetailsApi> {
   const root = unwrapPayload(data);
   return {
     rr_name: firstString(root, ["rr_name", "name", "job_id"]),
+    customer: firstString(root, ["customer", "company", "client", "organization"]),
     location: firstString(root, ["location", "city"]),
     location_full: firstString(root, ["location_full", "country", "location_name"]),
     position_start_date: firstString(root, ["position_start_date", "start_date", "project_est_start_date", "from_date"]),

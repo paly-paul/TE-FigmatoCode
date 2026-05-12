@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
+  Building2,
   Calendar,
   ChevronDown,
   ChevronUp,
@@ -46,10 +47,13 @@ import {
   markInterestedInJob,
 } from "@/services/jobs/actionCenter";
 import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
+import { getRrDetails } from "@/services/jobs/rrDetails";
 
 interface JobCard {
   id: number;
   title: string;
+  /** Hiring organization (API `customer`). */
+  company: string;
   status: "Strong Match" | "Closing Soon" | "Early Applicants" | "New";
   postedTime: string;
   location: string;
@@ -73,6 +77,8 @@ interface ActionCard {
   timestamp: string;
   jobDocumentId?: string;
   matchPercentage?: number;
+  /** API `customer`; shown in drawer until RR details load. */
+  customer?: string;
 }
 
 function recencyScoreFromPostedTime(postedTime: string): number {
@@ -139,6 +145,7 @@ const JOBS: JobCard[] = [
   {
     id: 1,
     title: "Fuel Operation Engineer",
+    company: "SolarWave Initiative",
     status: "Strong Match",
     postedTime: "6 days ago",
     location: "Bangor",
@@ -155,6 +162,7 @@ const JOBS: JobCard[] = [
   {
     id: 2,
     title: "Mechanical Technician",
+    company: "WindHarvest Co",
     status: "Closing Soon",
     postedTime: "20 days ago",
     location: "Little Flock",
@@ -171,6 +179,7 @@ const JOBS: JobCard[] = [
   {
     id: 3,
     title: "Pump Maintenance Engineer",
+    company: "HydroFlow Solutions",
     status: "Early Applicants",
     postedTime: "1 day ago",
     location: "Bangalov",
@@ -187,6 +196,7 @@ const JOBS: JobCard[] = [
   {
     id: 4,
     title: "Pump Operator",
+    company: "GreenFuel Innovations",
     status: "New",
     postedTime: "1 day ago",
     location: "Bangor",
@@ -203,6 +213,7 @@ const JOBS: JobCard[] = [
   {
     id: 5,
     title: "Fuel Operation Engineer",
+    company: "SolarWave Initiative",
     status: "Strong Match",
     postedTime: "6 days ago",
     location: "Bangor",
@@ -219,6 +230,7 @@ const JOBS: JobCard[] = [
   {
     id: 6,
     title: "Mechanical Technician",
+    company: "WindHarvest Co",
     status: "Closing Soon",
     postedTime: "20 days ago",
     location: "Little Flock",
@@ -635,14 +647,33 @@ function JobsCard({
           : "cursor-pointer rounded-lg border-b-4 border-b-blue-600 p-4 hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
       }`}
     >
-      <div className="mb-3 sm:mb-4">
+      <div className="mb-3 flex flex-col gap-2 sm:mb-4">
         <h3
-          className={`font-semibold text-gray-900 ${compact ? "text-base" : "mb-3 text-base sm:mb-4 sm:text-lg"}`}
+          className={`font-semibold text-gray-900 ${compact ? "text-base" : "text-base sm:text-lg"}`}
         >
           {job.title}
         </h3>
+        {(() => {
+          const raw = job.company.trim();
+          const hasCustomer = Boolean(raw && raw !== "—");
+          const display = hasCustomer ? raw : "—";
+          return (
+            <p
+              className={`flex min-w-0 items-center gap-2 ${compact ? "text-xs" : "text-sm"} ${
+                hasCustomer ? "text-gray-700" : "text-gray-400"
+              }`}
+              title="Customer (hiring organization)"
+            >
+              <Building2
+                size={compact ? 14 : 16}
+                className={`shrink-0 ${hasCustomer ? "text-slate-500" : "text-gray-400"}`}
+              />
+              <span className="truncate">{display}</span>
+            </p>
+          );
+        })()}
         {!compact ? (
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             {job.skills.map((skill) => (
               <span
                 key={skill}
@@ -895,6 +926,49 @@ export default function TalentEngineJobsPage() {
 
   }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
 
+  /** Recommended list often omits `customer`; match the drawer by filling from RR details. */
+  useEffect(() => {
+    if (!hasAttemptedJobsLoad || apiRecommendedJobs.length === 0) return;
+    const targets = apiRecommendedJobs.filter(
+      (j) => j.jobDocumentId?.trim() && (!j.company.trim() || j.company === "—")
+    );
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    const concurrency = 4;
+
+    void (async () => {
+      const updates = new Map<number, string>();
+      for (let i = 0; i < targets.length; i += concurrency) {
+        if (cancelled) return;
+        const batch = targets.slice(i, i + concurrency);
+        await Promise.all(
+          batch.map(async (j) => {
+            const rrName = j.jobDocumentId!.trim();
+            try {
+              const details = await getRrDetails(rrName);
+              const customer = details.customer?.trim();
+              if (customer) updates.set(j.id, customer);
+            } catch {
+              // RR fetch is best-effort; card still shows "—".
+            }
+          })
+        );
+      }
+      if (cancelled || updates.size === 0) return;
+      setApiRecommendedJobs((prev) =>
+        prev.map((job) => {
+          const nextCompany = updates.get(job.id);
+          return nextCompany ? { ...job, company: nextCompany } : job;
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
+
   useEffect(() => {
     prefetchDropdownDetailsAfterLogin();
   }, []);
@@ -991,7 +1065,7 @@ export default function TalentEngineJobsPage() {
     return jobsSource.filter((job) => {
       const matchesSearch =
         normalizedQuery.length === 0 ||
-        [job.title, job.location, job.locationFull]
+        [job.title, job.company, job.location, job.locationFull]
           .join(" ")
           .toLowerCase()
           .includes(normalizedQuery);
@@ -1078,7 +1152,7 @@ export default function TalentEngineJobsPage() {
     const results = jobsSource.filter((job) => {
       const matchesSearch =
         normalizedQuery.length === 0 ||
-        [job.title, job.location, job.locationFull]
+        [job.title, job.company, job.location, job.locationFull]
           .join(" ")
           .toLowerCase()
           .includes(normalizedQuery);
@@ -1170,6 +1244,7 @@ export default function TalentEngineJobsPage() {
       timestamp: job.postedTime,
       jobDocumentId: job.jobDocumentId,
       matchPercentage: job.matchPercentage,
+      customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
     };
 
     setDrawerSuccessMessage(null);

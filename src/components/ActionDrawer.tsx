@@ -73,6 +73,8 @@ export interface ActionDrawerActionCard {
   applicationStage?: string;
   applicationAppliedDate?: string;
   matchPercentage?: number;
+  /** Hiring organization (API `customer`); shown until RR details load. */
+  customer?: string;
 }
 
 interface ActionDrawerProps {
@@ -411,6 +413,9 @@ export default function ActionDrawer({
     (!(isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation)
       ? (action?.subtitle.split(" - ")[1] ?? "")
       : "");
+
+  const resolvedCustomer =
+    rrDetails?.customer?.trim() || action?.customer?.trim() || "";
 
   const resolveInterviewTags = (): string[] => {
     if (!action) return [...actionDrawerInterview.tags];
@@ -1688,6 +1693,12 @@ export default function ActionDrawer({
         </div>
 
         <h3 className="text-base font-semibold text-[#202939]">{roleTitle}</h3>
+        {resolvedCustomer ? (
+          <p className="mt-1.5 flex items-center gap-2 text-sm text-[#5E7397]">
+            <Building2 size={16} className="shrink-0" />
+            <span className="text-[#374151]">{resolvedCustomer}</span>
+          </p>
+        ) : null}
         <p className="mt-2 flex items-center gap-2 text-sm text-[#5E7397]">
           <MapPin size={16} className="shrink-0" />
           <span>
@@ -1746,14 +1757,22 @@ export default function ActionDrawer({
           </div>
 
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <h3 className="text-base font-semibold text-[#202939] sm:text-lg lg:text-xl">{roleTitle}</h3>
-              <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
-                <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
-                <span>
-                  {locationLabel} | {resolvedLocationSuffix}
-                </span>
-              </p>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <h3 className="text-base font-semibold text-[#202939] sm:text-lg lg:text-xl">{roleTitle}</h3>
+                <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
+                  <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
+                  <span>
+                    {locationLabel} | {resolvedLocationSuffix}
+                  </span>
+                </p>
+              </div>
+              {resolvedCustomer ? (
+                <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:text-sm">
+                  <Building2 size={14} className="shrink-0 sm:h-4 sm:w-4" />
+                  <span className="text-[#374151]">{resolvedCustomer}</span>
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 self-start xl:self-center sm:gap-2.5">
               <span className="text-sm font-medium text-[#5E7397] sm:text-base">
