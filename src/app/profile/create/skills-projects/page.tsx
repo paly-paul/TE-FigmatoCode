@@ -234,6 +234,38 @@ function isProjectEmpty(e: ProjectEntry) {
   );
 }
 
+/** Stable JSON for dirty-check / saved baseline (used with live refs after async hydration). */
+function serializeWizardSnapshot(
+  skills: string[],
+  experiences: ExperienceEntry[],
+  projects: ProjectEntry[]
+): string {
+  return JSON.stringify({
+    skills: dedupeSkills(skills)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b)),
+    experiences: experiences
+      .filter((entry) => !isExperienceEmpty(entry))
+      .map((entry) => ({
+        experience: entry.experience.trim(),
+        experienceYears: entry.experienceYears.trim(),
+        experienceReference: entry.experienceReference.trim(),
+      })),
+    projects: projects
+      .filter((project) => !isProjectEmpty(project))
+      .map((project) => ({
+        projectTitle: project.projectTitle.trim(),
+        customerCompany: project.customerCompany.trim(),
+        projectStartDate: project.projectStartDate,
+        projectEndDate: project.projectEndDate,
+        inProgress: project.inProgress,
+        projectDescription: project.projectDescription.trim(),
+        responsibilities: project.responsibilities.trim(),
+      })),
+  });
+}
+
 function toBackendCurrentLocation(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -390,6 +422,13 @@ function SkillsProjectsPageContent() {
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const hasUnsavedChangesRef = useRef(false);
   const editBackBypassRef = useRef(false);
+  /** Always latest wizard rows — backend loader defers baseline with setTimeout; must not use a stale buildCurrentSnapshot closure. */
+  const skillsLiveRef = useRef(skills);
+  const experiencesLiveRef = useRef(experiences);
+  const projectsLiveRef = useRef(projects);
+  skillsLiveRef.current = skills;
+  experiencesLiveRef.current = experiences;
+  projectsLiveRef.current = projects;
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
     keySkills: true,
     experiences: false,
@@ -407,30 +446,7 @@ function SkillsProjectsPageContent() {
   }, []);
 
   function buildCurrentSnapshot(): string {
-    return JSON.stringify({
-      skills: dedupeSkills(skills)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-      experiences: experiences
-        .filter((entry) => !isExperienceEmpty(entry))
-        .map((entry) => ({
-          experience: entry.experience.trim(),
-          experienceYears: entry.experienceYears.trim(),
-          experienceReference: entry.experienceReference.trim(),
-        })),
-      projects: projects
-        .filter((project) => !isProjectEmpty(project))
-        .map((project) => ({
-          projectTitle: project.projectTitle.trim(),
-          customerCompany: project.customerCompany.trim(),
-          projectStartDate: project.projectStartDate,
-          projectEndDate: project.projectEndDate,
-          inProgress: project.inProgress,
-          projectDescription: project.projectDescription.trim(),
-          responsibilities: project.responsibilities.trim(),
-        })),
-    });
+    return serializeWizardSnapshot(skills, experiences, projects);
   }
 
   function markCurrentAsSaved() {
@@ -651,12 +667,8 @@ function SkillsProjectsPageContent() {
     return projects.every((p) => isProjectEmpty(p) || Object.keys(validateProjectEntry(p)).length === 0);
   }
 
-  const queryProfileNameForProgress =
-    searchParams.get("profile")?.trim() ||
-    searchParams.get("profile_name")?.trim() ||
-    "";
-  const effectiveProfileNameForProgress = queryProfileNameForProgress || getProfileName() || "";
-  const isEditModeForProgress = isLikelyDocId(effectiveProfileNameForProgress);
+  /** Wizard uses `profile=` between steps; edit-from-app uses `profile_name=`. Never show Cancel during create, including after draft save. */
+  const showCancelEditProfile = isLikelyDocId(searchParams.get("profile_name")?.trim() || "");
   const completionPercent = computeOverallProfileProgress({
     liveSkills: skills,
     liveExperiences: experiences.map((entry) => ({
@@ -682,7 +694,12 @@ function SkillsProjectsPageContent() {
       searchParams.get("profile_name")?.trim() ||
       "";
     const effectiveProfileName = queryProfileName || getProfileName() || "";
-    if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) return;
+    if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) {
+      // Local resume draft is skipped — backend effect establishes baseline. Still unblock
+      // hasUnsavedChanges sync (otherwise edits never set dirty and Previous won't save).
+      setIsHydratingInitialData(false);
+      return;
+    }
     try {
       const data = safeReadResumeSkillsDraft();
       if (!data) return;
@@ -758,7 +775,13 @@ function SkillsProjectsPageContent() {
 
   useEffect(() => {
     if (isHydratingInitialData) return;
-    // Establish post-hydration baseline so navigation doesn't treat preload data as unsaved edits.
+    const queryProfileName =
+      searchParams.get("profile")?.trim() ||
+      searchParams.get("profile_name")?.trim() ||
+      "";
+    const effectiveProfileName = queryProfileName || getProfileName() || getCandidateId() || "";
+    // Doc-id flows: baseline + cleared dirty state come from the backend fetch setTimeout.
+    if (effectiveProfileName && isLikelyDocId(effectiveProfileName)) return;
     setSavedSnapshot(buildCurrentSnapshot());
     setHasUnsavedChanges(false);
   }, [isHydratingInitialData]);
@@ -1133,44 +1156,44 @@ function SkillsProjectsPageContent() {
                     ? (fromWorkExp as ExperienceEntry[])
                     : mergeExperienceEntriesPreferRich(prev, fromWorkExp as ExperienceEntry[]))
                 );
-                return;
-              }
+              } else {
+                const fromProjects =
+                  projectsTable.length
+                    ? projectsTable
+                        .map((row: any) => {
+                          const company =
+                            typeof row?.customer_company === "string" ? row.customer_company.trim() : "";
+                          const role = parseRoleFromText(row?.roles_responsibilities);
+                          const title = typeof row?.title === "string" ? row.title.trim() : "";
+                          const base = role || title;
+                          const label = [base, company].filter(Boolean).join(" - ").trim();
+                          if (!label) return null;
+                          const years = yearsFromRange(row?.start_date, row?.end_date);
+                          return createExperienceEntry({
+                            experience: label,
+                            experienceYears: years,
+                            experienceReference: "",
+                          });
+                        })
+                        .filter(Boolean)
+                    : [];
 
-              const fromProjects =
-                projectsTable.length
-                  ? projectsTable
-                      .map((row: any) => {
-                        const company = typeof row?.customer_company === "string" ? row.customer_company.trim() : "";
-                        const role = parseRoleFromText(row?.roles_responsibilities);
-                        const title = typeof row?.title === "string" ? row.title.trim() : "";
-                        // Prefer role; fall back to project title.
-                        const base = role || title;
-                        const label = [base, company].filter(Boolean).join(" - ").trim();
-                        if (!label) return null;
-                        const years = yearsFromRange(row?.start_date, row?.end_date);
-                        return createExperienceEntry({ experience: label, experienceYears: years, experienceReference: "" });
-                      })
-                      .filter(Boolean)
-                  : [];
+                if (!hasSkillTableMappedExperiences && (fromProjects as ExperienceEntry[])?.length) {
+                  const seen = new Set<string>();
+                  const deduped = (fromProjects as ExperienceEntry[]).filter((entry) => {
+                    const key = entry.experience.trim().toLowerCase().replace(/\s+/g, " ");
+                    if (!key) return false;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
 
-              if (hasSkillTableMappedExperiences || !(fromProjects as ExperienceEntry[])?.length) {
-                return;
-              }
-
-              // De-dupe by normalized label.
-              const seen = new Set<string>();
-              const deduped = (fromProjects as ExperienceEntry[]).filter((entry) => {
-                const key = entry.experience.trim().toLowerCase().replace(/\s+/g, " ");
-                if (!key) return false;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-              });
-
-              if (deduped.length) {
-              setExperiences((prev) =>
-                isEditMode ? deduped : mergeExperienceEntriesPreferRich(prev, deduped)
-              );
+                  if (deduped.length) {
+                    setExperiences((prev) =>
+                      isEditMode ? deduped : mergeExperienceEntriesPreferRich(prev, deduped)
+                    );
+                  }
+                }
               }
             }
           }
@@ -1202,7 +1225,12 @@ function SkillsProjectsPageContent() {
         if (!cancelled) {
           window.setTimeout(() => {
             if (cancelled) return;
-            setSavedSnapshot(buildCurrentSnapshot());
+            const baseline = serializeWizardSnapshot(
+              skillsLiveRef.current,
+              experiencesLiveRef.current,
+              projectsLiveRef.current
+            );
+            setSavedSnapshot(baseline);
             setHasUnsavedChanges(false);
           }, 0);
         }
@@ -2272,16 +2300,19 @@ function SkillsProjectsPageContent() {
       searchParams.get("profile_name")?.trim() ||
       getProfileName() ||
       "";
+    const useProfileNameInWizardUrls = isLikelyDocId(searchParams.get("profile_name")?.trim() || "");
     const previousUrl = queryProfileName
-      ? `/profile/create/basic-details?profile=${encodeURIComponent(queryProfileName)}`
+      ? useProfileNameInWizardUrls
+        ? `/profile/create/basic-details?profile_name=${encodeURIComponent(queryProfileName)}`
+        : `/profile/create/basic-details?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/basic-details";
 
     persistWizardSkillsToResumeProfile();
 
-    const needsServerDraft =
-      hasUnsavedChangesRef.current ||
-      hasUnsavedChanges ||
-      buildCurrentSnapshot() !== savedSnapshot;
+    // Live snapshot vs saved baseline (refs fix deferred baseline after async load). Flags cover
+    // same-tick edits; avoid relying on flags alone when baseline was applied from a stale closure.
+    const liveDirty = buildCurrentSnapshot() !== savedSnapshot;
+    const needsServerDraft = liveDirty || hasUnsavedChangesRef.current || hasUnsavedChanges;
     if (needsServerDraft) {
       setIsSubmittingProfile(true);
       const saved = await handleSaveDraft();
@@ -2295,8 +2326,8 @@ function SkillsProjectsPageContent() {
 
   function handleCancelEditProfile() {
     const profileName =
-      searchParams.get("profile")?.trim() ||
       searchParams.get("profile_name")?.trim() ||
+      searchParams.get("profile")?.trim() ||
       getProfileName()?.trim() ||
       "";
     const target = profileName ? `/profile/${encodeURIComponent(profileName)}` : "/profile";
@@ -3103,7 +3134,7 @@ function SkillsProjectsPageContent() {
           ) : null}
         </div>
         <div className="flex items-center gap-3">
-          {isEditModeForProgress ? (
+          {showCancelEditProfile ? (
             <Button
               variant="outline"
               fullWidth={false}

@@ -25,6 +25,8 @@ export type DashboardJobListing = {
 export type JobsPageCard = {
   id: number;
   title: string;
+  /** Same as API `customer` (hiring organization). */
+  company: string;
   status: "Strong Match" | "Closing Soon" | "Early Applicants" | "New";
   postedTime: string;
   location: string;
@@ -163,6 +165,7 @@ export function mapRecommendedToJobsPageCard(j: RecommendedJobApi): JobsPageCard
   return {
     id: dash.id,
     title: dash.title,
+    company: dash.company,
     status: dash.status,
     postedTime: dash.postedTime,
     location: dash.location,

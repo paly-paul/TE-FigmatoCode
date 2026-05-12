@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
+  Building2,
   Search,
   MapPin,
   Bookmark,
@@ -65,6 +66,7 @@ import {
 } from "@/services/jobs/mapApiJobsToUi";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { getAllLocationOptions } from "@/services/jobs/locationOptions";
+import { getRrDetails } from "@/services/jobs/rrDetails";
 import { StatusPopup } from "../ui/StatusPopup";
 import { JobSuccessPopup } from "../ui/JobSuccessPopup";
 
@@ -95,6 +97,8 @@ interface ActionCard {
   applicationStage?: string;
   applicationAppliedDate?: string;
   matchPercentage?: number;
+  /** API `customer`; shown in job drawer. */
+  customer?: string;
 }
 
 function mapActionableInterviewSlots(
@@ -469,6 +473,27 @@ function rotationBucketFromJobListing(job: JobListing): string {
   return normalizeRotationForDashboardFilter(job.seniorityLevel);
 }
 
+function DashboardRecommendedJobCustomerLine({ company }: { company: string }) {
+  const raw = company.trim();
+  const hasCustomer = Boolean(raw && raw !== "—");
+  const display = hasCustomer ? raw : "—";
+  return (
+    <p
+      className="mt-1 flex min-w-0 items-center gap-2 text-sm"
+      title="Customer (hiring organization)"
+    >
+      <Building2
+        size={16}
+        className={`h-4 w-4 shrink-0 ${hasCustomer ? "text-slate-500" : "text-gray-400"}`}
+        aria-hidden
+      />
+      <span className={`min-w-0 truncate ${hasCustomer ? "text-gray-700" : "text-gray-400"}`}>
+        {display}
+      </span>
+    </p>
+  );
+}
+
 function formatAppliedDate(appliedDate?: string): string {
   const raw = appliedDate?.trim();
   if (!raw) return "—";
@@ -799,6 +824,7 @@ export default function TalentEngineDashboard() {
                 : `${item.job_title} - ${item.job_id}`,
               timestamp: item.stage || item.status || "Now",
               jobDocumentId: item.job_id,
+              customer: item.customer?.trim() || undefined,
               rrCandidateName: item.rr_candidate,
               isSourcingAccepted: Boolean(
                 item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
@@ -1124,6 +1150,49 @@ export default function TalentEngineDashboard() {
     if (!candidateId && !profileId) return;
     void refreshDashboardData({ candidateId, profileName: profileId });
   }, [candidateId, profileId]);
+
+  /** Recommended list often omits `customer`; align cards with the job drawer via RR details. */
+  useEffect(() => {
+    if (!hasAttemptedJobsLoad || apiRecommendedJobs.length === 0) return;
+    const targets = apiRecommendedJobs.filter(
+      (j) => j.jobDocumentId?.trim() && (!j.company.trim() || j.company === "—")
+    );
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    const concurrency = 4;
+
+    void (async () => {
+      const updates = new Map<number, string>();
+      for (let i = 0; i < targets.length; i += concurrency) {
+        if (cancelled) return;
+        const batch = targets.slice(i, i + concurrency);
+        await Promise.all(
+          batch.map(async (j) => {
+            const rrName = j.jobDocumentId!.trim();
+            try {
+              const details = await getRrDetails(rrName);
+              const customer = details.customer?.trim();
+              if (customer) updates.set(j.id, customer);
+            } catch {
+              // best-effort
+            }
+          })
+        );
+      }
+      if (cancelled || updates.size === 0) return;
+      setApiRecommendedJobs((prev) =>
+        prev.map((job) => {
+          const nextCompany = updates.get(job.id);
+          return nextCompany ? { ...job, company: nextCompany } : job;
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1456,6 +1525,7 @@ export default function TalentEngineDashboard() {
       timestamp: job.postedTime,
       jobDocumentId: job.jobDocumentId,
       matchPercentage: job.matchPercentage,
+      customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
     };
 
     const isSameJobAlreadyOpen =
@@ -1483,6 +1553,7 @@ export default function TalentEngineDashboard() {
       applicationStage: job.stage,
       applicationAppliedDate: job.appliedDate,
       matchPercentage: job.matchPercentage,
+      customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
     };
     setSelectedAction(nextAction);
     setIsDrawerOpen(true);
@@ -2286,6 +2357,7 @@ export default function TalentEngineDashboard() {
                   >
                     <div className="mb-3">
                       <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                      <DashboardRecommendedJobCustomerLine company={job.company} />
                     </div>
 
                     <div className="mb-4 space-y-2 text-sm text-gray-600">
@@ -2913,8 +2985,9 @@ export default function TalentEngineDashboard() {
                         className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
                         <div className="mb-4">
-                          <h3 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{job.title}</h3>
-                          <div className="flex flex-wrap gap-2 mb-3">
+                          <h3 className="mb-2 font-semibold text-base sm:mb-3 sm:text-lg">{job.title}</h3>
+                          <DashboardRecommendedJobCustomerLine company={job.company} />
+                          <div className="mb-3 mt-2 flex flex-wrap gap-2">
                             {job.skills.map((skill) => (
                               <span
                                 key={skill}
