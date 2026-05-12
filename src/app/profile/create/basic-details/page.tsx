@@ -1615,18 +1615,6 @@ function BasicDetailsPageContent() {
     return true;
   })();
 
-  const isEducationComplete = education.some(
-    (entry) => entry.title.trim() && entry.institute.trim()
-  );
-
-  const isCertificationsComplete = certifications.some(
-    (entry) => entry.name.trim() && entry.issuing.trim()
-  );
-
-  const isExternalLinksComplete = externalLinks.some(
-    (entry) => entry.label.trim() && entry.url.trim()
-  );
-
   const localOverallCompletionPercent = computeOverallProfileProgress({
     basicOverride: {
       professionalTitle: form.professionalTitle,
@@ -1644,22 +1632,13 @@ function BasicDetailsPageContent() {
       email: form.email,
       nationality: form.nationality,
       currentLocation: form.currentLocation,
-      educationComplete: isEducationComplete,
-      certificationsComplete: isCertificationsComplete,
+      education: education.map((e) => ({ title: e.title, institute: e.institute })),
+      certifications: certifications.map((e) => ({ name: e.name, issuing: e.issuing })),
       externalLinks: externalLinks.map((e) => ({ label: e.label, url: e.url })),
+      languages: languages.map((e) => ({ language: e.language })),
     },
   });
-  const backendCompletionPercentForEdit = (() => {
-    if (!isEditMode) return null;
-    const storedProfile = readResumeProfile();
-    const raw = storedProfile?.profileStrength;
-    if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
-    return Math.max(0, Math.min(100, Math.round(raw)));
-  })();
-  const completionPercent =
-    isEditMode && backendCompletionPercentForEdit !== null && !hasUnsavedChanges
-      ? backendCompletionPercentForEdit
-      : localOverallCompletionPercent;
+  const completionPercent = localOverallCompletionPercent;
 
   function setField<K extends keyof BasicDetailsForm>(key: K, value: string) {
     const normalizedValue =
@@ -2415,6 +2394,7 @@ function BasicDetailsPageContent() {
 
     const draftSkillsTable = draftTools.map((tool) => ({
       key_skills: tool.trim(),
+      experience: 0,
     }));
 
     const draftProjectsTable = draftProjects
@@ -2489,8 +2469,10 @@ function BasicDetailsPageContent() {
         date_of_birth: form.dob || "",
         gender: form.gender || "",
         current_location: form.currentLocation.trim(),
-        state: "Draft",
+        // Don't change the state to "Draft" for existing profiles — that resets profile_strength on the backend.
+        ...(profileName ? {} : { state: "Draft" }),
       };
+      const profileCompletionPercentage = Math.round(completionPercent);
       await saveProfile({
         profile: profileDocPayload,
         profile_name: profileName || undefined,
@@ -2511,6 +2493,8 @@ function BasicDetailsPageContent() {
           preferred_location: form.preferredLocation.trim() || "",
           work_authorized_countries: form.workAuthorization.trim() || "",
           preferred_industry: form.preferredIndustry.trim() || "",
+          profile_completion: profileCompletionPercentage,
+          completion_percentage: profileCompletionPercentage,
           ...(draftSkills.length ? { key_skills: draftSkills } : {}),
           ...(draftSkillsTable.length ? { skills_table: draftSkillsTable } : {}),
           ...(draftProjectsTable.length ? { projects_table: draftProjectsTable } : {}),
@@ -3674,7 +3658,7 @@ function BasicDetailsPageContent() {
                   }))
                 }
               >
-                <div id="languages-section" className="p-4 sm:p-6 space-y-4">
+                <div id="external-links-section" className="p-4 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-500">Share portfolios, GitHub, or other professional links</span>
                     <button
@@ -3695,11 +3679,21 @@ function BasicDetailsPageContent() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {externalLinks.map((entry) => (
+                      {externalLinks.map((entry, idx) => (
                         <div
                           key={entry.id}
                           className="border border-gray-200 rounded-xl p-4 space-y-3"
                         >
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-gray-600">External link {idx + 1}</p>
+                            <button
+                              type="button"
+                              onClick={() => removeExternalLink(entry.id)}
+                              className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                            >
+                              <TrashIcon /> Delete
+                            </button>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <label className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">Label</span>
@@ -3725,15 +3719,6 @@ function BasicDetailsPageContent() {
                                 className={fieldClass(false)}
                               />
                             </label>
-                          </div>
-                          <div className="flex justify-end">
-                            <button
-                              type="button"
-                              onClick={() => removeExternalLink(entry.id)}
-                              className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
-                            >
-                              <TrashIcon /> Delete
-                            </button>
                           </div>
                         </div>
                       ))}
@@ -4471,7 +4456,7 @@ function BasicDetailsPageContent() {
               </div>
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
+            <section id="external-links-section" className="bg-white border border-gray-200 rounded-xl overflow-visible">
               <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">External Links</h3>
@@ -4492,8 +4477,18 @@ function BasicDetailsPageContent() {
                 </div>
               ) : (
                 <div className="p-4 sm:p-6 space-y-4">
-                  {externalLinks.map((entry) => (
+                  {externalLinks.map((entry, idx) => (
                     <div key={entry.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600">External link {idx + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => removeExternalLink(entry.id)}
+                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          <TrashIcon /> Delete
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Label</span>
@@ -4515,15 +4510,6 @@ function BasicDetailsPageContent() {
                             className={fieldClass(false)}
                           />
                         </label>
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => removeExternalLink(entry.id)}
-                          className="inline-flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
-                        >
-                          <TrashIcon /> Delete
-                        </button>
                       </div>
                     </div>
                   ))}

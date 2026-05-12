@@ -27,6 +27,7 @@ import {
   uploadProfileFile,
 } from "@/services/profile";
 import { ResumeProfileData } from "@/types/profile";
+import { computeOverallProfileProgress } from "@/lib/profileProgress";
 
 interface UploadedFile {
   name: string;
@@ -220,6 +221,8 @@ async function tryResolveProfileNameByEmail(email: string): Promise<string> {
 export default function CreateProfilePage() {
   const router = useRouter();
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  /** Same formula as Basic Details + Skills & Projects (upload vs continue-without-resume does not affect %). */
+  const profileProgressPercent = computeOverallProfileProgress();
   const [isProcessingResume, setIsProcessingResume] = useState(false);
   const [isGeneratingProfile, setIsGeneratingProfile] = useState(false);
   const [isResolvingEntryStep, setIsResolvingEntryStep] = useState(true);
@@ -692,7 +695,7 @@ export default function CreateProfilePage() {
         {isMobileViewport ? (
           <div className="flex flex-col flex-1 px-4 pb-28 pt-4 overflow-y-auto gap-4">
             <MobileUploadStepper />
-            <ProfileProgressCard percent={uploadedFile ? 10 : 0} className="w-full" />
+            <ProfileProgressCard percent={profileProgressPercent} className="w-full" />
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-200">
@@ -783,7 +786,7 @@ export default function CreateProfilePage() {
                 )}
               </div>
 
-              <ProfileProgressCard percent={uploadedFile ? 10 : 0} className="order-2 xl:order-3" />
+              <ProfileProgressCard percent={profileProgressPercent} className="order-2 xl:order-3" />
             </div>
           </>
         )}

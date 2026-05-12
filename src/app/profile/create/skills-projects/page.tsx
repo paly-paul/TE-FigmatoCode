@@ -363,7 +363,6 @@ function SkillsProjectsPageContent() {
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
   const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
-  const [backendCompletionPercent, setBackendCompletionPercent] = useState<number | null>(null);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -375,18 +374,8 @@ function SkillsProjectsPageContent() {
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
     JSON.stringify({
       skills: [],
-      experiences: [{ experience: "", experienceYears: "", experienceReference: "" }],
-      projects: [
-        {
-          projectTitle: "",
-          customerCompany: "",
-          projectStartDate: "",
-          projectEndDate: "",
-          inProgress: false,
-          projectDescription: "",
-          responsibilities: "",
-        },
-      ],
+      experiences: [],
+      projects: [],
     })
   );
   const [snapshotRevision, setSnapshotRevision] = useState(0);
@@ -418,21 +407,28 @@ function SkillsProjectsPageContent() {
 
   function buildCurrentSnapshot(): string {
     return JSON.stringify({
-      skills: [...skills].map((s) => s.trim()),
-      experiences: experiences.map((entry) => ({
-        experience: entry.experience.trim(),
-        experienceYears: entry.experienceYears.trim(),
-        experienceReference: entry.experienceReference.trim(),
-      })),
-      projects: projects.map((project) => ({
-        projectTitle: project.projectTitle.trim(),
-        customerCompany: project.customerCompany.trim(),
-        projectStartDate: project.projectStartDate,
-        projectEndDate: project.projectEndDate,
-        inProgress: project.inProgress,
-        projectDescription: project.projectDescription.trim(),
-        responsibilities: project.responsibilities.trim(),
-      })),
+      skills: dedupeSkills(skills)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+      experiences: experiences
+        .filter((entry) => !isExperienceEmpty(entry))
+        .map((entry) => ({
+          experience: entry.experience.trim(),
+          experienceYears: entry.experienceYears.trim(),
+          experienceReference: entry.experienceReference.trim(),
+        })),
+      projects: projects
+        .filter((project) => !isProjectEmpty(project))
+        .map((project) => ({
+          projectTitle: project.projectTitle.trim(),
+          customerCompany: project.customerCompany.trim(),
+          projectStartDate: project.projectStartDate,
+          projectEndDate: project.projectEndDate,
+          inProgress: project.inProgress,
+          projectDescription: project.projectDescription.trim(),
+          responsibilities: project.responsibilities.trim(),
+        })),
     });
   }
 
@@ -595,6 +591,53 @@ function SkillsProjectsPageContent() {
     return projects.filter((p) => !isProjectEmpty(p));
   }
 
+  /** Keep `readResumeProfile` + `resumeSkills` aligned with the wizard (same idea as Basic Details → Next). */
+  function persistWizardSkillsToResumeProfile() {
+    if (typeof window === "undefined") return;
+    const keySkills = dedupeSkills(skills);
+    const tools = nonEmptyExperiences()
+      .map((e) => e.experience.trim())
+      .filter(Boolean);
+    const projectPayload = nonEmptyProjects().map((p) => ({
+      projectTitle: p.projectTitle.trim(),
+      customerCompany: p.customerCompany.trim(),
+      projectDescription: p.projectDescription.trim(),
+      responsibilities: p.responsibilities.trim(),
+      projectStartDate: p.projectStartDate,
+      projectEndDate: p.projectEndDate,
+      inProgress: p.inProgress,
+    }));
+    upsertResumeProfile({
+      keySkills,
+      tools,
+      projects: projectPayload,
+    });
+    const first = projects[0];
+    safeWriteResumeSkillsDraft({
+      skills,
+      experienceEntries: experiences
+        .filter((entry) => !isExperienceEmpty(entry))
+        .map((entry) => ({
+          experience: entry.experience,
+          experienceYears: entry.experienceYears,
+          experienceReference: entry.experienceReference,
+        })),
+      projects: projects
+        .filter((project) => !isProjectEmpty(project))
+        .map((project) => ({
+          projectTitle: project.projectTitle,
+          customerCompany: project.customerCompany,
+          projectDescription: project.projectDescription,
+          responsibilities: project.responsibilities,
+          projectStartDate: project.projectStartDate,
+          projectEndDate: project.projectEndDate,
+          inProgress: project.inProgress,
+        })),
+      projectDescription: first?.projectDescription ?? "",
+      responsibilities: first?.responsibilities ?? "",
+    });
+  }
+
   function isExperiencesSectionComplete() {
     const filled = nonEmptyExperiences();
     if (filled.length === 0) return false;
@@ -613,7 +656,7 @@ function SkillsProjectsPageContent() {
     "";
   const effectiveProfileNameForProgress = queryProfileNameForProgress || getProfileName() || "";
   const isEditModeForProgress = isLikelyDocId(effectiveProfileNameForProgress);
-  const overallCompletionPercent = computeOverallProfileProgress({
+  const completionPercent = computeOverallProfileProgress({
     liveSkills: skills,
     liveExperiences: experiences.map((entry) => ({
       experience: entry.experience,
@@ -630,10 +673,6 @@ function SkillsProjectsPageContent() {
       inProgress: project.inProgress,
     })),
   });
-  const completionPercent =
-    isEditModeForProgress && backendCompletionPercent !== null && !hasUnsavedChanges
-      ? backendCompletionPercent
-      : overallCompletionPercent;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -836,11 +875,6 @@ function SkillsProjectsPageContent() {
         const backendProfile = await getCandidateProfileData(profileName);
         if (!backendProfile) return;
         if (cancelled) return;
-        if (isEditMode && typeof backendProfile.profileStrength === "number" && Number.isFinite(backendProfile.profileStrength)) {
-          setBackendCompletionPercent(Math.max(0, Math.min(100, Math.round(backendProfile.profileStrength))));
-        } else if (!isEditMode) {
-          setBackendCompletionPercent(null);
-        }
         // Keep session profile synchronized without clobbering newer manual edits
         // captured in this browser session (e.g. basic-details certifications).
         const existingSessionProfile = readResumeProfile() ?? {};
@@ -1416,21 +1450,13 @@ function SkillsProjectsPageContent() {
         const skillName = entry.experience.trim();
         const yearsRaw = entry.experienceYears.trim();
         const years = Number.parseFloat(yearsRaw);
-        const referenceUrl = entry.experienceReference.trim();
-        const normalizedYears = Number.isFinite(years) && years >= 0 ? years : "";
+        const experience = Number.isFinite(years) && years >= 0 ? years : 0;
         return {
-          skill: skillName || "",
           key_skills: skillName || "",
-          // Some backend versions read `experience`, others read `experience_years`.
-          experience: normalizedYears,
-          experience_years: normalizedYears,
-          url: referenceUrl,
+          experience,
         };
       })
-      .filter(
-        (entry) =>
-          entry.skill || entry.key_skills || entry.experience !== "" || entry.experience_years !== "" || entry.url
-      );
+      .filter((entry) => Boolean(entry.key_skills.trim()));
 
     const workExperienceTable = nonEmptyExperiences()
       .map((entry) => ({
@@ -1473,7 +1499,7 @@ function SkillsProjectsPageContent() {
     const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
-    const profileCompletionPercentage = Math.round(overallCompletionPercent);
+    const profileCompletionPercentage = Math.round(completionPercent);
 
     const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
     const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
@@ -1730,6 +1756,7 @@ function SkillsProjectsPageContent() {
   }
 
   async function handleSaveDraft(): Promise<boolean> {
+    persistWizardSkillsToResumeProfile();
     const storedProfile = readResumeProfile();
     const queryProfileName =
       searchParams.get("profile")?.trim() ||
@@ -1767,20 +1794,13 @@ function SkillsProjectsPageContent() {
         const skillName = entry.experience.trim();
         const yearsRaw = entry.experienceYears.trim();
         const years = Number.parseFloat(yearsRaw);
-        const referenceUrl = entry.experienceReference.trim();
-        const normalizedYears = Number.isFinite(years) && years >= 0 ? years : "";
+        const experience = Number.isFinite(years) && years >= 0 ? years : 0;
         return {
-          skill: skillName || "",
           key_skills: skillName || "",
-          experience: normalizedYears,
-          experience_years: normalizedYears,
-          url: referenceUrl,
+          experience,
         };
       })
-      .filter(
-        (entry) =>
-          entry.skill || entry.key_skills || entry.experience !== "" || entry.experience_years !== "" || entry.url
-      );
+      .filter((entry) => Boolean(entry.key_skills.trim()));
 
     const workExperienceTable = nonEmptyExperiences()
       .map((entry) => ({
@@ -1823,7 +1843,7 @@ function SkillsProjectsPageContent() {
     const experienceMonthsValue = storedProfile?.experienceMonths?.trim() || undefined;
     const currentSalaryValue = storedProfile?.salaryPerMonth?.trim() || undefined;
     const currentSalaryCurrencyValue = storedProfile?.salaryCurrency?.trim() || undefined;
-    const profileCompletionPercentage = Math.round(overallCompletionPercent);
+    const profileCompletionPercentage = Math.round(completionPercent);
 
     const rawCurrentLocation = storedProfile?.currentLocation || storedProfile?.preferredLocation || "";
     const normalizedCurrentLocation = await resolveBackendCurrentLocation(rawCurrentLocation, {
@@ -1844,7 +1864,8 @@ function SkillsProjectsPageContent() {
       alternative_email: storedProfile?.altEmail?.trim() || "",
       current_location: normalizedCurrentLocation,
       preferred_location: storedProfile?.preferredLocation?.trim() || "",
-      state: "Draft",
+      // Don't change the state to "Draft" for existing profiles — that resets profile_strength on the backend.
+      ...(profileName ? {} : { state: "Draft" }),
       ...(profileImageRef ? { profile_image: profileImageRef } : {}),
     };
 
@@ -2253,13 +2274,21 @@ function SkillsProjectsPageContent() {
     const previousUrl = queryProfileName
       ? `/profile/create/basic-details?profile=${encodeURIComponent(queryProfileName)}`
       : "/profile/create/basic-details";
-    if (hasUnsavedChanges) {
+
+    persistWizardSkillsToResumeProfile();
+
+    const needsServerDraft =
+      hasUnsavedChangesRef.current ||
+      hasUnsavedChanges ||
+      buildCurrentSnapshot() !== savedSnapshot;
+    if (needsServerDraft) {
       setIsSubmittingProfile(true);
       const saved = await handleSaveDraft();
       setIsSubmittingProfile(false);
       if (saved) setNavigateAfterSave(previousUrl);
       return;
     }
+    markCurrentAsSaved();
     router.push(previousUrl);
   }
 

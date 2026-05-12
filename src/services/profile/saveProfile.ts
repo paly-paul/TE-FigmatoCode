@@ -169,6 +169,38 @@ function normalizeObjectList(
   return normalized;
 }
 
+/** Backend expects each row as `{ key_skills: string, experience: number }` only — not nested key_skills arrays. */
+function sanitizeSkillsTableRow(row: Record<string, unknown>): Record<string, unknown> {
+  let skill = "";
+  if (typeof row.key_skills === "string") {
+    skill = row.key_skills.trim();
+  } else if (Array.isArray(row.key_skills) && row.key_skills.length > 0) {
+    const first = row.key_skills[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      const nested = (first as Record<string, unknown>).key_skills;
+      if (typeof nested === "string") skill = nested.trim();
+    }
+  }
+  if (!skill && typeof row.skill === "string") {
+    skill = row.skill.trim();
+  }
+  if (!skill) return {};
+
+  const rawExp = row.experience ?? row.experience_years;
+  let experience: number | string = 0;
+  if (typeof rawExp === "number" && Number.isFinite(rawExp)) {
+    experience = rawExp;
+  } else if (typeof rawExp === "string") {
+    const t = rawExp.trim();
+    if (t) {
+      const n = Number.parseFloat(t);
+      experience = Number.isFinite(n) ? n : t;
+    }
+  }
+
+  return { key_skills: skill, experience };
+}
+
 function normalizeTableRows(key: string, value: unknown): Record<string, unknown>[] {
   const parsedStringValue = typeof value === "string" ? parseJsonLike(value) : undefined;
   const rows =
@@ -185,8 +217,13 @@ function normalizeTableRows(key: string, value: unknown): Record<string, unknown
 
   for (const row of rows) {
     if (row && typeof row === "object" && !Array.isArray(row)) {
-      const record = sanitizePayloadObject(row as Record<string, unknown>);
-      if (Object.keys(record).length > 0) normalized.push(record);
+      if (key === "skills_table") {
+        const record = sanitizeSkillsTableRow(row as Record<string, unknown>);
+        if (Object.keys(record).length > 0) normalized.push(record);
+      } else {
+        const record = sanitizePayloadObject(row as Record<string, unknown>);
+        if (Object.keys(record).length > 0) normalized.push(record);
+      }
       continue;
     }
 
@@ -196,8 +233,13 @@ function normalizeTableRows(key: string, value: unknown): Record<string, unknown
       const parsedRows = Array.isArray(parsed) ? parsed : [parsed];
       for (const parsedRow of parsedRows) {
         if (parsedRow && typeof parsedRow === "object" && !Array.isArray(parsedRow)) {
-          const record = sanitizePayloadObject(parsedRow as Record<string, unknown>);
-          if (Object.keys(record).length > 0) normalized.push(record);
+          if (key === "skills_table") {
+            const record = sanitizeSkillsTableRow(parsedRow as Record<string, unknown>);
+            if (Object.keys(record).length > 0) normalized.push(record);
+          } else {
+            const record = sanitizePayloadObject(parsedRow as Record<string, unknown>);
+            if (Object.keys(record).length > 0) normalized.push(record);
+          }
         }
       }
       continue;
@@ -211,7 +253,7 @@ function normalizeTableRows(key: string, value: unknown): Record<string, unknown
       continue;
     }
     if (key === "skills_table") {
-      normalized.push({ skill: token, key_skills: token });
+      normalized.push({ key_skills: token, experience: 0 });
       continue;
     }
     if (key === "projects_table") {

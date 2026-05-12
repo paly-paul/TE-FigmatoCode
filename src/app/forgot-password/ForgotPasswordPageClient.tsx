@@ -49,6 +49,9 @@ export default function ForgotPasswordPageClient() {
   return (
     <AuthLayout
       showFooter
+      extraFooterText="Don't have an account?"
+      extraFooterLinkLabel="Sign Up"
+      extraFooterLinkHref="/signup"
       footerText="Remember your password?"
       footerLinkLabel="Login"
       footerLinkHref="/login"

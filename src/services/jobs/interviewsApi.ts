@@ -173,6 +173,31 @@ export type ProfileInterviewApi = {
   job_id: string;
 };
 
+/** Full row returned by get_interviews_by_profile (message.data[]). */
+export type ProfileInterviewRow = {
+  name?: string;
+  rr_candidate?: string;
+  rr?: string;
+  profile?: string;
+  round?: number;
+  interview_type?: string;
+  interview_mode?: string;
+  rr_candidate_status?: string;
+  agreed_interview_date?: string;
+  agreed_interview_time?: string;
+  agreed_interview_timezone?: string;
+  meeting_invite_content?: string;
+  remarks?: string | null;
+  interviewers?: Array<{
+    name?: string;
+    email?: string;
+    full_name?: string;
+    user?: string;
+    type?: string;
+  }>;
+  available_slots?: Array<Record<string, unknown>>;
+};
+
 function normalizeInterviews(payload: Record<string, unknown>): ProfileInterviewApi[] {
   const raw = [...extractSingleInterviewObjectRows(payload), ...collectObjectArrays(payload)];
   const seen = new Set<string>();
@@ -252,6 +277,23 @@ export async function getInterviewsByProfile(profileId: string): Promise<Profile
   return normalizeInterviews(data);
 }
 
+/** Returns the full raw rows from get_interviews_by_profile (message.data[]). */
+export async function getProfileInterviewsDetailed(profileId: string): Promise<ProfileInterviewRow[]> {
+  const url = new URL("/api/method/get_interviews_by_profile", window.location.origin);
+  url.searchParams.set("profile_id", profileId.trim());
+
+  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok || isFrappeLogicalFailure(data)) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+  // Response: { message: { status, data: [...] } }
+  const msg = isRecord(data.message) ? (data.message as Record<string, unknown>) : null;
+  const arr = (msg?.data ?? data.data) as unknown;
+  if (!Array.isArray(arr)) return [];
+  return arr.filter(isRecord) as ProfileInterviewRow[];
+}
+
 export async function getAvailableInterviewSlots(
   interviewId: string
 ): Promise<InterviewSlotOptionApi[]> {
@@ -264,6 +306,77 @@ export async function getAvailableInterviewSlots(
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
   return normalizeSlots(data);
+}
+
+export type InterviewScheduleItem = {
+  name?: string;
+  round?: number;
+  rr_candidate_status?: string;
+  interview_type?: string;
+  interview_mode?: string;
+  agreed_interview_date?: string;
+  agreed_interview_time?: string;
+  agreed_interview_timezone?: string;
+  meeting_invite_content?: string;
+  meeting_link?: string;
+  join_url?: string;
+  remarks?: string | null;
+  customer?: string;
+  interviewers?: Array<{
+    name?: string;
+    type?: string;
+    user?: string;
+    email?: string;
+    full_name?: string;
+  }>;
+};
+
+export type InterviewDetailsApi = {
+  candidate_name?: string;
+  candidate_id?: string;
+  candidate_role?: string;
+  interview_schedule?: InterviewScheduleItem[];
+};
+
+/** Extracts the first URL from an HTML string or plain URL (e.g. meeting_invite_content). */
+export function extractUrlFromHtml(html?: string | null): string | null {
+  if (!html) return null;
+  const dq = html.match(/href="([^"]+)"/);
+  if (dq) return dq[1];
+  const sq = html.match(/href='([^']+)'/);
+  if (sq) return sq[1];
+  const plain = html.match(/https?:\/\/[^\s<>"']+/);
+  if (plain) return plain[0];
+  return null;
+}
+
+function normalizeInterviewDetails(payload: Record<string, unknown>): InterviewDetailsApi {
+  // Response shape: { status, data: { candidate_name, interview_schedule: [...] } }
+  if (isRecord(payload.data)) {
+    return payload.data as InterviewDetailsApi;
+  }
+  if (isRecord(payload.message)) {
+    const msg = payload.message as Record<string, unknown>;
+    if (isRecord(msg.data)) return msg.data as InterviewDetailsApi;
+    return msg as InterviewDetailsApi;
+  }
+  return payload as InterviewDetailsApi;
+}
+
+export async function getInterviewDetails(
+  candidateId: string,
+  jobId: string
+): Promise<InterviewDetailsApi> {
+  const url = new URL("/api/method/get_interview_details", window.location.origin);
+  url.searchParams.set("candidate_id", candidateId.trim());
+  url.searchParams.set("job_id", jobId.trim());
+
+  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok || isFrappeLogicalFailure(data)) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+  return normalizeInterviewDetails(data);
 }
 
 export async function postInterviewSelectSlot(

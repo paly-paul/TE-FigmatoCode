@@ -2,13 +2,19 @@
 
 import {
   Banknote,
+  Building2,
   Calendar,
+  CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Clock,
+  FileText,
   Hourglass,
   MapPin,
   RefreshCw,
+  Shield,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -271,6 +277,9 @@ export default function ActionDrawer({
   const [apiExpectedSalary, setApiExpectedSalary] = useState<number | null>(null);
   const [showSalaryPopup, setShowSalaryPopup] = useState(false);
   const [salaryPopupVisible, setSalaryPopupVisible] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [successPopupVisible, setSuccessPopupVisible] = useState(false);
+  const [successType, setSuccessType] = useState<"accept" | "clarification">("accept");
   const submitInFlightRef = useRef(false);
   const salaryPopupConfirmedRef = useRef(false);
   const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
@@ -301,6 +310,15 @@ export default function ActionDrawer({
     const frame = window.requestAnimationFrame(() => setSalaryPopupVisible(true));
     return () => window.cancelAnimationFrame(frame);
   }, [showSalaryPopup]);
+
+  useEffect(() => {
+    if (!showSuccessPopup) {
+      setSuccessPopupVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setSuccessPopupVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [showSuccessPopup]);
 
   useEffect(() => {
     if (open) {
@@ -349,6 +367,7 @@ export default function ActionDrawer({
       setApiExpectedSalary(null);
       setShowSalaryPopup(false);
       salaryPopupConfirmedRef.current = false;
+      setShowSuccessPopup(false);
     }
   }, [open, action?.isSourcingAccepted, action?.title, action?.jobDocumentId, minAvailableDate]);
 
@@ -809,7 +828,11 @@ export default function ActionDrawer({
       </div>
 
       {interviewSlotsLoading ? (
-        <p className="mt-4 text-sm text-[#5E7397]">Loading available slots…</p>
+        <div className="mt-4 flex flex-col items-center justify-center py-6 text-center">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          <p className="text-sm font-semibold text-[#202939]">Loading available slots…</p>
+          <p className="text-sm text-[#5E7397]">Fetching your interview time options.</p>
+        </div>
       ) : interviewSlotsError ? (
         <p className="mt-4 text-sm text-red-600">{interviewSlotsError}</p>
       ) : interviewSlots.length === 0 ? (
@@ -879,71 +902,275 @@ export default function ActionDrawer({
     </div>
   );
 
-  const renderSalaryNegotiationAction = () => (
+  const renderSalaryNegotiationAction = () => {
+    const cur = proposalData?.billing_currency || "USD";
+    const freq = proposalData?.billing_frequency || "Hourly";
+    const fmtMoney = (n?: number, currency = cur) =>
+      n != null ? `${currency} ${n.toLocaleString()}` : null;
+    const fmtDate = (d?: string) => {
+      if (!d) return null;
+      const p = new Date(`${d}T00:00:00`);
+      return Number.isNaN(p.getTime())
+        ? d
+        : p.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    };
+
+    const rateRows = proposalData?.totals
+      ? [
+          { label: "Regular Hourly Rate", value: fmtMoney(proposalData.totals.regular_hourly), highlight: true },
+          { label: "Daily Salary", value: fmtMoney(proposalData.totals.base_daily_salary), highlight: false },
+          { label: "Overtime — Weekdays", value: fmtMoney(proposalData.totals.overtime_hourly_weekdays), highlight: false },
+          { label: "Overtime — Weekends", value: fmtMoney(proposalData.totals.overtime_hourly_weekends), highlight: false },
+          { label: "Overtime — Public Holidays", value: fmtMoney(proposalData.totals.overtime_hourly_national_holidays), highlight: false },
+          { label: "Standby Rate", value: fmtMoney(proposalData.totals.stand_by), highlight: false },
+        ].filter((r) => r.value !== null)
+      : [];
+
+    const clientRateStr = proposalData?.rr_min_bill_rate != null
+      ? `${proposalData.rr_billing_currency || cur} ${proposalData.rr_min_bill_rate.toLocaleString()}${
+          proposalData.rr_max_bill_rate && proposalData.rr_max_bill_rate !== proposalData.rr_min_bill_rate
+            ? ` – ${proposalData.rr_max_bill_rate.toLocaleString()}`
+            : ""
+        } / ${proposalData.rr_billing_frequency || "mo"}`
+      : null;
+
+    return (
     <div className="space-y-3.5">
-      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+      {/* ── Proposal ── */}
+      <div className="overflow-hidden rounded-xl border border-[#D8E3F8] bg-white shadow-sm">
         <button
           type="button"
           onClick={() =>
             setIsProposalExpanded((current) => {
               const next = !current;
-              if (next) {
-                setIsSalaryNegotiationExpanded(false);
-              }
+              if (next) setIsSalaryNegotiationExpanded(false);
               return next;
             })
           }
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
+          className="flex w-full items-center justify-between px-4 py-3.5 text-left"
         >
-          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Proposal</h3>
-          {isProposalExpanded ? (
-            <ChevronUp className="h-5 w-5 text-[#202939]" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-[#202939]" />
-          )}
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
+              <FileText className="h-4 w-4 text-[#1D4ED8]" />
+            </div>
+            <h3 className="text-base font-semibold text-[#202939]">Proposal Details</h3>
+          </div>
+          {isProposalExpanded
+            ? <ChevronUp className="h-5 w-5 text-[#5E7397]" />
+            : <ChevronDown className="h-5 w-5 text-[#5E7397]" />}
         </button>
 
-        {isProposalExpanded ? (
-          <div className="border-t border-[#E6ECF6] px-4 py-3">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#10B981] px-3 py-1 text-xs font-semibold text-white">
-                Awaiting Candidate Acceptance
-              </span>
-              <span className="text-sm font-medium text-[#1D4ED8]">
-                {proposalData?.proposal_version || "V1"}
-              </span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-[#202939]">Base Salary</p>
-                <p className="text-xs text-[#5E7397]">All values are rounded off.</p>
+        {isProposalExpanded && (
+          <div className="border-t border-[#E6ECF6] divide-y divide-[#F0F4FA]">
+
+            {/* Loading / error */}
+            {proposalLoading && (
+              <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                <p className="text-sm font-semibold text-[#202939]">Loading proposal details…</p>
+                <p className="text-sm text-[#5E7397]">Fetching your salary proposal.</p>
               </div>
-              <div className="text-right">
-                <p className="text-4xl font-bold leading-none text-[#1D4ED8]">
-                  {proposalData?.proposed_rate != null ? `$${proposalData.proposed_rate}` : "—"}
-                  <span className="ml-1 text-xl font-semibold">
-                    /{proposalData?.billing_frequency || "Hourly"}
+            )}
+            {proposalError && !proposalLoading && (
+              <p className="px-4 py-3 text-xs text-red-500">{proposalError}</p>
+            )}
+
+            {/* ── Status banner ── */}
+            {proposalData && (
+              <div className="px-4 py-3 bg-emerald-50 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {proposalData.rr_candidate_status || "Awaiting Candidate Acceptance"}
+                </span>
+                {proposalData.proposal_name && (
+                  <span className="text-xs text-emerald-700 font-medium">{proposalData.proposal_name}</span>
+                )}
+                {proposalData.proposal_version && (
+                  <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                    Version {proposalData.proposal_version}
                   </span>
-                </p>
-                <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-[#5E7397]">
-                  Estimated Total
-                </p>
+                )}
               </div>
-            </div>
-            <p className="mt-3 text-sm text-[#202939]">
-              Proposed Joining Date{" "}
-              <span className="font-semibold">— {proposalData?.proposed_joining_date || "—"}</span>
-            </p>
-            {proposalLoading ? (
-              <p className="mt-2 text-xs text-[#5E7397]">Loading proposal…</p>
-            ) : proposalError ? (
-              <p className="mt-2 text-xs text-red-600">{proposalError}</p>
-            ) : null}
+            )}
+
+            {/* ── Your Compensation ── */}
+            {proposalData && (
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Banknote className="h-4 w-4 text-[#1D4ED8]" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#1D4ED8]">Your Compensation</p>
+                </div>
+
+                {/* Hero salary */}
+                <div className="rounded-xl bg-gradient-to-br from-[#1D4ED8] to-[#3B82F6] px-4 py-4 text-white">
+                  <p className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">Base Salary</p>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-bold">
+                      {proposalData.candidate_expected_salary != null
+                        ? `${cur} ${proposalData.candidate_expected_salary.toLocaleString()}`
+                        : "—"}
+                    </span>
+                    <span className="text-base font-medium text-blue-200">/ {freq}</span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-blue-200">All values are rounded off</p>
+                </div>
+
+                {/* Rate breakdown table */}
+                {rateRows.length > 0 && (
+                  <div className="rounded-xl border border-[#E6ECF6] overflow-hidden">
+                    <div className="bg-[#F8FAFF] px-3 py-2 flex items-center gap-2">
+                      <TrendingUp className="h-3.5 w-3.5 text-[#5E7397]" />
+                      <p className="text-xs font-semibold text-[#5E7397] uppercase tracking-wide">Rate Breakdown</p>
+                    </div>
+                    {rateRows.map((row, i) => (
+                      <div
+                        key={row.label}
+                        className={`flex items-center justify-between px-3 py-2.5 ${i < rateRows.length - 1 ? "border-b border-[#F0F4FA]" : ""} ${row.highlight ? "bg-blue-50/50" : ""}`}
+                      >
+                        <span className={`text-sm ${row.highlight ? "font-semibold text-[#202939]" : "text-[#5E7397]"}`}>
+                          {row.label}
+                        </span>
+                        <span className={`text-sm font-bold ${row.highlight ? "text-[#1D4ED8]" : "text-[#202939]"}`}>
+                          {row.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Assignment Details ── */}
+            {proposalData && (
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-4 w-4 text-[#5E7397]" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#5E7397]">Assignment Details</p>
+                </div>
+
+                <div className="rounded-xl border border-[#E6ECF6] overflow-hidden">
+                  {[
+                    {
+                      icon: <Calendar className="h-4 w-4 text-indigo-500 shrink-0" />,
+                      label: "Joining Date",
+                      value: fmtDate(proposalData.proposed_joining_date),
+                      emphasis: true,
+                    },
+                    {
+                      icon: <ChevronRight className="h-4 w-4 text-[#5E7397] shrink-0" />,
+                      label: "Contract Period",
+                      value:
+                        fmtDate(proposalData.start_date) && fmtDate(proposalData.end_date)
+                          ? `${fmtDate(proposalData.start_date)} → ${fmtDate(proposalData.end_date)}`
+                          : fmtDate(proposalData.start_date),
+                      emphasis: false,
+                    },
+                    {
+                      icon: <MapPin className="h-4 w-4 text-[#5E7397] shrink-0" />,
+                      label: "Country",
+                      value: proposalData.country,
+                      emphasis: false,
+                    },
+                    {
+                      icon: <Clock className="h-4 w-4 text-[#5E7397] shrink-0" />,
+                      label: "Working Hours",
+                      value:
+                        proposalData.hours_per_day != null && proposalData.days_per_week != null
+                          ? `${proposalData.hours_per_day} hrs/day · ${proposalData.days_per_week} days/week`
+                          : null,
+                      emphasis: false,
+                    },
+                    {
+                      icon: <Building2 className="h-4 w-4 text-[#5E7397] shrink-0" />,
+                      label: "Client Bill Rate",
+                      value: clientRateStr,
+                      emphasis: false,
+                    },
+                  ]
+                    .filter((r) => r.value)
+                    .map((row, i, arr) => (
+                      <div
+                        key={row.label}
+                        className={`flex items-start gap-3 px-3 py-2.5 ${i < arr.length - 1 ? "border-b border-[#F0F4FA]" : ""}`}
+                      >
+                        <div className="mt-0.5">{row.icon}</div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-[#5E7397]">{row.label}</p>
+                          <p className={`text-sm mt-0.5 ${row.emphasis ? "font-bold text-[#1D4ED8]" : "font-semibold text-[#202939]"}`}>
+                            {row.value}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Customer Remarks ── */}
+            {proposalData?.customer_remarks && (
+              <div className="px-4 py-4">
+                <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1.5">Remarks from Client</p>
+                  <p className="text-sm text-amber-900 leading-relaxed">{proposalData.customer_remarks}</p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Terms & Responsibilities ── */}
+            {(proposalData?.by_customer_terms?.length || proposalData?.by_candidate_terms?.length) && (
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="h-4 w-4 text-[#5E7397]" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#5E7397]">
+                    What&apos;s Covered
+                  </p>
+                </div>
+                <p className="text-xs text-[#5E7397] -mt-2">
+                  Benefits and costs handled on your behalf
+                </p>
+
+                {proposalData?.by_customer_terms?.length ? (
+                  <div className="rounded-xl border border-[#E6ECF6] px-4 py-3">
+                    <p className="text-xs font-semibold text-emerald-700 mb-2.5 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Covered by Client / TE
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {proposalData.by_customer_terms.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-medium text-emerald-700"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {proposalData?.by_candidate_terms?.length ? (
+                  <div className="rounded-xl border border-[#E6ECF6] px-4 py-3">
+                    <p className="text-xs font-semibold text-orange-700 mb-2.5">Your Responsibility</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {proposalData.by_candidate_terms.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-700"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
-        ) : null}
+        )}
       </div>
 
-      <div className="overflow-hidden rounded-md border border-[#D8E3F8] bg-white">
+      {/* ── Salary Negotiation ── */}
+      <div className="overflow-hidden rounded-xl border border-[#D8E3F8] bg-white shadow-sm">
         <button
           type="button"
           onClick={() =>
@@ -956,38 +1183,46 @@ export default function ActionDrawer({
               return next;
             })
           }
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
+          className="flex w-full items-center justify-between px-4 py-3.5 text-left"
         >
-          <h3 className="text-base font-semibold text-[#202939] sm:text-lg">Salary Negotiation</h3>
-          {isSalaryNegotiationExpanded ? (
-            <ChevronUp className="h-5 w-5 text-[#202939]" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-[#202939]" />
-          )}
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+              <Banknote className="h-4 w-4 text-violet-600" />
+            </div>
+            <h3 className="text-base font-semibold text-[#202939]">Salary Negotiation</h3>
+          </div>
+          {isSalaryNegotiationExpanded
+            ? <ChevronUp className="h-5 w-5 text-[#5E7397]" />
+            : <ChevronDown className="h-5 w-5 text-[#5E7397]" />}
         </button>
-        {isSalaryNegotiationExpanded ? (
-          <div className="border-t border-[#E6ECF6] px-4 py-3">
+
+        {isSalaryNegotiationExpanded && (
+          <div className="border-t border-[#E6ECF6] px-4 py-4">
             {showClarificationBox ? (
               <div ref={clarificationBoxRef}>
-                <h4 className="mb-2 text-sm font-medium text-[#202939]">Candidate Remarks</h4>
+                <h4 className="mb-1.5 text-sm font-semibold text-[#202939]">Your Remarks</h4>
+                <p className="mb-2.5 text-xs text-[#5E7397]">Share your counter-offer or ask for clarification on any terms.</p>
                 <textarea
                   value={clarificationRemark}
                   onChange={(event) => setClarificationRemark(event.target.value)}
-                  placeholder="Enter your remark here..."
-                  className="min-h-[130px] w-full resize-y rounded-md border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8]"
+                  placeholder="E.g. I'd like to discuss the base rate or the joining date..."
+                  className="min-h-[130px] w-full resize-y rounded-xl border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             ) : (
-              <p className="text-sm text-[#5E7397]">
-                Use "Request Clarification" to share remarks for negotiation.
-              </p>
+              <div className="rounded-xl bg-[#F8FAFF] border border-[#E6ECF6] px-4 py-3">
+                <p className="text-sm font-medium text-[#202939] mb-0.5">Want to negotiate?</p>
+                <p className="text-xs text-[#5E7397]">
+                  Tap &quot;Request Clarification&quot; below to share your counter-offer or questions about this proposal.
+                </p>
+              </div>
             )}
           </div>
-        ) : null}
+        )}
       </div>
-
     </div>
-  );
+    );
+  };
 
   const renderJobActionContent = () => {
     if (isDirectApply) {
@@ -1105,7 +1340,11 @@ export default function ActionDrawer({
       }`}
     >
       {jobDescriptionLoading ? (
-        <p className="text-sm text-[#5E7397]">Loading job description…</p>
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          <p className="mb-1 text-sm font-semibold text-[#202939]">Loading job description…</p>
+          <p className="text-sm text-[#5E7397]">Fetching the full details for this role.</p>
+        </div>
       ) : null}
       {!jobDescriptionLoading && jobDescriptionContent ? (
         <div className="space-y-4">
@@ -1327,6 +1566,10 @@ export default function ActionDrawer({
         }
         if (ok) {
           setHasSubmitted(true);
+          if (isSalaryNegotiation) {
+            setSuccessType("accept");
+            setShowSuccessPopup(true);
+          }
         } else {
           setValidationMessage((prev) => prev || "Could not submit your response. Please try again.");
         }
@@ -1372,7 +1615,8 @@ export default function ActionDrawer({
               if (ok !== false) {
                 setShowClarificationBox(false);
                 setClarificationRemark("");
-                onClose();
+                setSuccessType("clarification");
+                setShowSuccessPopup(true);
               }
               setIsClarificationSubmitting(false);
             })();
@@ -1762,6 +2006,52 @@ export default function ActionDrawer({
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showSuccessPopup ? (
+        <div
+          className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${
+            successPopupVisible ? "bg-black/45 opacity-100" : "bg-black/0 opacity-0"
+          }`}
+        >
+          <div
+            className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-green-50 p-6 shadow-2xl transition-all duration-500 ${
+              successPopupVisible
+                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
+                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            }`}
+          >
+            <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-emerald-300 animate-ping" />
+            <span className="absolute right-12 top-16 h-2 w-2 rounded-full bg-green-300 animate-ping [animation-delay:200ms]" />
+            <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full bg-teal-300 animate-ping [animation-delay:400ms]" />
+            <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full bg-emerald-200 animate-ping [animation-delay:150ms]" />
+            <span className="absolute h-24 w-24 rounded-full border-2 border-emerald-200/70 animate-pulse" />
+            <span className="absolute h-32 w-32 rounded-full border border-green-200/60 animate-pulse [animation-delay:300ms]" />
+
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-sm">
+                <CheckCircle2 className="h-7 w-7" />
+              </div>
+              <p className="mb-1 text-lg font-bold text-slate-900">
+                {successType === "accept" ? "Proposal Accepted!" : "Remarks Submitted!"}
+              </p>
+              <p className="mb-6 text-sm text-slate-500">
+                {successType === "accept"
+                  ? "You've successfully accepted the salary proposal. Our team will be in touch shortly."
+                  : "Your remarks have been submitted. Our team will review and get back to you."}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessPopup(false);
+                  onClose();
+                }}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { MobileAuthHeader } from "@/components/mobile/MobileAuthHeader";
@@ -82,16 +81,6 @@ export function MobileNewPasswordScreen() {
           </Button>
         </form>
       </main>
-
-      <div className="mt-auto border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-sm text-gray-500">
-        Don&apos;t have an account?{" "}
-        <Link
-          href="/signup/"
-          className="font-semibold text-primary-600 hover:text-primary-700"
-        >
-          Sign Up
-        </Link>
-      </div>
 
       <MobileSuccessStoriesSection heading="Simple to use with relevant job listings" />
     </div>

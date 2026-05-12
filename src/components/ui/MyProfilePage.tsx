@@ -42,10 +42,10 @@ import AppNavbar from "../profile/AppNavbar";
 import Image from "next/image";
 import CandidateAppShell from "../mobile/CandidateAppShell";
 import { useIsMobile } from "@/lib/useResponsive";
+import { getProfileName } from "@/lib/authSession";
 import { getCandidateProfileData } from "@/services/profile/getCandidateProfile";
 import { downloadProfileResume } from "@/services/profile/downloadProfileResume";
-import { getProfileName } from "@/lib/authSession";
-import { readResumeProfile } from "@/lib/profileSession";
+import { computeOverallProfileProgress } from "@/lib/profileProgress";
 import type { ResumeProfileData } from "@/types/profile";
 
 function CopySuccessBadge({ show }: { show: boolean }) {
@@ -459,21 +459,19 @@ export default function MyProfilePage() {
     };
 
     useEffect(() => {
-        const sessionProfile = readResumeProfile();
-        if (sessionProfile?.profileImageUrl?.trim()) {
-            setProfileData((prev) => ({
-                ...prev,
-                profileImageUrl: sessionProfile.profileImageUrl?.trim(),
-            }));
-        }
-
         const profileId = getProfileName()?.trim() || routeProfileId;
         if (!profileId) return;
         void (async () => {
             try {
                 setIsProfileLoading(true);
-                const data = await getCandidateProfileData(profileId);
-                setProfileData(toProfileData(data, EMPTY_PROFILE));
+                const data = await getCandidateProfileData(profileId, { preferSubmittedVersion: true });
+                const mapped = toProfileData(data, EMPTY_PROFILE);
+                // If the backend didn't return a profile strength (e.g. after saving a draft),
+                // compute it locally from the profile data so the page never shows 0%.
+                if (!mapped.profileStrength) {
+                    mapped.profileStrength = computeOverallProfileProgress({ profile: data });
+                }
+                setProfileData(mapped);
                 if (typeof data.profileStatus === "string") {
                     setActiveProfile(data.profileStatus.trim().toLowerCase() === "active");
                 }
