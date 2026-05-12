@@ -166,8 +166,11 @@ function normalizeRecommendedJobs(payload: Record<string, unknown>): Recommended
         })(),
       status: typeof item.status === "string" ? item.status : undefined,
       rotation: rotationCycle,
+      customer: pickFirstString(item, ["customer", "company", "client", "organization"]),
       match_score: asNumberOrZero(item.match_score),
       action: typeof item.action === "string" ? item.action : undefined,
+      posted_time: pickFirstString(item, ["posted_time", "posting_time"]),
+      creation: pickFirstString(item, ["creation", "modified", "posting_date", "creation_date", "created_on"]),
     });
   }
 

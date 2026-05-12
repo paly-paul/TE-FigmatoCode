@@ -609,15 +609,6 @@ function JobsCard({
           : "cursor-pointer rounded-lg border-b-4 border-b-blue-600 p-4 hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
       }`}
     >
-      <div className="mb-3 flex justify-between sm:mb-4">
-        <span
-          className={`rounded-full px-2 py-1 text-xs sm:px-3 ${getStatusColor(job.status)}`}
-        >
-          {job.status}
-        </span>
-        <span className="text-xs text-gray-500">{job.postedTime}</span>
-      </div>
-
       <div className="mb-3 sm:mb-4">
         <h3
           className={`font-semibold text-gray-900 ${compact ? "text-base" : "mb-3 text-base sm:mb-4 sm:text-lg"}`}

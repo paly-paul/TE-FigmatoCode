@@ -19,6 +19,11 @@ export type RecommendedJobApi = {
   rotation?: string;
   match_score: number;
   action?: string;
+  customer?: string;
+  /** Pre-formatted "X days ago" string returned by the backend (same value the drawer uses). */
+  posted_time?: string;
+  /** Raw creation / posting date from the backend (ISO string). Fallback for posted_time. */
+  creation?: string;
 };
 
 export type JobApplicationApi = {

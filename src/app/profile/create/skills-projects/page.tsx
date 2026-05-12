@@ -362,6 +362,7 @@ function SkillsProjectsPageContent() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
+  const [savingButton, setSavingButton] = useState<"previous" | "save-draft" | "finish" | null>(null);
   const [lastSubmitWasEdit, setLastSubmitWasEdit] = useState(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
@@ -3116,23 +3117,23 @@ function SkillsProjectsPageContent() {
           <Button
             variant="outline"
             fullWidth={false}
-            onClick={() => void handleGoToBasicDetails()}
+            onClick={() => { setSavingButton("previous"); void handleGoToBasicDetails(); }}
             className="px-6 sm:px-8"
             disabled={isSubmittingProfile}
           >
-            {isSubmittingProfile ? "Saving..." : "Previous"}
+            {isSubmittingProfile && savingButton === "previous" ? "Saving..." : "Previous"}
           </Button>
           <Button
             variant="outline"
             fullWidth={false}
             className="px-6 sm:px-8"
-            onClick={() => void handleSaveDraft()}
+            onClick={() => { setSavingButton("save-draft"); void handleSaveDraft(); }}
             disabled={isSubmittingProfile || !hasUnsavedChanges}
           >
-            {isSubmittingProfile ? "Saving..." : "Save Draft"}
+            {isSubmittingProfile && savingButton === "save-draft" ? "Saving..." : "Save Draft"}
           </Button>
-          <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => void handleFinish()} disabled={isSubmittingProfile}>
-            {isSubmittingProfile ? "Saving..." : "Finish"}
+          <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => { setSavingButton("finish"); void handleFinish(); }} disabled={isSubmittingProfile}>
+            {isSubmittingProfile && savingButton === "finish" ? "Saving..." : "Finish"}
           </Button>
         </div>
       </div>
