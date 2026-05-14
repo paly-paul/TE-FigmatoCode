@@ -47,6 +47,7 @@ import {
   markInterestedInJob,
 } from "@/services/jobs/actionCenter";
 import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
+import { mergeResolvedCustomerFromPrevious } from "@/services/jobs/mergeResolvedCustomer";
 import { getRrDetails } from "@/services/jobs/rrDetails";
 
 interface JobCard {
@@ -868,7 +869,12 @@ export default function TalentEngineJobsPage() {
         const hasCachedJobs = Boolean(cachedRecommended?.jobs?.length);
         if (!active) return;
         if (hasCachedJobs) {
-          setApiRecommendedJobs(cachedRecommended!.jobs.map((job) => mapRecommendedToJobsPageCard(job)));
+          setApiRecommendedJobs((prev) =>
+            mergeResolvedCustomerFromPrevious(
+              cachedRecommended!.jobs.map((job) => mapRecommendedToJobsPageCard(job)),
+              prev
+            )
+          );
         }
         const recommended = await getRecommendedJobs(profileName);
         // Don't overwrite a valid cache with an empty response — the backend may temporarily
@@ -879,13 +885,21 @@ export default function TalentEngineJobsPage() {
         if (!active) return;
         // Only update state when we have results, or when there was nothing cached to show.
         if (recommended.length > 0 || !hasCachedJobs) {
-          setApiRecommendedJobs(recommended.map((job) => mapRecommendedToJobsPageCard(job)));
+          setApiRecommendedJobs((prev) =>
+            mergeResolvedCustomerFromPrevious(
+              recommended.map((job) => mapRecommendedToJobsPageCard(job)),
+              prev
+            )
+          );
         }
       } catch {
         if (!active) return;
         const cachedRecommended = readRecommendedJobsCache(profileName);
-        setApiRecommendedJobs(
-          (cachedRecommended?.jobs ?? []).map((job) => mapRecommendedToJobsPageCard(job))
+        setApiRecommendedJobs((prev) =>
+          mergeResolvedCustomerFromPrevious(
+            (cachedRecommended?.jobs ?? []).map((job) => mapRecommendedToJobsPageCard(job)),
+            prev
+          )
         );
       } finally {
         if (active) setHasAttemptedJobsLoad(true);
@@ -897,7 +911,14 @@ export default function TalentEngineJobsPage() {
     };
   }, []);
 
-  const jobsSource = useMemo(() => apiRecommendedJobs, [apiRecommendedJobs]);
+  /** Match dashboard: roles you already applied to drop off the recommended list. */
+  const jobsSource = useMemo(
+    () =>
+      apiRecommendedJobs.filter(
+        (job) => !(job.jobDocumentId?.trim() && appliedJobDocumentIds.has(job.jobDocumentId.trim()))
+      ),
+    [apiRecommendedJobs, appliedJobDocumentIds]
+  );
   const isInitialJobsLoading = !hasAttemptedJobsLoad;
 
   useEffect(() => {
@@ -1262,6 +1283,34 @@ export default function TalentEngineJobsPage() {
     setIsDrawerOpen(true);
   };
 
+  const refreshAppliedJobs = async (currentCandidateId: string) => {
+    if (!currentCandidateId.trim()) return;
+    try {
+      const next = new Set<string>();
+      try {
+        const apps = await getJobApplications(currentCandidateId);
+        for (const row of apps) {
+          const id = row.job_id?.trim();
+          if (id) next.add(id);
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        const interests = await getCandidateInterests(currentCandidateId);
+        for (const row of interests) {
+          const id = row.rr?.trim();
+          if (id) next.add(id);
+        }
+      } catch {
+        // ignore
+      }
+      setAppliedJobDocumentIds(next);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleDrawerPrimaryAction = async (
     action: ActionCard,
     extras?: {
@@ -1291,6 +1340,10 @@ export default function TalentEngineJobsPage() {
       n.add(jobDocumentId);
       return n;
     });
+    setApiRecommendedJobs((prev) =>
+      prev.filter((j) => j.jobDocumentId?.trim() !== jobDocumentId)
+    );
+    await refreshAppliedJobs(cid);
     setIsDrawerOpen(false);
     return true;
   };

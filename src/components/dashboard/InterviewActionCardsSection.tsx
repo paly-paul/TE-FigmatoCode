@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   extractUrlFromHtml,
+  extractTextFromHtml,
   getInterviewDetails,
   type InterviewDetailsApi,
 } from "@/services/jobs/interviewsApi";
@@ -32,6 +33,8 @@ export type UpcomingInterviewDisplay = {
   slotDate?: string;
   slotTime?: string;
   slotTimezone?: string;
+  /** Dashboard only: actionables `action: interview` with proposed slots — rendered as Job-tab style cards. */
+  usesSlotWorkflowDrawer?: boolean;
 };
 
 function formatSlotDate(date?: string): string {
@@ -167,6 +170,8 @@ function InterviewDetailModal({
   const meetingUrl =
     extractUrlFromHtml(schedule?.meeting_invite_content) ??
     (schedule?.meeting_link?.trim() || schedule?.join_url?.trim() || null);
+  const meetingContent =
+    extractTextFromHtml(schedule?.meeting_invite_content);
   const remarks = schedule?.remarks;
   const interviewers = schedule?.interviewers ?? [];
   const customer = schedule?.customer;
@@ -230,6 +235,16 @@ function InterviewDetailModal({
             <ExternalLink className="h-4 w-4" aria-hidden />
             Join Meeting
           </a>
+        )}
+
+        {/* Remark section — shown only when meeting_invite_content is available */}
+        {schedule?.meeting_invite_content && (
+          <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
+            <p className="text-xs font-semibold text-gray-500 mb-1">Remark</p>
+            <p className="text-sm text-gray-700">
+              {meetingContent || <span className="text-gray-400 italic">None</span>}
+            </p>
+          </div>
         )}
 
           {detailsLoading && (
