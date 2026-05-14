@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { clearSessionLoginEmail, getSessionLoginEmail, isProfileComplete, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
+import { clearDraftProfilePending } from "@/lib/draftProfilePending";
 import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import {
@@ -2279,6 +2280,7 @@ function SkillsProjectsPageContent() {
   function handleContinueToDashboard() {
     setIsFinishModalOpen(false);
     clearResumeWizardSession();
+    clearDraftProfilePending();
     if (!lastSubmitWasEdit) {
       setDashboardWelcomePending({ force: true });
     }

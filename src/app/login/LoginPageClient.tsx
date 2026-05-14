@@ -57,6 +57,7 @@ export default function LoginPageClient() {
       email: email.trim().toLowerCase(),
       destination,
     });
+
     if (destination === "/dashboard") {
       setDashboardWelcomePending();
     }

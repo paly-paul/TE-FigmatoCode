@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Building2,
@@ -31,6 +31,8 @@ import {
 } from "./InterviewActionCardsSection";
 import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
+import { getDraftProfilePending, clearDraftProfilePending } from "@/lib/draftProfilePending";
+import { DraftProfilePopup } from "@/components/ui/DraftProfilePopup";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import {
   readRecommendedJobsCache,
@@ -43,6 +45,7 @@ import {
   FilterState,
 } from "../ui/FilterDrawer";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useIsMobile } from "@/lib/useResponsive";
 import { getCandidateId, getProfileName } from "@/lib/authSession";
 import { getSessionLoginEmail } from "@/lib/profileOnboarding";
@@ -64,6 +67,7 @@ import {
   mapCandidateInterestToDashboardJob,
   mapRecommendedToDashboardJob,
 } from "@/services/jobs/mapApiJobsToUi";
+import { mergeResolvedCustomerFromPrevious } from "@/services/jobs/mergeResolvedCustomer";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { getAllLocationOptions } from "@/services/jobs/locationOptions";
 import { getRrDetails } from "@/services/jobs/rrDetails";
@@ -343,6 +347,22 @@ function isScheduledInterview(actionable: Pick<CandidateActionableApi, "stage" |
   );
 }
 
+function pickDisplayInterviewSlot(
+  slots: CandidateActionableSlotApi[] | undefined
+): CandidateActionableSlotApi | undefined {
+  const list = slots ?? [];
+  return (
+    list.find((s) => s.slot_status?.toLowerCase() === "scheduled") ??
+    list.find((s) => s.slot_status?.toLowerCase() === "proposed") ??
+    list[0]
+  );
+}
+
+/** Backend marks interview slot / acceptance rows with `action: "interview"`. */
+function isInterviewActionFromApi(item: Pick<CandidateActionableApi, "action">): boolean {
+  return item.action?.trim().toLowerCase() === "interview";
+}
+
 function getActionableDisplayKind(actionable: Pick<CandidateActionableApi, "stage" | "status">): ActionableDisplayKind {
   const stageText = actionable.stage.toLowerCase();
   const statusText = actionable.status.toLowerCase();
@@ -543,6 +563,7 @@ const AUTO_REFRESH_INTERVAL_SECS = Math.max(
 );
 
 export default function TalentEngineDashboard() {
+  const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileBottomTab, setMobileBottomTab] = useState<"action" | "jobs" | "insights">("action");
   const [isLookingForJob, setIsLookingForJob] = useState(true);
@@ -567,6 +588,8 @@ export default function TalentEngineDashboard() {
   const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
+  const [draftPopupOpen, setDraftPopupOpen] = useState(false);
+  const [draftQueuedAfterWelcome, setDraftQueuedAfterWelcome] = useState(false);
   const [jobSearchStatusPopup, setJobSearchStatusPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -598,6 +621,7 @@ export default function TalentEngineDashboard() {
   }, []);
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
+  const [apiProfileCards, setApiProfileCards] = useState<ActionCard[]>([]);
   const [apiScheduledInterviews, setApiScheduledInterviews] = useState<UpcomingInterviewDisplay[]>([]);
   const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
@@ -628,7 +652,10 @@ export default function TalentEngineDashboard() {
   });
   const actionCardsSignatureRef = useRef("");
   const generalCardsSignatureRef = useRef("");
+  const profileCardsSignatureRef = useRef("");
   const recommendedJobsSignatureRef = useRef("");
+  /** Action Center → Interviews: `usesSlotWorkflowDrawer` rows open ActionDrawer from this map. */
+  const interviewTabSlotCardsRef = useRef<Map<string, ActionCard>>(new Map());
 
   const resolveJobSearchProfileId = () => {
     const fromProfile = profileId?.trim();
@@ -743,7 +770,9 @@ export default function TalentEngineDashboard() {
           const cachedRecommendedJobs = cachedRecommended!.jobs
             .map((job) => mapRecommendedToDashboardJob(job))
             .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)));
-          setApiRecommendedJobs(cachedRecommendedJobs);
+          setApiRecommendedJobs((prev) =>
+            mergeResolvedCustomerFromPrevious(cachedRecommendedJobs, prev)
+          );
         }
         const safeRecommendedPromise = (
           recommendedJobsEarlyPromise ?? Promise.resolve([] as RecommendedJobApi[])
@@ -793,13 +822,65 @@ export default function TalentEngineDashboard() {
         }
 
         const nextActions: ActionCard[] = [];
+        const nextGeneral: ActionCard[] = [];
+        const nextProfile: ActionCard[] = [];
         const scheduledInterviewItems: UpcomingInterviewDisplay[] = [];
+        const interviewTabSlotCardsById = new Map<string, ActionCard>();
+
+        const buildJobActionCardFromActionable = (item: CandidateActionableApi): ActionCard => {
+          const isInterviewActionable = getActionableDisplayKind(item) === "interview";
+          const stableIdSeed =
+            item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
+          return {
+            id:
+              Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) ||
+              stableNumericId(stableIdSeed),
+            type: "Job",
+            title: toActionTitle(item),
+            subtitle: item.customer
+              ? `${item.job_title} - ${item.customer}`
+              : `${item.job_title} - ${item.job_id}`,
+            timestamp: item.stage || item.status || "Now",
+            jobDocumentId: item.job_id,
+            customer: item.customer?.trim() || undefined,
+            rrCandidateName: item.rr_candidate,
+            isSourcingAccepted: Boolean(
+              item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
+            ),
+            proposalName: item.name,
+            interviewId: isInterviewActionable
+              ? item.name?.trim() || item.info?.interview_id
+              : item.info?.interview_id,
+            interviewRound: item.info?.interview_round,
+            interviewType: item.info?.interview_type,
+            interviewMode: item.info?.interview_mode,
+            interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
+            sourcingAcceptedAt:
+              item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            receivedAt:
+              item.received_at ||
+              item.accepted_at ||
+              localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+          };
+        };
 
         for (const item of Array.from(bestActionableByJob.values())) {
-          if (isScheduledInterview(item)) {
-            const slots = item.info?.interview_slots ?? [];
-            const slot =
-              slots.find((s) => s.slot_status?.toLowerCase() === "scheduled") ?? slots[0];
+          const slotList = item.info?.interview_slots ?? [];
+          const slot = pickDisplayInterviewSlot(item.info?.interview_slots);
+          
+          // Check action type to route to appropriate tab
+          const actionType = item.action?.trim() || "";
+          if (actionType === "general") {
+            // General tab: display actionables with action: "general"
+            nextGeneral.push(buildJobActionCardFromActionable(item));
+          } else if (actionType === "profile") {
+            // Profile tab: display actionables with action: "profile"
+            const profileActionCard: ActionCard = {
+              ...buildJobActionCardFromActionable(item),
+              type: "Profile",
+            };
+            nextProfile.push(profileActionCard);
+          } else if (isScheduledInterview(item)) {
             scheduledInterviewItems.push({
               id: item.name?.trim() || `${item.job_id}|interview-scheduled`,
               jobTitle: item.job_title || item.job_id || "Interview",
@@ -812,38 +893,24 @@ export default function TalentEngineDashboard() {
               slotTime: slot?.slot_time,
               slotTimezone: slot?.slot_timezone,
             });
-          } else {
-            const isInterviewActionable = getActionableDisplayKind(item) === "interview";
-            const stableIdSeed = item.name?.trim() || `${item.job_id}|${item.job_title}|${item.stage}|${item.status}`;
-            nextActions.push({
-              id: Number.parseInt(item.name.replace(/\D/g, "").slice(0, 9), 10) || stableNumericId(stableIdSeed),
-              type: "Job",
-              title: toActionTitle(item),
-              subtitle: item.customer
-                ? `${item.job_title} - ${item.customer}`
-                : `${item.job_title} - ${item.job_id}`,
-              timestamp: item.stage || item.status || "Now",
-              jobDocumentId: item.job_id,
-              customer: item.customer?.trim() || undefined,
-              rrCandidateName: item.rr_candidate,
-              isSourcingAccepted: Boolean(
-                item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
-              ),
-              proposalName: item.name,
-              interviewId: isInterviewActionable
-                ? item.name?.trim() || item.info?.interview_id
-                : item.info?.interview_id,
+          } else if (isInterviewActionFromApi(item) && slotList.length > 0) {
+            const displayId = item.name?.trim() || `${item.job_id}|interview-action`;
+            scheduledInterviewItems.push({
+              id: displayId,
+              jobTitle: item.job_title || item.job_id || "Interview",
+              candidateId: item.rr_candidate?.trim() || profileIdForActionables || undefined,
+              jobId: item.job_id?.trim() || undefined,
               interviewRound: item.info?.interview_round,
               interviewType: item.info?.interview_type,
               interviewMode: item.info?.interview_mode,
-              interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
-              sourcingAcceptedAt:
-                item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
-              receivedAt:
-                item.received_at ||
-                item.accepted_at ||
-                localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+              slotDate: slot?.slot_date,
+              slotTime: slot?.slot_time,
+              slotTimezone: slot?.slot_timezone,
+              usesSlotWorkflowDrawer: true,
             });
+            interviewTabSlotCardsById.set(displayId, buildJobActionCardFromActionable(item));
+          } else {
+            nextActions.push(buildJobActionCardFromActionable(item));
           }
         }
 
@@ -894,25 +961,6 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const sortedRecommendedForGeneral = [...recommendedJobsRes]
-          .map((job, index) => ({ job, index }))
-          .sort((a, b) => {
-            const aScore = recencyScoreFromPostedTime(a.job.status || "");
-            const bScore = recencyScoreFromPostedTime(b.job.status || "");
-            if (aScore !== bScore) return aScore - bScore;
-            return a.index - b.index;
-          })
-          .map((row) => row.job);
-        const nextGeneral: ActionCard[] = sortedRecommendedForGeneral
-          .slice(0, 3)
-          .map((job, index) => ({
-            id: 100000 + index,
-            type: "General",
-            title: job.job_title || "New Matching Roles Added",
-            subtitle: `${job.job_title} - ${job.location || job.job_id}`,
-            timestamp: "",
-            jobDocumentId: job.job_id,
-          }));
         const nextRecommendedJobs: JobListing[] = recommendedJobsRes.map((job) =>
           mapRecommendedToDashboardJob(job)
         );
@@ -946,6 +994,18 @@ export default function TalentEngineDashboard() {
           setApiGeneralCards(orderedGeneral);
         }
 
+        const orderedProfile = [...nextProfile];
+        const profileSignature = [...orderedProfile]
+          .sort((a, b) =>
+            (a.jobDocumentId || String(a.id)).localeCompare(b.jobDocumentId || String(b.id))
+          )
+          .map(actionCardSignature)
+          .join("::");
+        if (profileCardsSignatureRef.current !== profileSignature) {
+          profileCardsSignatureRef.current = profileSignature;
+          setApiProfileCards(orderedProfile);
+        }
+
         // If the fresh fetch returned empty but we already had cached jobs, skip the state
         // update — the cached jobs are already displayed and should remain visible until
         // the profile is fully re-submitted and the backend returns actual results.
@@ -959,7 +1019,9 @@ export default function TalentEngineDashboard() {
             .join("::");
           if (recommendedJobsSignatureRef.current !== recommendedSignature) {
             recommendedJobsSignatureRef.current = recommendedSignature;
-            setApiRecommendedJobs(orderedRecommended);
+            setApiRecommendedJobs((prev) =>
+              mergeResolvedCustomerFromPrevious(orderedRecommended, prev)
+            );
           }
         }
 
@@ -993,6 +1055,7 @@ export default function TalentEngineDashboard() {
           // Non-fatal: actionables-sourced items are shown as-is
         }
 
+        interviewTabSlotCardsRef.current = interviewTabSlotCardsById;
         setApiScheduledInterviews(scheduledInterviewItems);
 
         setHasAttemptedActionablesLoad(true);
@@ -1030,14 +1093,30 @@ export default function TalentEngineDashboard() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const hasDraftPending = getDraftProfilePending();
+    let hasWelcomePending = false;
     try {
-      if (window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1") {
+      hasWelcomePending = window.sessionStorage.getItem(DASHBOARD_WELCOME_PENDING_KEY) === "1";
+      if (hasWelcomePending) {
         window.sessionStorage.removeItem(DASHBOARD_WELCOME_PENDING_KEY);
-        setWelcomeUserName(getResolvedNavDisplayName());
-        setWelcomeModalOpen(true);
       }
     } catch {
       // ignore
+    }
+
+    if (hasWelcomePending) {
+      setWelcomeUserName(getResolvedNavDisplayName());
+      setWelcomeModalOpen(true);
+      if (hasDraftPending) {
+        clearDraftProfilePending();
+        setDraftQueuedAfterWelcome(true);
+      }
+      return;
+    }
+
+    if (hasDraftPending) {
+      clearDraftProfilePending();
+      setDraftPopupOpen(true);
     }
   }, []);
 
@@ -1132,10 +1211,13 @@ export default function TalentEngineDashboard() {
     if (!profileKey) return;
     const cached = readRecommendedJobsCache(profileKey);
     if (!cached?.jobs?.length) return;
-    setApiRecommendedJobs(
-      cached.jobs
-        .map((job) => mapRecommendedToDashboardJob(job))
-        .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)))
+    setApiRecommendedJobs((prev) =>
+      mergeResolvedCustomerFromPrevious(
+        cached.jobs
+          .map((job) => mapRecommendedToDashboardJob(job))
+          .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId))),
+        prev
+      )
     );
     // Intentionally omit appliedJobDocumentIds: including it re-applies stale cache after a
     // successful refresh and can shrink the list. `refreshDashboardData` re-filters on load.
@@ -1150,6 +1232,53 @@ export default function TalentEngineDashboard() {
     if (!candidateId && !profileId) return;
     void refreshDashboardData({ candidateId, profileName: profileId });
   }, [candidateId, profileId]);
+
+  /** Check if two action cards have the same meaningful data (ignoring object reference). */
+  const actionCardsHaveSameData = useCallback(
+    (a: ActionCard | null, b: ActionCard | null): boolean => {
+      if (!a || !b) return a === b;
+      return (
+        a.id === b.id &&
+        a.type === b.type &&
+        a.title === b.title &&
+        a.subtitle === b.subtitle &&
+        a.jobDocumentId === b.jobDocumentId &&
+        a.rrCandidateName === b.rrCandidateName &&
+        a.proposalName === b.proposalName &&
+        a.interviewId === b.interviewId &&
+        a.interviewRound === b.interviewRound &&
+        a.interviewType === b.interviewType &&
+        a.interviewMode === b.interviewMode &&
+        a.isSourcingAccepted === b.isSourcingAccepted &&
+        a.customer === b.customer
+        // Note: intentionally omitting interviewSlots from comparison to preserve user selection
+        // when slots are refreshed with the same data
+      );
+    },
+    []
+  );
+
+  /** Keep drawer `action` aligned with the latest refresh row so embedded interview slots stay stable. */
+  useEffect(() => {
+    // Don't sync while drawer is open - preserve the action the user is interacting with
+    // The dashboard refresh won't change the action data anyway, syncing just causes form resets
+    if (isDrawerOpen) return;
+    
+    if (!selectedAction) return;
+    const jobId = selectedAction.jobDocumentId?.trim();
+    if (!jobId) return;
+    const proposal = selectedAction.proposalName?.trim() ?? "";
+    const fresh = apiActionCards.find(
+      (c) =>
+        c.id === selectedAction.id &&
+        c.jobDocumentId?.trim() === jobId &&
+        (c.proposalName?.trim() ?? "") === proposal
+    );
+    // Only update if the data meaningfully changed, not just the object reference
+    if (fresh && !actionCardsHaveSameData(fresh, selectedAction)) {
+      setSelectedAction(fresh);
+    }
+  }, [selectedAction, apiActionCards]);
 
   /** Recommended list often omits `customer`; align cards with the job drawer via RR details. */
   useEffect(() => {
@@ -1207,13 +1336,19 @@ export default function TalentEngineDashboard() {
 
     const handleFocus = () => {
       resetCountdown();
-      void triggerDashboardRefresh();
+      // Skip refresh if drawer is open to prevent interrupting user interactions
+      if (!isDrawerOpen) {
+        void triggerDashboardRefresh();
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         resetCountdown();
-        void triggerDashboardRefresh();
+        // Skip refresh if drawer is open to prevent interrupting user interactions
+        if (!isDrawerOpen) {
+          void triggerDashboardRefresh();
+        }
       }
     };
 
@@ -1224,7 +1359,10 @@ export default function TalentEngineDashboard() {
       if (countdown <= 0) {
         countdown = AUTO_REFRESH_INTERVAL_SECS;
         setRefreshCountdown(AUTO_REFRESH_INTERVAL_SECS);
-        void triggerDashboardRefresh();
+        // Skip refresh if drawer is open to prevent interrupting user interactions
+        if (!isDrawerOpen) {
+          void triggerDashboardRefresh();
+        }
       } else {
         setRefreshCountdown(countdown);
       }
@@ -1238,7 +1376,7 @@ export default function TalentEngineDashboard() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [isDrawerOpen]);
 
   useEffect(() => {
     if (!candidateId || typeof window === "undefined") return;
@@ -1392,8 +1530,8 @@ export default function TalentEngineDashboard() {
 
   const resolvedActionCards = useMemo(() => {
     if (!hasAttemptedActionablesLoad) return [];
-    return [...apiActionCards, ...apiGeneralCards];
-  }, [apiActionCards, apiGeneralCards, hasAttemptedActionablesLoad]);
+    return [...apiActionCards, ...apiGeneralCards, ...apiProfileCards];
+  }, [apiActionCards, apiGeneralCards, apiProfileCards, hasAttemptedActionablesLoad]);
 
   const filteredActions = resolvedActionCards.filter(
     (card) => card.type === activeActionTab
@@ -1406,6 +1544,15 @@ export default function TalentEngineDashboard() {
     : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
 
   const upcomingInterviews = apiScheduledInterviews;
+
+  const interviewTabSlotWorkflow = useMemo(
+    () => upcomingInterviews.filter((i) => i.usesSlotWorkflowDrawer),
+    [upcomingInterviews]
+  );
+  const interviewTabCalendarOnly = useMemo(
+    () => upcomingInterviews.filter((i) => !i.usesSlotWorkflowDrawer),
+    [upcomingInterviews]
+  );
 
   const actionTabCounts = useMemo(() => {
     return {
@@ -1497,6 +1644,7 @@ export default function TalentEngineDashboard() {
       });
 
     const recommendedFiltered = filterList(recommendedSourceJobs)
+      .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)))
       .sort((a, b) => recencyScoreFromPostedTime(a.postedTime) - recencyScoreFromPostedTime(b.postedTime))
       .slice(0, DASHBOARD_RECOMMENDED_JOBS_LIMIT);
 
@@ -1507,6 +1655,7 @@ export default function TalentEngineDashboard() {
     };
   }, [
     activeFilters,
+    appliedJobDocumentIds,
     savedJobIds,
     searchQuery,
     selectedLocations,
@@ -1611,6 +1760,36 @@ export default function TalentEngineDashboard() {
           label: "General",
           icon: <Repeat size={13} />,
           className: "bg-purple-50 text-purple-700",
+        };
+    }
+  };
+
+  const getEmptyActionMessage = (tab: string) => {
+    switch (tab) {
+      case "Job":
+        return {
+          title: "No job updates right now",
+          description: "We'll show you new job opportunities and application updates here.",
+        };
+      case "Interviews":
+        return {
+          title: "No interview slots right now",
+          description: "Available interview slots will appear here for your scheduled interviews.",
+        };
+      case "Profile":
+        return {
+          title: "No profile updates right now",
+          description: "We'll suggest profile improvements to help you stand out to employers.",
+        };
+      case "General":
+        return {
+          title: "No general updates right now",
+          description: "General recommendations and tips will appear here.",
+        };
+      default:
+        return {
+          title: "No actionables right now",
+          description: "We will show interview, proposal, and job updates here.",
         };
     }
   };
@@ -1816,6 +1995,11 @@ export default function TalentEngineDashboard() {
             return next;
           });
           removeSubmittedActionCard();
+          // Remove the submitted interview from the display list
+          setApiScheduledInterviews((prev) =>
+            prev.filter((interview) => interview.id !== action.interviewId)
+          );
+          countdownResetRef.current();
           showActionSuccess(
             "Interview Confirmed!",
             "Your interview slot has been booked. You'll receive a confirmation with further details."
@@ -1835,6 +2019,7 @@ export default function TalentEngineDashboard() {
             return next;
           });
           removeSubmittedActionCard();
+          countdownResetRef.current();
           showActionSuccess(
             "Proposal Accepted!",
             "Your salary proposal has been accepted. The recruiter will be in touch with next steps."
@@ -1895,6 +2080,7 @@ export default function TalentEngineDashboard() {
             });
           }
           removeSubmittedActionCard();
+          countdownResetRef.current();
           showActionSuccess(
             "Great Choice!",
             "You've successfully accepted the job invitation. Stay tuned for updates from the recruiter."
@@ -1915,6 +2101,7 @@ export default function TalentEngineDashboard() {
             });
             setApiRecommendedJobs((prev) => prev.filter((j) => j.jobDocumentId !== jobDocumentId));
             await refreshAppliedJobs(candidateId);
+            countdownResetRef.current();
             setActiveTab("Your Applications");
             setApplicationSubTab("Applied Jobs");
             showActionSuccess(
@@ -2114,6 +2301,101 @@ export default function TalentEngineDashboard() {
   const getActionCardKey = (card: ActionCard) =>
     `${card.type}:${card.jobDocumentId?.trim() || card.id}`;
 
+  const openActionDrawerForCard = (card: ActionCard) => {
+    setSelectedAction(card);
+    setIsDrawerOpen(true);
+  };
+
+  const renderInterviewTabSlotAcceptanceCardDesktop = (card: ActionCard) => {
+    const badge = getActionBadge(card.type);
+    return (
+      <div
+        key={`await-slot:${getActionCardKey(card)}`}
+        className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
+      >
+        <div className="flex justify-between mb-3">
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
+          >
+            {badge.icon}
+            {badge.label}
+          </div>
+          <span className="text-xs text-gray-500">{card.timestamp}</span>
+        </div>
+
+        <div className="mb-4 space-y-2">
+          <p className="text-sm text-slate-700">
+            <span className="font-semibold text-slate-600">Role: </span>
+            <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+          </p>
+          <p className="text-sm text-slate-700">
+            <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
+            <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+          </p>
+          {card.type !== "General" && (
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+            >
+              Status: {getActionStatusLabel(card)}
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => openActionDrawerForCard(card)}
+          className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
+        >
+          Take Action
+        </button>
+      </div>
+    );
+  };
+
+  const renderInterviewTabSlotAcceptanceCardMobile = (card: ActionCard) => {
+    const badge = getActionBadge(card.type);
+    return (
+      <div
+        key={`await-slot:${getActionCardKey(card)}`}
+        className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm"
+      >
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+          >
+            {badge.icon}
+            {badge.label}
+          </div>
+          <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
+        </div>
+        <div className="mb-4 space-y-2.5">
+          <p className="text-base text-slate-700">
+            <span className="font-semibold text-slate-600">Role: </span>
+            <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+          </p>
+          <p className="text-base text-slate-700">
+            <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
+            <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+          </p>
+          {card.type !== "General" && (
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+            >
+              Status: {getActionStatusLabel(card)}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => openActionDrawerForCard(card)}
+          className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50"
+        >
+          Take Action
+        </button>
+      </div>
+    );
+  };
+
   const dashboardModals = (
     <>
       <ActionDrawer
@@ -2157,10 +2439,27 @@ export default function TalentEngineDashboard() {
         triggerRef={filterButtonRef}
         initialFilters={activeFilters}
       />
+      <DraftProfilePopup
+        open={draftPopupOpen}
+        onContinueEditing={() => {
+          setDraftPopupOpen(false);
+          setDraftQueuedAfterWelcome(false);
+          router.push("/profile/create/basic-details");
+        }}
+        onDoItLater={() => {
+          setDraftPopupOpen(false);
+        }}
+      />
       <WelcomeBackModal
         open={welcomeModalOpen}
         userName={welcomeUserName}
-        onClose={() => setWelcomeModalOpen(false)}
+        onClose={() => {
+          setWelcomeModalOpen(false);
+          if (draftQueuedAfterWelcome) {
+            setDraftQueuedAfterWelcome(false);
+            setDraftPopupOpen(true);
+          }
+        }}
         onYesOpenToOpportunities={() => {
           void (async () => {
             try {
@@ -2206,11 +2505,22 @@ export default function TalentEngineDashboard() {
 
         <div className="flex flex-col gap-3">
           {activeActionTab === "Interviews" ? (
-            <InterviewActionCardsSection items={upcomingInterviews} />
+            <>
+              {interviewTabSlotWorkflow.map((interview) => {
+                const card = interviewTabSlotCardsRef.current.get(interview.id);
+                if (!card) return null;
+                return renderInterviewTabSlotAcceptanceCardMobile(card);
+              })}
+              {interviewTabCalendarOnly.length > 0 ? (
+                <InterviewActionCardsSection items={interviewTabCalendarOnly} />
+              ) : interviewTabSlotWorkflow.length === 0 ? (
+                <InterviewActionCardsSection items={[]} />
+              ) : null}
+            </>
           ) : displayedActions.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-gray-900">No actionables right now</p>
-              <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
+              <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
+              <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
             </div>
           ) : (
             displayedActions.map((card) => {
@@ -2685,13 +2995,26 @@ export default function TalentEngineDashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {activeActionTab === "Interviews" ? (
-              <div className="col-span-full w-full">
-                <InterviewActionCardsSection items={upcomingInterviews} />
-              </div>
+              <>
+                {interviewTabSlotWorkflow.map((interview) => {
+                  const card = interviewTabSlotCardsRef.current.get(interview.id);
+                  if (!card) return null;
+                  return renderInterviewTabSlotAcceptanceCardDesktop(card);
+                })}
+                {interviewTabCalendarOnly.length > 0 ? (
+                  <div className="col-span-full w-full">
+                    <InterviewActionCardsSection items={interviewTabCalendarOnly} />
+                  </div>
+                ) : interviewTabSlotWorkflow.length === 0 ? (
+                  <div className="col-span-full w-full">
+                    <InterviewActionCardsSection items={[]} />
+                  </div>
+                ) : null}
+              </>
             ) : displayedActions.length === 0 ? (
               <div className="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
-                <p className="text-sm font-medium text-gray-900">No actionables right now</p>
-                <p className="mt-1 text-sm text-gray-500">We will show interview, proposal, and job updates here.</p>
+                <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
+                <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
               </div>
             ) : (
               displayedActions.map((card) => {

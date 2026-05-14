@@ -16,7 +16,8 @@ export const actionDrawerChrome = {
 export const actionDrawerFormDefaults = {
   availableDate: "2026-03-10",
   expectedSalary: "0",
-  selectedInterviewSlotId: "slot-1",
+  /** Empty until real API slot ids load (legacy mock used "slot-1"). */
+  selectedInterviewSlotId: "",
 } as const;
 
 export const actionDrawerJobSummary = {

@@ -106,6 +106,7 @@ function parseActionablesPayload(data: Record<string, unknown>): {
     const info = normalizeActionableInfo(infoRaw);
     const stage = firstString(item, ["stage", "rr_candidate_stage", "candidate_stage"]) || "";
     const status = firstString(item, ["status", "rr_candidate_status", "candidate_status"]) || "";
+    const action = firstString(item, ["action", "action_type", "action_name"]);
     const accepted_at = firstString(item, ["accepted_at"]);
     const received_at = firstString(item, [
       "received_at",
@@ -118,6 +119,7 @@ function parseActionablesPayload(data: Record<string, unknown>): {
     actions.push({
       job_title: derivedJobTitle,
       job_id: derivedJobId,
+      action,
       customer,
       rr_candidate,
       // Some backends/environments may emit stage/status under rr_candidate_* keys.

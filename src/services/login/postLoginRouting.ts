@@ -2,6 +2,7 @@
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
+import { setDraftProfilePending } from "@/lib/draftProfilePending";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -133,6 +134,36 @@ async function hasStartedProfileFlow(profileName: string): Promise<boolean> {
   return hasMeaningfulProfileProgress(data);
 }
 
+async function isProfileStateInDraft(profileName: string): Promise<boolean> {
+  try {
+    const url = new URL("/api/method/get_data/", window.location.origin);
+    url.searchParams.set("doctype", "Profile");
+    url.searchParams.set("name", profileName);
+    const res = await fetch(url.toString(), { method: "GET" });
+    if (!res.ok) return false;
+    const data = (await res.json()) as UnknownRecord;
+    const root =
+      data.data && typeof data.data === "object"
+        ? (data.data as UnknownRecord)
+        : data.message && typeof data.message === "object"
+          ? (data.message as UnknownRecord)
+          : data;
+    const profile =
+      root.profile && typeof root.profile === "object" ? (root.profile as UnknownRecord) : {};
+    const profileVersion =
+      root.profile_version && typeof root.profile_version === "object"
+        ? (root.profile_version as UnknownRecord)
+        : {};
+    const profileState =
+      typeof profile.state === "string" ? profile.state.trim().toLowerCase() : "";
+    const versionState =
+      typeof profileVersion.state === "string" ? profileVersion.state.trim().toLowerCase() : "";
+    return profileState === "draft" || versionState === "draft";
+  } catch {
+    return false;
+  }
+}
+
 export type PostLoginDestination = "/dashboard" | "/profile/create/basic-details" | "/profile/create";
 
 /**
@@ -169,10 +200,17 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     }
     setProfileName(profileName);
 
-    const isComplete = await isProfileWizardCompleteOnServer(profileName);
+    const [isComplete, isDraft] = await Promise.all([
+      isProfileWizardCompleteOnServer(profileName),
+      isProfileStateInDraft(profileName),
+    ]);
+    if (isDraft) {
+      setDraftProfilePending();
+    }
     console.log("[login-routing] profile-check:session", {
       profileName,
       isComplete,
+      isDraft,
       sessionProfileGenerated,
     });
     if (isComplete) {

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { useSignupSubmit } from "@/services/signup";
+import LegalHtmlModal from "@/components/legal/LegalHtmlModal";
 
 export function MobileSignupScreen() {
   const { submit, isLoading, error } = useSignupSubmit();
@@ -23,6 +24,22 @@ export function MobileSignupScreen() {
   });
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [legalModal, setLegalModal] = useState<null | { title: string; src: string }>(null);
+
+  function openLegalModal(kind: "terms" | "privacy") {
+    if (kind === "terms") {
+      setLegalModal({
+        title: "Terms & Conditions",
+        src: "/legal/T%26C.html",
+      });
+      return;
+    }
+
+    setLegalModal({
+      title: "Privacy Policy",
+      src: "/legal/Privacy_Policy.html",
+    });
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -105,14 +122,29 @@ export function MobileSignupScreen() {
             label={
               <span>
                 I agree to{" "}
-                <Link
-                  href="/terms"
+                <button
+                  type="button"
                   className="font-semibold text-primary-600 hover:text-primary-700"
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLegalModal("terms");
+                  }}
                 >
                   Terms &amp; Conditions
-                </Link>
+                </button>
+                <span className="mx-1">and</span>
+                <button
+                  type="button"
+                  className="font-semibold text-primary-600 hover:text-primary-700"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLegalModal("privacy");
+                  }}
+                >
+                  Privacy &amp; Policy
+                </button>
               </span>
             }
           />
@@ -151,6 +183,14 @@ export function MobileSignupScreen() {
       </div>
 
       <MobileSuccessStoriesSection heading="Simple to use with relevant job listings" />
+
+      <LegalHtmlModal
+        open={legalModal !== null}
+        title={legalModal?.title ?? ""}
+        src={legalModal?.src ?? ""}
+        onNavigate={openLegalModal}
+        onClose={() => setLegalModal(null)}
+      />
     </div>
   );
 }

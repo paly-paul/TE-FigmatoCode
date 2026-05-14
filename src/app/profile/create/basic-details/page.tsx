@@ -219,9 +219,17 @@ function sanitizePhoneInput(value: string): string {
 function sanitizeSalaryInput(value: string): string {
   const sanitized = value.replace(/[^\d.]/g, "");
   const dotIndex = sanitized.indexOf(".");
-  if (dotIndex === -1) return sanitized;
-  const integerPart = sanitized.slice(0, dotIndex);
-  const decimalPart = sanitized.slice(dotIndex + 1).replace(/\./g, "");
+  if (dotIndex === -1) {
+    if (!sanitized) return "";
+    const noLeadingZeros = sanitized.replace(/^0+(?=\d)/g, "");
+    return noLeadingZeros;
+  }
+  let integerPart = sanitized.slice(0, dotIndex);
+  let decimalPart = sanitized.slice(dotIndex + 1).replace(/\./g, "");
+  integerPart = integerPart.replace(/^0+(?=\d)/g, "");
+  if (integerPart === "" && decimalPart) {
+    integerPart = "0";
+  }
   return `${integerPart}.${decimalPart}`;
 }
 

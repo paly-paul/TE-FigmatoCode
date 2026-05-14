@@ -17,7 +17,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { BaseDrawer } from "./ui/BaseDrawer";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -121,6 +121,27 @@ function getTodayIsoDate(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
+}
+
+/** Stable key so interview-slot `useEffect` does not re-run when the parent passes a new array with the same slots. */
+function interviewSlotsDependencySignature(
+  slots: ActionDrawerActionCard["interviewSlots"] | undefined
+): string {
+  if (!slots?.length) return "";
+  return JSON.stringify(
+    slots.map((s) => ({
+      id: s.slot_id,
+      d: s.slot_date,
+      t: s.slot_time,
+      st: s.slot_status,
+    }))
+  );
+}
+
+function pickInterviewSlotOrFirst(slots: InterviewSlotOptionApi[], prev: string): string {
+  const trimmed = prev.trim();
+  if (trimmed && slots.some((s) => s.slot_id === trimmed)) return trimmed;
+  return slots[0]?.slot_id ?? "";
 }
 
 function sanitizeDecimalInput(value: string): string {
@@ -279,16 +300,32 @@ export default function ActionDrawer({
   const [apiExpectedSalary, setApiExpectedSalary] = useState<number | null>(null);
   const [showSalaryPopup, setShowSalaryPopup] = useState(false);
   const [salaryPopupVisible, setSalaryPopupVisible] = useState(false);
+  const [showSlotConfirmPopup, setShowSlotConfirmPopup] = useState(false);
+  const [slotConfirmPopupVisible, setSlotConfirmPopupVisible] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [successPopupVisible, setSuccessPopupVisible] = useState(false);
   const [successType, setSuccessType] = useState<"accept" | "clarification">("accept");
   const submitInFlightRef = useRef(false);
   const salaryPopupConfirmedRef = useRef(false);
+  const slotConfirmPopupConfirmedRef = useRef(false);
   const availableDateFieldRef = useRef<HTMLDivElement | null>(null);
   const expectedSalaryFieldRef = useRef<HTMLDivElement | null>(null);
   const termsFieldRef = useRef<HTMLLabelElement | null>(null);
   const interviewSlotsSectionRef = useRef<HTMLDivElement | null>(null);
   const clarificationBoxRef = useRef<HTMLDivElement | null>(null);
+  /** Avoid wiping interview slot selection on parent re-renders / dashboard refresh when the same actionable is open. */
+  const drawerFormResetSessionRef = useRef<string>("");
+
+  const drawerFormResetKey = useMemo(() => {
+    if (!open || !action) return "";
+    return [
+      action.id,
+      action.jobDocumentId ?? "",
+      action.proposalName ?? "",
+      action.title,
+      String(action.isSourcingAccepted ?? ""),
+    ].join("\u0001");
+  }, [open, action?.id, action?.jobDocumentId, action?.proposalName, action?.title, action?.isSourcingAccepted]);
 
   const scrollToMissingField = (target: HTMLElement | null) => {
     if (!target) return;
@@ -314,6 +351,15 @@ export default function ActionDrawer({
   }, [showSalaryPopup]);
 
   useEffect(() => {
+    if (!showSlotConfirmPopup) {
+      setSlotConfirmPopupVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setSlotConfirmPopupVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [showSlotConfirmPopup]);
+
+  useEffect(() => {
     if (!showSuccessPopup) {
       setSuccessPopupVisible(false);
       return;
@@ -323,55 +369,59 @@ export default function ActionDrawer({
   }, [showSuccessPopup]);
 
   useEffect(() => {
-    if (open) {
-      const normalized = action?.title.toLowerCase() ?? "";
-      const recruiterInterestReceived =
-        normalized === actionDrawerTitleMatchers.recruiterInterest || normalized.includes("interest");
-
-      setActiveTab(
-        isApplicationTimelineCard(action)
-          ? "Job Description"
-          : isRecruiterInterestCard(action)
-            ? "Job Description"
-          : isActionableStageCard(action)
-            ? "Job Action"
-          : shouldUseFirstTimeJobTabs(action)
-            ? "Job Description"
-            : "Job Action"
-      );
-      setAvailableDate(minAvailableDate);
-      setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
-      setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
-      const startWithSalaryNegotiationOpen = isSalaryNegotiationCard(action);
-      setIsProposalExpanded(true);
-      setIsProjectInfoExpanded(!startWithSalaryNegotiationOpen);
-      setIsSalaryNegotiationExpanded(startWithSalaryNegotiationOpen);
-      setShowClarificationBox(false);
-      setClarificationRemark("");
-      setIsClarificationSubmitting(false);
-      setShowAcceptConfirmation(false);
-      setHasAcceptedTerms(false);
-      setInterviewSlots([]);
-      setInterviewSlotsLoading(false);
-      setInterviewSlotsError(null);
-      setResolvedInterviewId(null);
-      setJobDescriptionContent(null);
-      setJobDescriptionLoading(false);
-      setJobDescriptionError(null);
-      setRrDetails(null);
-      setProposalData(null);
-      setProposalLoading(false);
-      setProposalError(null);
-      setValidationMessage(null);
-      setIsSubmitting(false);
-      submitInFlightRef.current = false;
-      setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
-      setApiExpectedSalary(null);
-      setShowSalaryPopup(false);
-      salaryPopupConfirmedRef.current = false;
-      setShowSuccessPopup(false);
+    if (!open) {
+      drawerFormResetSessionRef.current = "";
+      return;
     }
-  }, [open, action?.isSourcingAccepted, action?.title, action?.jobDocumentId, minAvailableDate]);
+    if (!action || !drawerFormResetKey) return;
+    if (drawerFormResetSessionRef.current === drawerFormResetKey) return;
+    drawerFormResetSessionRef.current = drawerFormResetKey;
+
+    setActiveTab(
+      isApplicationTimelineCard(action)
+        ? "Job Description"
+        : isRecruiterInterestCard(action)
+          ? "Job Description"
+        : isActionableStageCard(action)
+          ? "Job Action"
+        : shouldUseFirstTimeJobTabs(action)
+          ? "Job Description"
+          : "Job Action"
+    );
+    setAvailableDate(minAvailableDate);
+    setExpectedSalary(actionDrawerFormDefaults.expectedSalary);
+    setSelectedInterviewSlot(actionDrawerFormDefaults.selectedInterviewSlotId);
+    const startWithSalaryNegotiationOpen = isSalaryNegotiationCard(action);
+    setIsProposalExpanded(true);
+    setIsProjectInfoExpanded(!startWithSalaryNegotiationOpen);
+    setIsSalaryNegotiationExpanded(startWithSalaryNegotiationOpen);
+    setShowClarificationBox(false);
+    setClarificationRemark("");
+    setIsClarificationSubmitting(false);
+    setShowAcceptConfirmation(false);
+    setHasAcceptedTerms(false);
+    setInterviewSlots([]);
+    setInterviewSlotsLoading(false);
+    setInterviewSlotsError(null);
+    setResolvedInterviewId(null);
+    setJobDescriptionContent(null);
+    setJobDescriptionLoading(false);
+    setJobDescriptionError(null);
+    setRrDetails(null);
+    setProposalData(null);
+    setProposalLoading(false);
+    setProposalError(null);
+    setValidationMessage(null);
+    setIsSubmitting(false);
+    submitInFlightRef.current = false;
+    setHasSubmitted(shouldPrefillSubmittedFromSourcing(action));
+    setApiExpectedSalary(null);
+    setShowSalaryPopup(false);
+    salaryPopupConfirmedRef.current = false;
+    setShowSlotConfirmPopup(false);
+    slotConfirmPopupConfirmedRef.current = false;
+    setShowSuccessPopup(false);
+  }, [open, drawerFormResetKey, minAvailableDate, action]);
 
   const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
     ? ["Job Description", "Timeline"]
@@ -458,6 +508,8 @@ export default function ActionDrawer({
     return tz ? `${time} ${tz}` : time;
   };
 
+  const actionInterviewSlotsSig = interviewSlotsDependencySignature(action?.interviewSlots);
+
   useEffect(() => {
     if (!open || !isInterviewScheduled || !action) return;
 
@@ -467,10 +519,21 @@ export default function ActionDrawer({
     // Actionables often return interview_slots without info.interview_id. Resolve the real Interview
     // name via slot ownership probe + actionable record name (handles "Proposed" slots omitted from listing).
     if (action.interviewSlots && action.interviewSlots.length > 0) {
-      setInterviewSlots(action.interviewSlots);
+      const embeddedSlots = action.interviewSlots;
+      setInterviewSlots(embeddedSlots);
       setInterviewSlotsError(null);
       setInterviewSlotsLoading(true);
-      setSelectedInterviewSlot(action.interviewSlots[0].slot_id);
+      
+      // Preserve user's selection once they've made one
+      setSelectedInterviewSlot((prev) => {
+        const trimmed = prev.trim();
+        if (trimmed) {
+          // User has already selected a slot, preserve it
+          return trimmed;
+        }
+        // No previous selection, pick the first slot
+        return embeddedSlots[0]?.slot_id ?? "";
+      });
 
       void (async () => {
         try {
@@ -479,7 +542,7 @@ export default function ActionDrawer({
             resolved = await resolveInterviewIdBySlotOwnership({
               profileId: effectiveProfileId,
               jobId: action.jobDocumentId.trim(),
-              slotId: action.interviewSlots![0].slot_id,
+              slotId: embeddedSlots[0].slot_id,
               explicitInterviewId: action.interviewId,
               actionableRecordName: action.proposalName,
             });
@@ -541,18 +604,28 @@ export default function ActionDrawer({
         setResolvedInterviewId(interviewId);
         if (!interviewId) {
           setInterviewSlots([]);
+          setSelectedInterviewSlot("");
           setInterviewSlotsError("No interview was found for this job. Try again later.");
           return;
         }
         const slots = await getAvailableInterviewSlots(interviewId);
         if (cancelled) return;
         setInterviewSlots(slots);
-        if (slots.length > 0) {
-          setSelectedInterviewSlot(slots[0].slot_id);
-        }
+        
+        // Preserve user's selection once they've made one
+        setSelectedInterviewSlot((prev) => {
+          const trimmed = prev.trim();
+          if (trimmed) {
+            // User has already selected a slot, preserve it
+            return trimmed;
+          }
+          // No previous selection, pick the first slot
+          return slots[0]?.slot_id ?? "";
+        });
       } catch (e) {
         if (cancelled) return;
         setInterviewSlots([]);
+        setSelectedInterviewSlot("");
         setInterviewSlotsError(e instanceof Error ? e.message : "Could not load interview slots.");
       } finally {
         if (!cancelled) setInterviewSlotsLoading(false);
@@ -567,7 +640,7 @@ export default function ActionDrawer({
     isInterviewScheduled,
     action?.id,
     action?.interviewId,
-    action?.interviewSlots,
+    actionInterviewSlotsSig,
     action?.jobDocumentId,
     action?.proposalName,
     profileId,
@@ -852,19 +925,23 @@ export default function ActionDrawer({
               <span>{actionDrawerInterview.tableHeaders.time}</span>
             </div>
             {interviewSlots.map((slot) => (
-              <div
+              <label
                 key={slot.slot_id}
-                className="grid grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 border-t border-[#E6ECF6] px-4 py-3"
+                className={`grid cursor-pointer grid-cols-[minmax(72px,100px)_1fr_1fr_minmax(160px,1.35fr)] items-center gap-2 border-t border-[#E6ECF6] px-4 py-3 transition-colors ${
+                  selectedInterviewSlot === slot.slot_id
+                    ? "bg-[#EFF6FF] border-t border-[#1D4ED8]"
+                    : "hover:bg-[#F9FAFB]"
+                }`}
               >
-                <label className="flex cursor-pointer items-center justify-center">
+                <div className="flex items-center justify-center">
                   <input
                     type="radio"
                     name="interview-slot"
                     checked={selectedInterviewSlot === slot.slot_id}
                     onChange={() => setSelectedInterviewSlot(slot.slot_id)}
-                    className="h-4 w-4 text-[#1D4ED8]"
+                    className="h-4 w-4 cursor-pointer accent-[#1D4ED8]"
                   />
-                </label>
+                </div>
                 <span className="text-xs text-[#202939] sm:text-sm">{slot.label}</span>
                 <span className="text-xs text-[#202939] sm:text-sm">
                   {formatSlotDate(slot.slot_date)}
@@ -872,20 +949,25 @@ export default function ActionDrawer({
                 <span className="text-xs leading-snug text-[#202939] sm:text-sm">
                   {formatSlotTime(slot)}
                 </span>
-              </div>
+              </label>
             ))}
           </div>
 
           <div className="divide-y divide-[#E6ECF6] lg:hidden">
             {interviewSlots.map((slot) => (
-              <div key={slot.slot_id} className="px-4 py-3">
+              <div
+                key={slot.slot_id}
+                className={`px-4 py-3 transition-colors ${
+                  selectedInterviewSlot === slot.slot_id ? "bg-[#EFF6FF]" : "hover:bg-[#F9FAFB]"
+                }`}
+              >
                 <label className="flex cursor-pointer items-start gap-3">
                   <input
                     type="radio"
                     name="interview-slot"
                     checked={selectedInterviewSlot === slot.slot_id}
                     onChange={() => setSelectedInterviewSlot(slot.slot_id)}
-                    className="mt-0.5 h-4 w-4 shrink-0 text-[#1D4ED8]"
+                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#1D4ED8]"
                   />
                   <div className="min-w-0 flex-1 space-y-1.5 text-xs text-[#202939] sm:text-sm">
                     <p className="font-semibold text-[#202939]">{slot.label}</p>
@@ -1529,6 +1611,10 @@ export default function ActionDrawer({
       setShowSalaryPopup(true);
       return;
     }
+    if (isInterviewScheduled && !slotConfirmPopupConfirmedRef.current) {
+      setShowSlotConfirmPopup(true);
+      return;
+    }
     void (async () => {
       submitInFlightRef.current = true;
       setIsSubmitting(true);
@@ -1571,10 +1657,6 @@ export default function ActionDrawer({
         }
         if (ok) {
           setHasSubmitted(true);
-          if (isSalaryNegotiation) {
-            setSuccessType("accept");
-            setShowSuccessPopup(true);
-          }
         } else {
           setValidationMessage((prev) => prev || "Could not submit your response. Please try again.");
         }
@@ -2020,6 +2102,95 @@ export default function ActionDrawer({
                 <button
                   type="button"
                   onClick={() => setShowSalaryPopup(false)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showSlotConfirmPopup ? (
+        <div
+          className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${
+            slotConfirmPopupVisible ? "bg-black/45 opacity-100" : "bg-black/0 opacity-0"
+          }`}
+        >
+          <div
+            className={`relative w-full max-w-md overflow-hidden rounded-2xl p-6 shadow-2xl transition-all duration-500 bg-gradient-to-br from-blue-50 via-white to-indigo-50 ${
+              slotConfirmPopupVisible
+                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
+                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            }`}
+          >
+            <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full animate-ping bg-blue-300" />
+            <span className="absolute right-12 top-16 h-2 w-2 rounded-full animate-ping bg-indigo-300 [animation-delay:200ms]" />
+            <span className="absolute bottom-14 left-14 h-2 w-2 rounded-full animate-ping bg-blue-200 [animation-delay:400ms]" />
+            <span className="absolute bottom-10 right-10 h-2.5 w-2.5 rounded-full animate-ping bg-cyan-300 [animation-delay:150ms]" />
+            <span className="absolute h-24 w-24 rounded-full border-2 animate-pulse border-blue-200/70" />
+            <span className="absolute h-32 w-32 rounded-full border animate-pulse border-indigo-200/60 [animation-delay:300ms]" />
+
+            <div className="relative z-10">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full shadow-sm bg-blue-100 text-blue-600">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="animate-in slide-in-from-bottom-1 text-base font-semibold text-slate-900 duration-300">
+                    Confirm Interview Slot
+                  </p>
+                  <p className="text-xs text-slate-500">Review your selected time slot before submitting</p>
+                </div>
+              </div>
+
+              <div className="animate-in slide-in-from-bottom-1 mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm duration-400">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Selected Slot Details
+                </p>
+                <div className="space-y-2.5 text-sm">
+                  {selectedInterviewSlot &&
+                    interviewSlots.find((s) => s.slot_id === selectedInterviewSlot) && (
+                      <>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-slate-500">Slot</span>
+                          <span className="text-right text-base font-bold text-blue-700">
+                            {interviewSlots.find((s) => s.slot_id === selectedInterviewSlot)?.label}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-slate-500">Date</span>
+                          <span className="text-right font-medium text-slate-800">
+                            {formatSlotDate(interviewSlots.find((s) => s.slot_id === selectedInterviewSlot)?.slot_date)}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-slate-500">Time</span>
+                          <span className="text-right font-medium text-slate-800">
+                            {formatSlotTime(interviewSlots.find((s) => s.slot_id === selectedInterviewSlot)!)}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                </div>
+              </div>
+
+              <div className="animate-in slide-in-from-bottom-1 flex flex-col gap-2 duration-500">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    slotConfirmPopupConfirmedRef.current = true;
+                    setShowSlotConfirmPopup(false);
+                    runPrimaryAction();
+                  }}
+                  className="rounded-xl bg-[#033CE5] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSubmitting ? "Submitting..." : "Confirm & Submit"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSlotConfirmPopup(false)}
                   className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Cancel

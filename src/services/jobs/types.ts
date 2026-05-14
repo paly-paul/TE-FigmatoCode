@@ -66,6 +66,8 @@ export type CandidateInterestApi = {
 export type CandidateActionableApi = {
   job_title: string;
   job_id: string;
+  /** When `"interview"`, the dashboard shows this row under Action Center → Interviews (slot workflow). */
+  action?: string;
   customer?: string;
   rr_candidate: string;
   stage: string;

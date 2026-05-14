@@ -350,6 +350,25 @@ export function extractUrlFromHtml(html?: string | null): string | null {
   return null;
 }
 
+/** Extracts plain text content from HTML (e.g., remarks from meeting_invite_content), excluding URLs. */
+export function extractTextFromHtml(html?: string | null): string | null {
+  if (!html) return null;
+  // Remove HTML tags and decode entities
+  let text = html
+    .replace(/<a[^>]*>.*?<\/a>/g, '') // Remove anchor tags and their content
+    .replace(/<[^>]*>/g, '') // Remove other HTML tags
+    .replace(/https?:\/\/\S+/g, '') // Remove any remaining URLs
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+
+  return text.length > 0 ? text : null;
+}
+
 function normalizeInterviewDetails(payload: Record<string, unknown>): InterviewDetailsApi {
   // Response shape: { status, data: { candidate_name, interview_schedule: [...] } }
   if (isRecord(payload.data)) {
