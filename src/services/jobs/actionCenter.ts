@@ -185,9 +185,12 @@ async function getJsonOrEmpty(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export async function getRecommendedJobs(profileName: string): Promise<RecommendedJobApi[]> {
+export async function getRecommendedJobs(profileName: string, includeSkills: boolean = true): Promise<RecommendedJobApi[]> {
   const url = new URL("/api/method/get_recommended_jobs", window.location.origin);
   url.searchParams.set("profile_name", profileName.trim());
+  if (includeSkills) {
+    url.searchParams.set("include_skills", "true");
+  }
 
   const res = await fetch(url.toString(), {
     credentials: "same-origin",
@@ -198,6 +201,30 @@ export async function getRecommendedJobs(profileName: string): Promise<Recommend
     throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
   }
   return normalizeRecommendedJobs(data);
+}
+
+export function extractSkillsFromRecommendedJobs(jobs: RecommendedJobApi[]): string[] {
+  const skillsSet = new Set<string>();
+  for (const job of jobs) {
+    if (Array.isArray(job.key_skills)) {
+      for (const skill of job.key_skills) {
+        if (typeof skill === "string" && skill.trim()) {
+          skillsSet.add(skill.trim());
+        }
+      }
+    }
+  }
+  return Array.from(skillsSet);
+}
+
+export async function getRecommendedJobsWithSkills(
+  profileName: string
+): Promise<{ jobs: RecommendedJobApi[]; skills: string[] }> {
+  const jobs = await getRecommendedJobs(profileName, true);
+  return {
+    jobs,
+    skills: extractSkillsFromRecommendedJobs(jobs),
+  };
 }
 
 export type MarkInterestedInJobResponse = {
@@ -520,4 +547,43 @@ export async function getAvailableDateSalary(profileId: string): Promise<Availab
     available_date: availableRaw,
     expected_salary: expectedRaw,
   };
+}
+
+export async function getFavouriteJobs(profile: string): Promise<Set<string>> {
+  const url = new URL("/api/method/get_favourite_jobs", window.location.origin);
+  url.searchParams.set("profile", profile.trim());
+  const res = await fetch(url.toString(), { credentials: "same-origin" });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
+  const ids = new Set<string>();
+  const message = isRecord(data) ? data.message : null;
+  if (isRecord(message)) {
+    const dataArr = message.data;
+    if (Array.isArray(dataArr)) {
+      for (const item of dataArr) {
+        if (isRecord(item)) {
+          const jobId = typeof item.job_id === "string" ? item.job_id.trim() : "";
+          if (jobId) ids.add(jobId);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+export async function createFavourite(profile: string, rr: string): Promise<void> {
+  const url = new URL("/api/method/create_favourite", window.location.origin);
+  url.searchParams.set("profile", profile.trim());
+  url.searchParams.set("rr", rr.trim());
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  const data = await getJsonOrEmpty(res);
+  if (!res.ok) {
+    throw new Error(parseApiErrorMessage(data) || `Request failed (${res.status})`);
+  }
 }

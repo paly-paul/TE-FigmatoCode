@@ -51,9 +51,12 @@ import { getCandidateId, getProfileName } from "@/lib/authSession";
 import { getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { getCandidateActionables } from "@/services/jobs/getCandidateActionables";
 import {
+  createFavourite,
   getCandidateInterests,
+  getFavouriteJobs,
   getJobApplications,
   getRecommendedJobs,
+  getRecommendedJobsWithSkills,
   markInterestedInJob,
   postCandidateSourcingAcceptance,
   postProposalCandidateAcceptance,
@@ -577,7 +580,7 @@ export default function TalentEngineDashboard() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionCard | null>(null);
   const [showPauseModal, setShowPauseModal] = useState(false);
-  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(() => new Set());
   const [showReferModal, setShowReferModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
@@ -619,6 +622,7 @@ export default function TalentEngineDashboard() {
       .catch(() => { if (!cancelled) setAllLocationOptions([]); });
     return () => { cancelled = true; };
   }, []);
+
   const [apiActionCards, setApiActionCards] = useState<ActionCard[]>([]);
   const [apiGeneralCards, setApiGeneralCards] = useState<ActionCard[]>([]);
   const [apiProfileCards, setApiProfileCards] = useState<ActionCard[]>([]);
@@ -626,6 +630,8 @@ export default function TalentEngineDashboard() {
   const [hasAttemptedActionablesLoad, setHasAttemptedActionablesLoad] = useState(false);
   const [hasAttemptedJobsLoad, setHasAttemptedJobsLoad] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobListing[]>([]);
+  const [baseSkills, setBaseSkills] = useState<string[]>([]);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [refreshCountdown, setRefreshCountdown] = useState(AUTO_REFRESH_INTERVAL_SECS);
   const countdownResetRef = useRef<() => void>(() => {});
@@ -643,6 +649,22 @@ export default function TalentEngineDashboard() {
   );
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const profile = profileId?.trim();
+    if (!profile) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const ids = await getFavouriteJobs(profile);
+        if (!cancelled) setSavedJobIds(ids);
+      } catch {
+        // ignore — saved state simply stays empty
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profileId]);
+
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const refreshInFlightRef = useRef(false);
@@ -715,9 +737,10 @@ export default function TalentEngineDashboard() {
     // Avoid overlapping refreshes (interval + focus events).
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
+    setIsLoadingSkills(true);
     try {
-      const recommendedJobsEarlyPromise: Promise<RecommendedJobApi[]> | null =
-        profileIdForActionables ? getRecommendedJobs(profileIdForActionables) : null;
+      const recommendedJobsEarlyPromise: Promise<{ jobs: RecommendedJobApi[]; skills: string[] }> | null =
+        profileIdForActionables ? getRecommendedJobsWithSkills(profileIdForActionables) : null;
 
       if (currentCandidateId) {
         try {
@@ -775,8 +798,8 @@ export default function TalentEngineDashboard() {
           );
         }
         const safeRecommendedPromise = (
-          recommendedJobsEarlyPromise ?? Promise.resolve([] as RecommendedJobApi[])
-        ).catch(() => [] as RecommendedJobApi[]);
+          recommendedJobsEarlyPromise ?? Promise.resolve({ jobs: [] as RecommendedJobApi[], skills: [] as string[] })
+        ).catch(() => ({ jobs: [] as RecommendedJobApi[], skills: [] as string[] }));
         const [actionablesResInitial, recommendedJobsRes] = await Promise.all([
           getCandidateActionables(profileIdForActionables),
           safeRecommendedPromise,
@@ -784,8 +807,8 @@ export default function TalentEngineDashboard() {
         let actionablesRes = actionablesResInitial;
         // Don't overwrite a valid cache with an empty response — the backend may temporarily
         // return no jobs while a profile is in draft-edit state.
-        if (recommendedJobsRes.length > 0 || !hasCachedJobs) {
-          writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes);
+        if (recommendedJobsRes.jobs.length > 0 || !hasCachedJobs) {
+          writeRecommendedJobsCache(profileIdForActionables, recommendedJobsRes.jobs);
         }
 
         // If the backend can't find actionables for `profile_id`, retry using the other
@@ -961,7 +984,7 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const nextRecommendedJobs: JobListing[] = recommendedJobsRes.map((job) =>
+        const nextRecommendedJobs: JobListing[] = recommendedJobsRes.jobs.map((job) =>
           mapRecommendedToDashboardJob(job)
         );
         const filteredRecommendedJobs = nextRecommendedJobs.filter(
@@ -1025,6 +1048,11 @@ export default function TalentEngineDashboard() {
           }
         }
 
+        // Update skills from API response
+        if (recommendedJobsRes.skills && recommendedJobsRes.skills.length > 0) {
+          setBaseSkills(recommendedJobsRes.skills);
+        }
+
         // Fallback: get_interviews_by_profile already returns full row data per round.
         // Use it to surface any scheduled rounds missing from actionables (e.g. Round 2+).
         // Run after recommended jobs are shown so the jobs list is not blocked on this call.
@@ -1068,6 +1096,7 @@ export default function TalentEngineDashboard() {
       }
     } finally {
       refreshInFlightRef.current = false;
+      setIsLoadingSkills(false);
     }
   };
 
@@ -1449,7 +1478,7 @@ export default function TalentEngineDashboard() {
           job.hourlyRate >= activeFilters.salaryMin &&
           job.hourlyRate <= activeFilters.salaryMax;
 
-        const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+        const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
         return (
           matchesSearch &&
@@ -1630,7 +1659,7 @@ export default function TalentEngineDashboard() {
           job.hourlyRate >= activeFilters.salaryMin &&
           job.hourlyRate <= activeFilters.salaryMax;
 
-        const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+        const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
         return (
           matchesSearch &&
@@ -1708,16 +1737,28 @@ export default function TalentEngineDashboard() {
     setIsDrawerOpen(true);
   };
 
-  const handleToggleSavedJob = (jobId: number) => {
+  const handleToggleSavedJob = async (jobDocId: string) => {
+    const profileName = getProfileName()?.trim();
+    if (!jobDocId) return;
+
+    const isCurrentlySaved = savedJobIds.has(jobDocId);
     setSavedJobIds((prev) => {
       const next = new Set(prev);
-      if (next.has(jobId)) {
-        next.delete(jobId);
+      if (next.has(jobDocId)) {
+        next.delete(jobDocId);
       } else {
-        next.add(jobId);
+        next.add(jobDocId);
       }
       return next;
     });
+
+    if (profileName && !isCurrentlySaved) {
+      try {
+        await createFavourite(profileName, jobDocId);
+      } catch (error) {
+        console.error("Failed to create favourite:", error);
+      }
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -2438,6 +2479,9 @@ export default function TalentEngineDashboard() {
         onApply={(filters) => setActiveFilters(filters)}
         triggerRef={filterButtonRef}
         initialFilters={activeFilters}
+        skillsOptions={baseSkills}
+        skipDropdownSkillsLoad={true}
+        isLoadingSkills={isLoadingSkills}
       />
       <DraftProfilePopup
         open={draftPopupOpen}
@@ -2715,13 +2759,13 @@ export default function TalentEngineDashboard() {
                         </button>
                         <button
                           type="button"
-                          aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
-                          aria-pressed={savedJobIds.has(job.id)}
+                          aria-label={savedJobIds.has(job.jobDocumentId ?? "") ? "Unsave job" : "Save job"}
+                          aria-pressed={savedJobIds.has(job.jobDocumentId ?? "")}
                           onClick={(event) => {
                             event.stopPropagation();
-                            handleToggleSavedJob(job.id);
+                            handleToggleSavedJob(job.jobDocumentId ?? "");
                           }}
-                          className={`h-10 w-10 shrink-0 rounded-lg border transition-colors ${savedJobIds.has(job.id)
+                          className={`h-10 w-10 shrink-0 rounded-lg border transition-colors ${savedJobIds.has(job.jobDocumentId ?? "")
                               ? "border-blue-600 bg-transparent text-blue-600"
                               : "border-gray-200 text-gray-700"
                             }`}
@@ -3367,13 +3411,13 @@ export default function TalentEngineDashboard() {
                             </button>
                             <button
                               type="button"
-                              aria-label={savedJobIds.has(job.id) ? "Unsave job" : "Save job"}
-                              aria-pressed={savedJobIds.has(job.id)}
+                              aria-label={savedJobIds.has(job.jobDocumentId ?? "") ? "Unsave job" : "Save job"}
+                              aria-pressed={savedJobIds.has(job.jobDocumentId ?? "")}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                handleToggleSavedJob(job.id);
+                                handleToggleSavedJob(job.jobDocumentId ?? "");
                               }}
-                              className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${savedJobIds.has(job.id)
+                              className={`w-10 h-10 border rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${savedJobIds.has(job.jobDocumentId ?? "")
                                 ? "border-blue-600 bg-transparent text-blue-600"
                                 : "border-gray-200 text-gray-700 hover:bg-gray-50"
                                 }`}

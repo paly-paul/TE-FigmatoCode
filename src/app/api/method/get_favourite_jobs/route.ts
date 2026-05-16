@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-
 export async function GET(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
@@ -12,21 +10,17 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const profileName = searchParams.get("profile_name")?.trim();
-  const includeSkills = searchParams.get("include_skills")?.trim();
+  const profile = searchParams.get("profile")?.trim();
 
-  if (!profileName) {
+  if (!profile) {
     return NextResponse.json(
-      { error: "profile_name is required." },
+      { error: "profile is required." },
       { status: 400 }
     );
   }
 
-  const qs = new URLSearchParams({ profile_name: profileName });
-  if (includeSkills) {
-    qs.set("include_skills", includeSkills);
-  }
-  const url = `${backendBase}/api/method/get_recommended_jobs?${qs}`;
+  const url = new URL(`${backendBase}/api/method/get_favourite_jobs`);
+  url.searchParams.set("profile", profile);
 
   const headers: HeadersInit = {};
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -34,7 +28,7 @@ export async function GET(request: Request) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.Cookie = cookie;
 
-  const upstream = await fetch(url, { method: "GET", headers, cache: "no-store" });
+  const upstream = await fetch(url.toString(), { headers });
   const text = await upstream.text();
   let data: Record<string, unknown>;
   try {
@@ -44,6 +38,6 @@ export async function GET(request: Request) {
   }
 
   const res = NextResponse.json(data, { status: upstream.status });
-  res.headers.set("x-upstream-url", url);
+  res.headers.set("x-upstream-url", url.toString());
   return res;
 }

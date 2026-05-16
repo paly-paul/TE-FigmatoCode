@@ -41,9 +41,12 @@ import {
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
 import {
+  createFavourite,
   getCandidateInterests,
+  getFavouriteJobs,
   getJobApplications,
   getRecommendedJobs,
+  getRecommendedJobsWithSkills,
   markInterestedInJob,
 } from "@/services/jobs/actionCenter";
 import { mapRecommendedToJobsPageCard } from "@/services/jobs/mapApiJobsToUi";
@@ -249,17 +252,10 @@ const JOBS: JobCard[] = [
 
 const SORT_OPTIONS = ["Newest", "Highest Match"];
 const SKILLS_PREVIEW_LIMIT = 8;
-const SAVED_JOBS_STORAGE_PREFIX = "te.jobs.saved";
 const JOBS_FILTER_DEFAULTS: FilterState = {
   ...DEFAULT_FILTERS,
   salaryMax: 10000,
 };
-
-function getSavedJobsStorageKey(candidateId: string | null): string | null {
-  const id = candidateId?.trim();
-  if (!id) return null;
-  return `${SAVED_JOBS_STORAGE_PREFIX}:${id}`;
-}
 
 function FilterCheckboxGroup({
   options,
@@ -305,6 +301,7 @@ function JobsFilterPanel({
   skillsOptions,
   employmentTypeOptions,
   seniorityLevelOptions,
+  isLoadingSkills = false,
 }: {
   searchSkills: string;
   onSearchSkillsChange: (value: string) => void;
@@ -313,6 +310,7 @@ function JobsFilterPanel({
   skillsOptions: string[];
   employmentTypeOptions: string[];
   seniorityLevelOptions: string[];
+  isLoadingSkills?: boolean;
 }) {
   const [showAllSkills, setShowAllSkills] = useState(false);
   const [openSections, setOpenSections] = useState({
@@ -382,17 +380,23 @@ function JobsFilterPanel({
             </div>
 
             <p className="text-xs font-medium text-gray-700 mb-3">Popular Skills</p>
-            <div
-              className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
-                showAllSkills || trimmedSkillsSearch.length > 0 ? "max-h-96" : "max-h-72"
-              }`}
-            >
-              <FilterCheckboxGroup
-                options={visibleSkills}
-                selected={filters.skills}
-                onChange={(value) => setValue("skills", value)}
-              />
-            </div>
+            {isLoadingSkills && visibleSkills.length === 0 ? (
+              <div className="py-4 text-center text-sm text-gray-500">
+                Loading skills...
+              </div>
+            ) : (
+              <div
+                className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
+                  showAllSkills || trimmedSkillsSearch.length > 0 ? "max-h-96" : "max-h-72"
+                }`}
+              >
+                <FilterCheckboxGroup
+                  options={visibleSkills}
+                  selected={filters.skills}
+                  onChange={(value) => setValue("skills", value)}
+                />
+              </div>
+            )}
             {canToggleSkillsView ? (
               <button
                 type="button"
@@ -622,7 +626,7 @@ function JobsCard({
 }: {
   job: JobCard;
   saved: boolean;
-  onToggleSaved: (jobId: number) => void;
+  onToggleSaved: (job: JobCard) => void;
   onShare: () => void;
   onApply: () => void;
   /** Mobile layout: no skill chips, pipe in location, wallet icon, tighter spacing */
@@ -739,7 +743,7 @@ function JobsCard({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onToggleSaved(job.id);
+              onToggleSaved(job);
             }}
             aria-label={saved ? "Unsave job" : "Save job"}
             aria-pressed={saved}
@@ -769,7 +773,7 @@ export default function TalentEngineJobsPage() {
   const [sortBy, setSortBy] = useState("Newest");
   const [skillSearch, setSkillSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>(JOBS_FILTER_DEFAULTS);
-  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(() => new Set());
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(() => new Set());
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [apiRecommendedJobs, setApiRecommendedJobs] = useState<JobCard[]>([]);
@@ -780,6 +784,7 @@ export default function TalentEngineJobsPage() {
   const [dynamicSkills, setDynamicSkills] = useState<string[]>([]);
   const [dynamicEmploymentTypes, setDynamicEmploymentTypes] = useState<string[]>(EMPLOYMENT_TYPES);
   const [dynamicSeniorityLevels, setDynamicSeniorityLevels] = useState<string[]>(SENIORITY_LEVELS);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
   const locationButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
@@ -824,33 +829,19 @@ export default function TalentEngineJobsPage() {
   }, [candidateId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storageKey = getSavedJobsStorageKey(candidateId);
-    if (!storageKey) return;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) return;
-      const ids = parsed
-        .map((value) => Number.parseInt(String(value), 10))
-        .filter((value) => Number.isFinite(value));
-      setSavedJobIds(new Set(ids));
-    } catch {
-      // ignore storage issues
-    }
+    const profileName = getProfileName()?.trim();
+    if (!profileName) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const ids = await getFavouriteJobs(profileName);
+        if (!cancelled) setSavedJobIds(ids);
+      } catch {
+        // ignore — saved state simply stays empty
+      }
+    })();
+    return () => { cancelled = true; };
   }, [candidateId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storageKey = getSavedJobsStorageKey(candidateId);
-    if (!storageKey) return;
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(Array.from(savedJobIds)));
-    } catch {
-      // ignore storage issues
-    }
-  }, [candidateId, savedJobIds]);
 
   useEffect(() => {
     let active = true;
@@ -861,10 +852,13 @@ export default function TalentEngineJobsPage() {
         if (!active) return;
         setApiRecommendedJobs([]);
         setHasAttemptedJobsLoad(true);
+        setBaseSkills([]);
+        setIsLoadingSkills(false);
         return;
       }
 
       try {
+        setIsLoadingSkills(true);
         const cachedRecommended = readRecommendedJobsCache(profileName);
         const hasCachedJobs = Boolean(cachedRecommended?.jobs?.length);
         if (!active) return;
@@ -876,22 +870,27 @@ export default function TalentEngineJobsPage() {
             )
           );
         }
-        const recommended = await getRecommendedJobs(profileName);
+        const result = await getRecommendedJobsWithSkills(profileName);
         // Don't overwrite a valid cache with an empty response — the backend may temporarily
         // return no jobs while a profile is in draft-edit state.
-        if (recommended.length > 0 || !hasCachedJobs) {
-          writeRecommendedJobsCache(profileName, recommended);
+        if (result.jobs.length > 0 || !hasCachedJobs) {
+          writeRecommendedJobsCache(profileName, result.jobs);
         }
         if (!active) return;
         // Only update state when we have results, or when there was nothing cached to show.
-        if (recommended.length > 0 || !hasCachedJobs) {
+        if (result.jobs.length > 0 || !hasCachedJobs) {
           setApiRecommendedJobs((prev) =>
             mergeResolvedCustomerFromPrevious(
-              recommended.map((job) => mapRecommendedToJobsPageCard(job)),
+              result.jobs.map((job) => mapRecommendedToJobsPageCard(job)),
               prev
             )
           );
         }
+        // Update skills from API
+        if (result.skills.length > 0) {
+          setBaseSkills(result.skills);
+        }
+        setIsLoadingSkills(false);
       } catch {
         if (!active) return;
         const cachedRecommended = readRecommendedJobsCache(profileName);
@@ -901,6 +900,7 @@ export default function TalentEngineJobsPage() {
             prev
           )
         );
+        setIsLoadingSkills(false);
       } finally {
         if (active) setHasAttemptedJobsLoad(true);
       }
@@ -924,18 +924,12 @@ export default function TalentEngineJobsPage() {
   useEffect(() => {
     const source = hasAttemptedJobsLoad ? apiRecommendedJobs : [];
 
-    const skillsFromSource = Array.from(
-      new Set(source.flatMap((job) => job.skills.map((skill) => skill.trim()).filter(Boolean)))
-    );
     const employmentFromSource = Array.from(
       new Set(source.map((job) => job.employmentType.trim()).filter((v) => v && v !== "—"))
     );
     const seniorityFromSource = Array.from(
       new Set(source.map((job) => job.seniorityLevel.trim()).filter((v) => v && v !== "—"))
     );
-    if (skillsFromSource.length > 0) {
-      setBaseSkills((prev) => Array.from(new Set([...prev, ...skillsFromSource])));
-    }
 
     if (employmentFromSource.length > 0) {
       setDynamicEmploymentTypes((prev) => Array.from(new Set([...prev, ...employmentFromSource])));
@@ -945,7 +939,9 @@ export default function TalentEngineJobsPage() {
       setDynamicSeniorityLevels((prev) => Array.from(new Set([...prev, ...seniorityFromSource])));
     }
 
-  }, [apiRecommendedJobs, hasAttemptedJobsLoad]);
+    // Update dynamic skills from API-provided baseSkills
+    setDynamicSkills(baseSkills);
+  }, [apiRecommendedJobs, hasAttemptedJobsLoad, baseSkills]);
 
   /** Recommended list often omits `customer`; match the drawer by filling from RR details. */
   useEffect(() => {
@@ -995,39 +991,13 @@ export default function TalentEngineJobsPage() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      const fetchFirstNonEmpty = async (fieldNames: string[]) => {
-        for (const fieldName of fieldNames) {
-          const options = await getDropdownDetailsOptions({
-            doctype: "Resource Requirement",
-            fieldName,
-            page: 1,
-            limit: 1000,
-          }).catch(() => null);
-          if (Array.isArray(options) && options.length > 0) return options;
-        }
-        return [];
-      };
-
-      const [skillsRes] = await Promise.all([
-        fetchFirstNonEmpty(["key_skills"]),
-      ]);
-
-      if (!active) return;
-      if (skillsRes.length > 0) {
-        setBaseSkills((prev) => Array.from(new Set([...prev, ...skillsRes])));
-      }
-      // Billing Frequency filter is fixed to Monthly/Hourly.
-      setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
-      // Rotation filter is a strict Yes/No toggle (backed by is_rotation),
-      // so we intentionally keep the options fixed to avoid mismatches.
-      setDynamicSeniorityLevels(SENIORITY_LEVELS);
-    })();
-
-    return () => {
-      active = false;
-    };
+    // Billing Frequency filter is fixed to Monthly/Hourly.
+    setDynamicEmploymentTypes(EMPLOYMENT_TYPES);
+    // Rotation filter is a strict Yes/No toggle (backed by is_rotation),
+    // so we intentionally keep the options fixed to avoid mismatches.
+    setDynamicSeniorityLevels(SENIORITY_LEVELS);
+    // Skills are now loaded exclusively from the recommended jobs API to avoid flickering
+    // with stale dropdown data. Skip dropdown skill loading to prevent temporary mismatches.
   }, []);
 
   useEffect(() => {
@@ -1102,7 +1072,7 @@ export default function TalentEngineJobsPage() {
       const matchesSalary =
         job.compensationValue >= filters.salaryMin &&
         job.compensationValue <= filters.salaryMax;
-      const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+      const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
       return (
         matchesSearch &&
@@ -1194,7 +1164,7 @@ export default function TalentEngineJobsPage() {
         job.compensationValue >= filters.salaryMin &&
         job.compensationValue <= filters.salaryMax;
 
-      const matchesSaved = !showSavedOnly || savedJobIds.has(job.id);
+      const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
       return (
         matchesSearch &&
@@ -1244,16 +1214,29 @@ export default function TalentEngineJobsPage() {
     savedJobIds,
   ]);
 
-  const toggleSavedJob = (jobId: number) => {
+  const toggleSavedJob = async (job: JobCard) => {
+    const profileName = getProfileName()?.trim();
+    const jobDocId = job.jobDocumentId?.trim();
+    if (!jobDocId) return;
+
+    const isCurrentlySaved = savedJobIds.has(jobDocId);
     setSavedJobIds((prev) => {
       const next = new Set(prev);
-      if (next.has(jobId)) {
-        next.delete(jobId);
+      if (next.has(jobDocId)) {
+        next.delete(jobDocId);
       } else {
-        next.add(jobId);
+        next.add(jobDocId);
       }
       return next;
     });
+
+    if (profileName && !isCurrentlySaved) {
+      try {
+        await createFavourite(profileName, jobDocId);
+      } catch (error) {
+        console.error("Failed to create favourite:", error);
+      }
+    }
   };
 
   const handleJobApplyClick = (job: JobCard) => {
@@ -1445,7 +1428,7 @@ export default function TalentEngineJobsPage() {
             <JobsCard
               key={job.id}
               job={job}
-              saved={savedJobIds.has(job.id)}
+              saved={savedJobIds.has(job.jobDocumentId ?? "")}
               onToggleSaved={toggleSavedJob}
               onShare={() => setShowReferModal(true)}
               onApply={() => handleJobApplyClick(job)}
@@ -1578,7 +1561,7 @@ export default function TalentEngineJobsPage() {
                   <JobsCard
                     key={job.id}
                     job={job}
-                    saved={savedJobIds.has(job.id)}
+                    saved={savedJobIds.has(job.jobDocumentId ?? "")}
                     onToggleSaved={toggleSavedJob}
                     onShare={() => setShowReferModal(true)}
                     onApply={() => handleJobApplyClick(job)}
@@ -1621,6 +1604,8 @@ export default function TalentEngineJobsPage() {
         skillsOptions={dynamicSkills}
         employmentTypeOptions={dynamicEmploymentTypes}
         seniorityLevelOptions={dynamicSeniorityLevels}
+        skipDropdownSkillsLoad={true}
+        isLoadingSkills={isLoadingSkills}
       />
       <ActionDrawer
         open={isDrawerOpen}

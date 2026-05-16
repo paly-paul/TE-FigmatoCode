@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const backendBase = process.env.BACKEND_URL?.replace(/\/$/, "");
   if (!backendBase) {
     return NextResponse.json(
@@ -12,21 +10,19 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const profileName = searchParams.get("profile_name")?.trim();
-  const includeSkills = searchParams.get("include_skills")?.trim();
+  const profile = searchParams.get("profile")?.trim();
+  const rr = searchParams.get("rr")?.trim();
 
-  if (!profileName) {
+  if (!profile || !rr) {
     return NextResponse.json(
-      { error: "profile_name is required." },
+      { error: "profile and rr are required." },
       { status: 400 }
     );
   }
 
-  const qs = new URLSearchParams({ profile_name: profileName });
-  if (includeSkills) {
-    qs.set("include_skills", includeSkills);
-  }
-  const url = `${backendBase}/api/method/get_recommended_jobs?${qs}`;
+  const url = new URL(`${backendBase}/api/method/create_favourite`);
+  url.searchParams.set("profile", profile);
+  url.searchParams.set("rr", rr);
 
   const headers: HeadersInit = {};
   const auth = process.env.BACKEND_AUTHORIZATION;
@@ -34,7 +30,10 @@ export async function GET(request: Request) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.Cookie = cookie;
 
-  const upstream = await fetch(url, { method: "GET", headers, cache: "no-store" });
+  const upstream = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+  });
   const text = await upstream.text();
   let data: Record<string, unknown>;
   try {
@@ -44,6 +43,6 @@ export async function GET(request: Request) {
   }
 
   const res = NextResponse.json(data, { status: upstream.status });
-  res.headers.set("x-upstream-url", url);
+  res.headers.set("x-upstream-url", url.toString());
   return res;
 }

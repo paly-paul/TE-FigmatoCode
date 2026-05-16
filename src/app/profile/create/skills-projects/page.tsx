@@ -1484,6 +1484,7 @@ function SkillsProjectsPageContent() {
         return {
           key_skills: skillName || "",
           experience,
+          url: entry.experienceReference.trim(),
         };
       })
       .filter((entry) => Boolean(entry.key_skills.trim()));
@@ -1828,6 +1829,7 @@ function SkillsProjectsPageContent() {
         return {
           key_skills: skillName || "",
           experience,
+          url: entry.experienceReference.trim(),
         };
       })
       .filter((entry) => Boolean(entry.key_skills.trim()));

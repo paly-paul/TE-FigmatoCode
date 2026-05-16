@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLinkIcon } from "../icons";
 
 export function SectionCard({
   title,
@@ -108,7 +108,7 @@ export function DetailTile({
         <div>
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium text-[#111827] sm:text-[15px]">{title}</p>
-            {showExternalLinkIcon ? <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" /> : null}
+            {showExternalLinkIcon ? <a href="#" className="text-[#66758a] hover:text-[#111827]"><ExternalLinkIcon /></a> : null}
           </div>
           <p className="mt-1 text-sm text-[#66758a]">{subtitle}</p>
         </div>

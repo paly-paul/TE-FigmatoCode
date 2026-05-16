@@ -28,6 +28,8 @@ interface FilterDrawerProps {
   skillsOptions?: string[];
   employmentTypeOptions?: string[];
   seniorityLevelOptions?: string[];
+  skipDropdownSkillsLoad?: boolean;
+  isLoadingSkills?: boolean;
 }
 
 export const EMPLOYMENT_TYPES = [
@@ -242,6 +244,8 @@ export function FilterDrawer({
   skillsOptions,
   employmentTypeOptions,
   seniorityLevelOptions,
+  skipDropdownSkillsLoad = false,
+  isLoadingSkills = false,
 }: FilterDrawerProps) {
   const isCompactFilterUi = useIsBelowLg();
   const [resolvedPlacement, setResolvedPlacement] = useState<"bottom" | "right">(
@@ -307,7 +311,7 @@ export function FilterDrawer({
 
   useEffect(() => {
     if (!open || hasLoadedDynamicOptions) return;
-    if (skillsOptions?.length) {
+    if (skillsOptions?.length || skipDropdownSkillsLoad) {
       setHasLoadedDynamicOptions(true);
       return;
     }
@@ -333,7 +337,7 @@ export function FilterDrawer({
     return () => {
       active = false;
     };
-  }, [open, hasLoadedDynamicOptions, resolvedDropdownConfig, skillsOptions]);
+  }, [open, hasLoadedDynamicOptions, resolvedDropdownConfig, skillsOptions, skipDropdownSkillsLoad]);
 
   useEffect(() => {
     if (!open) return;
@@ -438,17 +442,23 @@ export function FilterDrawer({
       {!isCompactFilterUi ? <p className="mb-3 text-sm font-semibold text-gray-900">Skills</p> : null}
       {skillsSearchInput}
       <p className="mb-3 text-sm font-medium text-gray-700">Popular Skills</p>
-      <div
-        className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
-          showAllSkills || trimmedSkillSearch.length > 0 ? "max-h-96" : "max-h-72"
-        }`}
-      >
-        <CheckboxGroup
-          options={visibleSkills}
-          selected={filters.skills}
-          onChange={(value) => setValue("skills", value)}
-        />
-      </div>
+      {isLoadingSkills && visibleSkills.length === 0 ? (
+        <div className="py-4 text-center text-sm text-gray-500">
+          Loading skills...
+        </div>
+      ) : (
+        <div
+          className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
+            showAllSkills || trimmedSkillSearch.length > 0 ? "max-h-96" : "max-h-72"
+          }`}
+        >
+          <CheckboxGroup
+            options={visibleSkills}
+            selected={filters.skills}
+            onChange={(value) => setValue("skills", value)}
+          />
+        </div>
+      )}
       {canToggleSkillsView ? (
         <button
           type="button"

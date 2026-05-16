@@ -387,3 +387,11 @@ export function CheckCircleSolidIcon({ size = 40 }: { size?: number }) {
     </svg>
   );
 }
+
+export function ExternalLinkIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10.0007 4.99992H5.00065C4.55862 4.99992 4.1347 5.17551 3.82214 5.48807C3.50958 5.80063 3.33398 6.22456 3.33398 6.66659V14.9999C3.33398 15.4419 3.50958 15.8659 3.82214 16.1784C4.1347 16.491 4.55862 16.6666 5.00065 16.6666H13.334C13.776 16.6666 14.1999 16.491 14.5125 16.1784C14.8251 15.8659 15.0007 15.4419 15.0007 14.9999V9.99992M9.16732 10.8333L16.6673 3.33325M16.6673 7.49992V3.33325H12.5007" stroke="#556987" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}

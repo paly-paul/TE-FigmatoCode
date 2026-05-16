@@ -206,6 +206,11 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     ]);
     if (isDraft) {
       setDraftProfilePending();
+      console.log("[login-routing] decision", {
+        reason: "profile-in-draft:show-draft-popup",
+        destination: "/dashboard",
+      });
+      return "/dashboard";
     }
     console.log("[login-routing] profile-check:session", {
       profileName,

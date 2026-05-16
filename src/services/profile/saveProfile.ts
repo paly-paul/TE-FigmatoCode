@@ -198,7 +198,14 @@ function sanitizeSkillsTableRow(row: Record<string, unknown>): Record<string, un
     }
   }
 
-  return { key_skills: skill, experience };
+  const result: Record<string, unknown> = { key_skills: skill, experience };
+
+  // Include url if it exists
+  if (typeof row.url === "string" && row.url.trim()) {
+    result.url = row.url.trim();
+  }
+
+  return result;
 }
 
 function normalizeTableRows(key: string, value: unknown): Record<string, unknown>[] {

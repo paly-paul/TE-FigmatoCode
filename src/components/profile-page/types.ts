@@ -80,6 +80,7 @@ export interface ProfileData {
   education: EducationItem[];
   languages: LanguageItem[];
   skills: string[];
+  skillsWithUrls?: { name: string; experience?: number; url?: string }[];
   workAuthorizations: string[];
   preferredIndustries: string[];
   certifications: Certification[];
