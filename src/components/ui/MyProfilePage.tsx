@@ -27,12 +27,13 @@ import {
     Wrench,
 } from "lucide-react";
 
+import { ExternalLinkIcon } from "../icons";
+
 import VisibilityScoreCard from "../dashboard/VisibilityScoreCard";
 import { PROFILE as PROFILE_FALLBACK } from "../profile-page/mockData";
 import type { ProfileData } from "../profile-page/types";
 import {
     CircleProgress,
-    DetailTile,
     LabelValue,
     MiniInfo,
     Pill,
@@ -375,6 +376,7 @@ function toProfileData(resume: ResumeProfileData, fallback: ProfileData): Profil
                 speak: lang.speak || "Good",
             })) || fallback.languages,
         skills: resume.keySkills?.length ? resume.keySkills : fallback.skills,
+        skillsWithUrls: resume.skillsWithUrls,
         workAuthorizations: splitMultiValueText(resume.workAuthorization),
         preferredIndustries: splitMultiValueText(resume.preferredIndustry),
         certifications:
@@ -690,8 +692,10 @@ export default function MyProfilePage() {
                 {openSections.skills ? (
                     <div className="border-t border-[#E6ECF6] px-4 py-4">
                         <div className="flex flex-wrap gap-2.5">
-                            {PROFILE.skills.map((skill) => (
-                                <Pill key={skill}>{skill}</Pill>
+                            {(PROFILE.skillsWithUrls ?? PROFILE.skills.map((s) => ({ name: s, experience: undefined, url: undefined }))).map((skill) => (
+                                <Pill key={skill.name}>
+                                    {skill.name}
+                                </Pill>
                             ))}
                         </div>
                     </div>
@@ -802,18 +806,20 @@ export default function MyProfilePage() {
                 {openSections.experience ? (
                     <div className="border-t border-[#E6ECF6] px-4 py-4">
                         <div className="space-y-3">
-                            {PROFILE.experienceItems.map((item) => (
-                                <div key={item.id} className="border border-[#DCE4F0] px-4 py-4">
+                            {(PROFILE.skillsWithUrls ?? []).map((skill) => (
+                                <div key={skill.name} className="border border-[#DCE4F0] px-4 py-4">
                                     <div className="flex items-start gap-3">
                                         <CircleCheck className="mt-0.5 h-5 w-5 text-[#66758A]" />
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-start justify-between gap-2">
-                                                <p className="text-[16px] font-medium text-[#202939]">{item.title}</p>
-                                                {item.externalUrl ? (
-                                                    <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                                                <p className="text-[16px] font-medium text-[#202939]">{skill.name}</p>
+                                                {skill.url ? (
+                                                    <a href={skill.url} target="_blank" rel="noopener noreferrer" className="text-[#66758A] hover:text-[#202939] transition-colors">
+                                                        <ExternalLinkIcon />
+                                                    </a>
                                                 ) : null}
                                             </div>
-                                            <p className="mt-2 text-[14px] text-[#5E7397]">{item.years} years experience</p>
+                                            <p className="mt-2 text-[14px] text-[#5E7397]">{skill.experience !== undefined ? skill.experience : 0} years experience</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1373,8 +1379,10 @@ export default function MyProfilePage() {
 
                         <SectionCard title="Key Skills">
                             <div className="flex flex-wrap gap-2 px-4 py-4 sm:px-5 sm:py-5">
-                                {PROFILE.skills.map((skill) => (
-                                    <Pill key={skill}>{skill}</Pill>
+                                {(PROFILE.skillsWithUrls ?? PROFILE.skills.map((s) => ({ name: s, experience: undefined, url: undefined }))).map((skill) => (
+                                    <Pill key={skill.name}>
+                                        {skill.name}
+                                    </Pill>
                                 ))}
                             </div>
                         </SectionCard>
@@ -1469,14 +1477,23 @@ export default function MyProfilePage() {
 
                         <SectionCard title="Experience">
                             <div className="grid gap-3 px-4 py-4 sm:px-5 sm:py-5 md:grid-cols-2">
-                                {PROFILE.experienceItems.map((item) => (
-                                    <DetailTile
-                                        key={item.id}
-                                        icon={<CircleCheck className="h-4 w-4" />}
-                                        title={item.title}
-                                        subtitle={`${item.years} years experience`}
-                                        showExternalLinkIcon={Boolean(item.externalUrl)}
-                                    />
+                                {(PROFILE.skillsWithUrls ?? []).map((skill) => (
+                                    <div key={skill.name} className="border border-[#dfe4ec] bg-white px-4 py-4">
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="mt-0.5 text-[#66758a]"><CircleCheck className="h-4 w-4" /></div>
+                                            <div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-sm font-medium text-[#111827] sm:text-[15px]">{skill.name}</p>
+                                                    {skill.url ? (
+                                                        <a href={skill.url} target="_blank" rel="noopener noreferrer" className="text-[#66758a] hover:text-[#111827] transition-colors">
+                                                            <ExternalLinkIcon />
+                                                        </a>
+                                                    ) : null}
+                                                </div>
+                                                <p className="mt-1 text-sm text-[#66758a]">{skill.experience !== undefined ? skill.experience : 0} years experience</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </SectionCard>

@@ -75,6 +75,7 @@ export interface ResumeProfileData {
   externalLinks?: ResumeExternalLinkEntry[];
   languages?: ResumeLanguageEntry[];
   keySkills?: string[];
+  skillsWithUrls?: { name: string; experience?: number; url?: string }[];
   tools?: string[];
   projects?: ResumeProjectEntry[];
   workExperience?: ResumeWorkExperienceEntry[];

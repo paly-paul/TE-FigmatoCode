@@ -212,6 +212,27 @@ function mapSkillsTable(value: unknown): string[] | undefined {
   return flattened.length ? Array.from(new Set(flattened)) : undefined;
 }
 
+function mapSkillsTableWithUrls(value: unknown): { name: string; experience?: number; url?: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  const result: { name: string; experience?: number; url?: string }[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const name = (
+      typeof row.key_skills === "string" ? row.key_skills :
+      typeof row.key_skill === "string" ? row.key_skill :
+      typeof row.skill === "string" ? row.skill : ""
+    ).trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const url = typeof row.url === "string" ? row.url.trim() : undefined;
+    const experience = typeof row.experience === "number" ? row.experience : undefined;
+    result.push({ name, experience: experience || undefined, url: url || undefined });
+  }
+  return result.length ? result : undefined;
+}
+
 function splitSkillText(value: string) {
   return value
     .split(/,|\/|;|\||•|\n/g)
@@ -861,6 +882,10 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
   const splitName = splitFullName(fullName);
   const keySkillsFromArray = mapKeySkills(profileVersion.key_skills);
   const keySkillsFromTable = mapSkillsTable(profileVersion.skills_table);
+  const skillsWithUrls =
+    mapSkillsTableWithUrls(profileVersion.skills_table) ??
+    mapSkillsTableWithUrls(profileRecord.skills_table) ??
+    mapSkillsTableWithUrls(root.skills_table);
   const keySkillsFromRoot = mapKeySkills(
     profileVersion.keySkills ??
       profileRecord.key_skills ??
@@ -1171,6 +1196,7 @@ function mapToResumeProfileData(root: UnknownRecord): ResumeProfileData {
       ) ??
       clampPercent(visibilityScoreFallback),
     keySkills: keySkillsFromArray ?? keySkillsFromTable ?? keySkillsFromRoot,
+    skillsWithUrls,
     tools,
     education: educationFromQualifications ?? educationFromDetails,
     certifications,
