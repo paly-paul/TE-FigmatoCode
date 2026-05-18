@@ -2,6 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 type LogoutConfirmModalProps = {
   open: boolean;
@@ -17,6 +18,7 @@ export default function LogoutConfirmModal({
   onCancel,
 }: LogoutConfirmModalProps) {
   const [visible, setVisible] = useState(false);
+  useScrollLock(open);
 
   useEffect(() => {
     if (!open) {

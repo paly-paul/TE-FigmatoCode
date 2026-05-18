@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { StatusPopup } from "@/components/ui/StatusPopup";
+import { ImproveScorePopup } from "@/components/ui/ImproveScorePopup";
 
 interface VisibilityScoreCardProps {
   value: number;
@@ -84,11 +84,8 @@ export default function VisibilityScoreCard({
         {ctaLabel}
       </button>
 
-      <StatusPopup
+      <ImproveScorePopup
         open={showPremiumPopup}
-        variant="success"
-        title="Premium Feature"
-        message="This feature is part of our Premium experience. Feature Coming Soon"
         onClose={() => setShowPremiumPopup(false)}
       />
     </div>

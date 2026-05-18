@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useScrollLock } from "@/lib/useScrollLock";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -23,6 +24,7 @@ export default function LegalHtmlModal({
   const [htmlBody, setHtmlBody] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  useScrollLock(open);
 
   useEffect(() => {
     if (!open) {

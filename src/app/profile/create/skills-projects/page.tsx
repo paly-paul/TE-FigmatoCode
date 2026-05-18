@@ -552,7 +552,11 @@ function SkillsProjectsPageContent() {
   function validateExperienceEntry(entry: ExperienceEntry): ExperienceFieldErrors {
     const sectionErrors: ExperienceFieldErrors = {};
     if (!entry.experience.trim()) sectionErrors.experience = "Tool/skill is required.";
-    if (!entry.experienceYears.trim()) sectionErrors.experienceYears = "Experience years are required.";
+    if (!entry.experienceYears.trim()) {
+      sectionErrors.experienceYears = "Experience years are required.";
+    } else if (Number.parseFloat(entry.experienceYears.trim()) <= 0) {
+      sectionErrors.experienceYears = "Experience years must be greater than 0.";
+    }
     const ref = entry.experienceReference.trim();
     if (ref && !isValidUrl(ref)) {
       sectionErrors.experienceReference = "Enter a valid URL (http/https).";
@@ -1284,6 +1288,15 @@ function SkillsProjectsPageContent() {
         const fe = { ...next.experiences[id] };
         for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
           delete fe[k as keyof ExperienceFieldErrors];
+        }
+        // Re-validate experienceYears inline so "0" keeps showing an error.
+        if ("experienceYears" in patch) {
+          const val = (patch.experienceYears ?? "").trim();
+          if (!val) {
+            fe.experienceYears = "Experience years are required.";
+          } else if (Number.parseFloat(val) <= 0) {
+            fe.experienceYears = "Experience years must be greater than 0.";
+          }
         }
         next.experiences = { ...next.experiences, [id]: fe };
         if (Object.keys(next.experiences[id]).length === 0) {
@@ -3206,7 +3219,7 @@ function SkillsProjectsPageContent() {
                 <span>{lastSubmitWasEdit ? "Profile version updated." : "Profile Version V1.0 created!"}</span>
               </div>
 
-              <div className="mt-5 flex justify-end">
+              <div className="mt-5 flex justify-center">
                 <Button
                   fullWidth={false}
                   className="px-6 py-2.5 text-sm"

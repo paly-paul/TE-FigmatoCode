@@ -83,6 +83,7 @@ interface ActionCard {
   matchPercentage?: number;
   /** API `customer`; shown in drawer until RR details load. */
   customer?: string;
+  skills?: string[];
 }
 
 function recencyScoreFromPostedTime(postedTime: string): number {
@@ -262,19 +263,42 @@ function FilterCheckboxGroup({
   selected,
   onChange,
   singleSelect = false,
+  radio = false,
 }: {
   options: string[];
   selected: string[];
   onChange: (values: string[]) => void;
   singleSelect?: boolean;
+  radio?: boolean;
 }) {
   const toggle = (option: string) => {
-    if (singleSelect) {
+    if (singleSelect || radio) {
       onChange(selected.includes(option) ? [] : [option]);
       return;
     }
     onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
   };
+
+  if (radio) {
+    const groupName = options.join("-");
+    return (
+      <div className="space-y-3">
+        {options.map((option) => (
+          <label key={option} className="flex items-center gap-2.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="radio"
+              name={groupName}
+              checked={selected.includes(option)}
+              onChange={() => {}}
+              onClick={() => toggle(option)}
+              className="w-4 h-4 accent-blue-600"
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -342,12 +366,18 @@ function JobsFilterPanel({
       : filteredSkills.slice(0, SKILLS_PREVIEW_LIMIT);
   const canToggleSkillsView = trimmedSkillsSearch.length === 0 && filteredSkills.length > SKILLS_PREVIEW_LIMIT;
 
+  const [draftFilters, setDraftFilters] = useState<FilterState>(filters);
+
+  useEffect(() => {
+    setDraftFilters(filters);
+  }, [filters]);
+
   useEffect(() => {
     setShowAllSkills(false);
   }, [searchSkills]);
 
   const setValue = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
-    onFiltersChange({ ...filters, [key]: value });
+    setDraftFilters((prev) => ({ ...prev, [key]: value }));
 
   return (
     <aside className="bg-white border border-gray-200 rounded-sm p-4 space-y-5">
@@ -392,7 +422,7 @@ function JobsFilterPanel({
               >
                 <FilterCheckboxGroup
                   options={visibleSkills}
-                  selected={filters.skills}
+                  selected={draftFilters.skills}
                   onChange={(value) => setValue("skills", value)}
                 />
               </div>
@@ -428,8 +458,9 @@ function JobsFilterPanel({
         {openSections.employment ? (
           <FilterCheckboxGroup
             options={employmentTypeOptions}
-            selected={filters.employmentTypes}
+            selected={draftFilters.employmentTypes}
             onChange={(value) => setValue("employmentTypes", value)}
+            radio
           />
         ) : null}
       </div>
@@ -452,9 +483,9 @@ function JobsFilterPanel({
         {openSections.seniority ? (
           <FilterCheckboxGroup
             options={seniorityLevelOptions}
-            selected={filters.seniorityLevels}
+            selected={draftFilters.seniorityLevels}
             onChange={(value) => setValue("seniorityLevels", value)}
-            singleSelect={true}
+            radio
           />
         ) : null}
       </div>
@@ -477,62 +508,52 @@ function JobsFilterPanel({
 
         {openSections.salary ? (
           <>
-        {(() => {
-          const minPct = (filters.salaryMin / 10000) * 100;
-          const maxPct = (filters.salaryMax / 10000) * 100;
-          return (
-        <div className="relative h-1.5 bg-gray-200 rounded-full mb-6 mx-1">
-          <div
-            className="absolute h-1.5 bg-blue-600 rounded-full"
-            style={{
-              left: `${minPct}%`,
-              right: `${100 - maxPct}%`,
-            }}
-          />
-
-          <input
-            type="range"
-            min={0}
-            max={10000}
-            step={500}
-            value={filters.salaryMin}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (next < filters.salaryMax) setValue("salaryMin", next);
-            }}
-            className="dual-range-input absolute w-full h-full opacity-0"
-            style={{
-              zIndex: 10,
-            }}
-          />
-          <input
-            type="range"
-            min={0}
-            max={10000}
-            step={500}
-            value={filters.salaryMax}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (next > filters.salaryMin) setValue("salaryMax", next);
-            }}
-            className="dual-range-input absolute w-full h-full opacity-0"
-            style={{
-              zIndex: 11,
-            }}
-          />
-
-          <div
-            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm pointer-events-none"
-            style={{ left: `${minPct}%` }}
-          />
-          <div
-            className="absolute w-4 h-4 bg-white border border-gray-300 rounded-full top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-sm pointer-events-none"
-            style={{ left: `${maxPct}%` }}
-          />
-        </div>
-          );
-        })()}
-
+            {(() => {
+              const sliderMax = JOBS_FILTER_DEFAULTS.salaryMax;
+              const minPct = (draftFilters.salaryMin / sliderMax) * 100;
+              const maxPct = (draftFilters.salaryMax / sliderMax) * 100;
+              return (
+                <div className="relative h-5 mx-1 mb-5">
+                  <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full bg-gray-200" />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-blue-600"
+                    style={{ left: `${minPct}%`, right: `${100 - maxPct}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+                    style={{ left: `${minPct}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+                    style={{ left: `${maxPct}%` }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={sliderMax}
+                    step={100}
+                    value={draftFilters.salaryMin}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val < draftFilters.salaryMax) setValue("salaryMin", val);
+                    }}
+                    className="dual-range-input absolute inset-0 w-full h-full"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={sliderMax}
+                    step={100}
+                    value={draftFilters.salaryMax}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val > draftFilters.salaryMin) setValue("salaryMax", val);
+                    }}
+                    className="dual-range-input absolute inset-0 w-full h-full"
+                  />
+                </div>
+              );
+            })()}
         <div className="grid grid-cols-2 gap-3 text-xs text-gray-600 mb-5">
           <div>
             <p className="mb-1">Min</p>
@@ -540,13 +561,12 @@ function JobsFilterPanel({
               <span>$</span>
               <input
                 type="number"
-                value={filters.salaryMin}
+                value={draftFilters.salaryMin === 0 ? "" : draftFilters.salaryMin}
                 min={0}
-                max={filters.salaryMax - 500}
-                step={500}
+                placeholder="0"
                 onChange={(event) => {
                   const next = Number(event.target.value);
-                  if (next < filters.salaryMax) setValue("salaryMin", next);
+                  if (event.target.value === "" || (next >= 0 && next < draftFilters.salaryMax)) setValue("salaryMin", next || 0);
                 }}
                 className="w-full border border-gray-200 rounded-sm px-2 py-1.5 focus:outline-none"
               />
@@ -559,13 +579,12 @@ function JobsFilterPanel({
               <span>$</span>
               <input
                 type="number"
-                value={filters.salaryMax}
-                min={filters.salaryMin + 500}
-                max={10000}
-                step={500}
+                value={draftFilters.salaryMax === 0 ? "" : draftFilters.salaryMax}
+                min={0}
+                placeholder="Any"
                 onChange={(event) => {
                   const next = Number(event.target.value);
-                  if (next > filters.salaryMin) setValue("salaryMax", next);
+                  if (event.target.value === "" || next > draftFilters.salaryMin) setValue("salaryMax", next || 0);
                 }}
                 className="w-full border border-gray-200 rounded-sm px-2 py-1.5 focus:outline-none"
               />
@@ -576,13 +595,17 @@ function JobsFilterPanel({
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => onFiltersChange(JOBS_FILTER_DEFAULTS)}
+                onClick={() => {
+                  setDraftFilters(JOBS_FILTER_DEFAULTS);
+                  onFiltersChange(JOBS_FILTER_DEFAULTS);
+                }}
                 className="h-9 text-sm text-gray-700 border border-gray-200 rounded-sm hover:bg-gray-50"
               >
                 Reset
               </button>
               <button
                 type="button"
+                onClick={() => onFiltersChange(draftFilters)}
                 className="h-9 text-sm text-white bg-blue-600 rounded-sm hover:bg-blue-700"
               >
                 Apply
@@ -593,6 +616,15 @@ function JobsFilterPanel({
       </div>
     </aside>
   );
+}
+
+function formatJobCardLocation(location: string, locationFull: string, compact: boolean): string {
+  const city = (location || "").trim().replace(/^—$/, "");
+  const country = (locationFull || "").trim().replace(/^—$/, "");
+  if (!city && !country) return "Unknown location";
+  if (!country || city.toLowerCase() === country.toLowerCase()) return city || country;
+  if (!city) return country;
+  return compact ? `${city} | ${country}` : `${city} - ${country}`;
 }
 
 function getStatusColor(status: JobCard["status"]) {
@@ -653,11 +685,16 @@ function JobsCard({
       }`}
     >
       <div className="mb-3 flex flex-col gap-2 sm:mb-4">
-        <h3
-          className={`font-semibold text-gray-900 ${compact ? "text-base" : "text-base sm:text-lg"}`}
-        >
-          {job.title}
-        </h3>
+        <div className="flex items-start justify-between gap-2">
+          <h3
+            className={`font-semibold text-gray-900 ${compact ? "text-base" : "text-base sm:text-lg"}`}
+          >
+            {job.title}
+          </h3>
+          {job.postedTime && job.postedTime !== "—" && (
+            <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
+          )}
+        </div>
         {(() => {
           const raw = job.company.trim();
           const hasCustomer = Boolean(raw && raw !== "—");
@@ -679,7 +716,7 @@ function JobsCard({
         })()}
         {!compact ? (
           <div className="flex flex-wrap gap-2">
-            {job.skills.map((skill) => (
+            {job.skills.slice(0, 7).map((skill) => (
               <span
                 key={skill}
                 className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700"
@@ -687,6 +724,11 @@ function JobsCard({
                 {skill}
               </span>
             ))}
+            {job.skills.length > 7 && (
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500">
+                +{job.skills.length - 7} more
+              </span>
+            )}
           </div>
         ) : null}
       </div>
@@ -695,9 +737,7 @@ function JobsCard({
         <div className="flex items-center gap-2">
           <MapPin size={16} className={compact ? "h-4 w-4 shrink-0 text-blue-600" : iconClass} />
           <span className="truncate">
-            {compact
-              ? `${job.location} | ${job.locationFull}`
-              : `${job.location} - ${job.locationFull}`}
+            {formatJobCardLocation(job.location, job.locationFull, compact)}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -1056,7 +1096,7 @@ export default function TalentEngineJobsPage() {
     return jobsSource.filter((job) => {
       const matchesSearch =
         normalizedQuery.length === 0 ||
-        [job.title, job.company, job.location, job.locationFull]
+        [job.title, job.company, job.location, job.locationFull, ...job.skills]
           .join(" ")
           .toLowerCase()
           .includes(normalizedQuery);
@@ -1099,7 +1139,8 @@ export default function TalentEngineJobsPage() {
       const id = job.locationId?.trim();
       if (!id || id === "—") continue;
       const fromCatalog = catalogById.get(id);
-      const fromJob = [job.location, job.locationFull].filter((v) => v && v !== "—").join(", ");
+      const parts = [job.location, job.locationFull].filter((v) => v && v !== "—");
+      const fromJob = [...new Set(parts)].join(", ");
       const label = fromCatalog || fromJob || id;
       if (!byId.has(id)) byId.set(id, label);
     }
@@ -1143,7 +1184,7 @@ export default function TalentEngineJobsPage() {
     const results = jobsSource.filter((job) => {
       const matchesSearch =
         normalizedQuery.length === 0 ||
-        [job.title, job.company, job.location, job.locationFull]
+        [job.title, job.company, job.location, job.locationFull, ...job.skills]
           .join(" ")
           .toLowerCase()
           .includes(normalizedQuery);
@@ -1249,6 +1290,7 @@ export default function TalentEngineJobsPage() {
       jobDocumentId: job.jobDocumentId,
       matchPercentage: job.matchPercentage,
       customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
+      skills: job.skills.length ? job.skills : undefined,
     };
 
     setDrawerSuccessMessage(null);
@@ -1416,6 +1458,10 @@ export default function TalentEngineJobsPage() {
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       </div>
 
+      {showSavedOnly && !isInitialJobsLoading && (
+        <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
+      )}
+
       {isInitialJobsLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
           <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
@@ -1546,6 +1592,10 @@ export default function TalentEngineJobsPage() {
                 Total jobs: <span className="font-semibold text-gray-700">{filteredJobs.length}</span>
               </div>
             </div>
+
+            {showSavedOnly && !isInitialJobsLoading && (
+              <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
+            )}
 
             {isInitialJobsLoading ? (
               <div className="bg-white border border-gray-200 rounded-sm px-6 py-12 text-center">

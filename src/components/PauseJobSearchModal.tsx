@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { CheckCircle2, X } from "lucide-react";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 interface Props {
   open: boolean;
@@ -16,6 +17,7 @@ export default function PauseJobSearchModal({
 }: Props) {
   const [selected, setSelected] = useState("3");
   const [visible, setVisible] = useState(false);
+  useScrollLock(open);
   const [showSuccess, setShowSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
 

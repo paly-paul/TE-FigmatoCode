@@ -6,6 +6,9 @@ import PageTransition from "@/components/ui/PageTransition";
 export const metadata: Metadata = {
   title: "SixFE",
   description: "Your intelligent job platform for candidates",
+  icons: {
+    icon: "/icons/logo.svg",
+  },
 };
 
 export const viewport: Viewport = {

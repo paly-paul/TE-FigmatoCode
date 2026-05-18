@@ -1,6 +1,6 @@
 "use client";
 
-import { RefObject, useEffect, useState } from "react";
+import { RefObject, useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { BaseDrawer } from "./BaseDrawer";
 
@@ -34,12 +34,14 @@ export function LocationDrawer({
 }: PreferredLocationDrawerProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string[]>(initialSelected);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
-
-    setSelected(initialSelected);
-    setSearch("");
+    if (open && !wasOpenRef.current) {
+      setSelected(initialSelected);
+      setSearch("");
+    }
+    wasOpenRef.current = open;
   }, [open, initialSelected]);
 
   const toggleLocation = (id: string) => {
@@ -70,18 +72,6 @@ export function LocationDrawer({
       // title="Preferred Location"
       title="Locations"
       triggerRef={triggerRef}
-      headerActions={
-        <button
-          type="button"
-          onClick={() => {
-            setSelected([]);
-            setSearch("");
-          }}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          Reset
-        </button>
-      }
       footer={
         <div className="flex items-center justify-between gap-3">
           <button

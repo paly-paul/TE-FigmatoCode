@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, X, AlertTriangle } from "lucide-react";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 type StatusPopupVariant = "success" | "error";
 
@@ -55,6 +56,7 @@ function renderMessageWithStrongSegments(message: string) {
 }
 
 export function StatusPopup({ open, variant, title, message, onClose }: StatusPopupProps) {
+  useScrollLock(open);
   if (!open) return null;
 
   const isSuccess = variant === "success";
