@@ -116,16 +116,17 @@ function parseActionablesPayload(data: Record<string, unknown>): {
       "date",
       "timestamp",
     ]);
+    const scoreRaw = item.score;
+    const score = typeof scoreRaw === "number" && Number.isFinite(scoreRaw) ? scoreRaw : null;
     actions.push({
       job_title: derivedJobTitle,
       job_id: derivedJobId,
       action,
       customer,
       rr_candidate,
-      // Some backends/environments may emit stage/status under rr_candidate_* keys.
-      // Also helps when stage/status are accidentally swapped upstream.
       stage,
       status,
+      score,
       accepted_at,
       received_at,
       // Avoid fabricating ids when the backend didn't provide one; proposal endpoints require a real name.

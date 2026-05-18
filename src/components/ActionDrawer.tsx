@@ -790,6 +790,28 @@ export default function ActionDrawer({
       : action?.matchPercentage != null
         ? `${action.matchPercentage}%`
         : actionDrawerJobSummary.matchPercentLabel;
+  const rawMatchScore =
+    rrDetails?.match_score ?? action?.matchPercentage ?? null;
+  const resolvedMatchBarFilledCount =
+    rawMatchScore != null
+      ? Math.min(5, Math.max(0, Math.ceil(rawMatchScore / 20)))
+      : actionDrawerJobSummary.matchBarFilledCount;
+  const resolvedMatchBadge =
+    rawMatchScore == null
+      ? actionDrawerJobSummary.matchBadge
+      : rawMatchScore >= 80
+        ? "Strong Match"
+        : rawMatchScore >= 60
+          ? "Good Match"
+          : rawMatchScore >= 40
+            ? "Fair Match"
+            : "Low Match";
+  const resolvedMatchBarColor =
+    rawMatchScore == null || rawMatchScore >= 70
+      ? "bg-green-500"
+      : rawMatchScore >= 40
+        ? "bg-yellow-400"
+        : "bg-red-400";
   const resolvedPostedAgo = rrDetails?.posted_time || action?.timestamp || actionDrawerJobSummary.postedAgo;
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
   const resolvedRotationCycle =
@@ -1801,7 +1823,7 @@ export default function ActionDrawer({
       <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <span className="rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A]">
-            {actionDrawerJobSummary.matchBadge}
+            {resolvedMatchBadge}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#5E7397]">{resolvedPostedAgo}</span>
@@ -1868,7 +1890,7 @@ export default function ActionDrawer({
         <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
-              {actionDrawerJobSummary.matchBadge}
+              {resolvedMatchBadge}
             </span>
             <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>
           </div>
@@ -1900,7 +1922,7 @@ export default function ActionDrawer({
                   <div
                     key={i}
                     className={`h-3.5 w-2.5 rounded-[1px] ${
-                      i < actionDrawerJobSummary.matchBarFilledCount ? "bg-[#1447E6]" : "bg-[#E1E7F0]"
+                      i < resolvedMatchBarFilledCount ? resolvedMatchBarColor : "bg-[#E1E7F0]"
                     }`}
                   />
                 ))}

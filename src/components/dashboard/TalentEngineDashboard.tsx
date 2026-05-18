@@ -885,6 +885,7 @@ export default function TalentEngineDashboard() {
               item.received_at ||
               item.accepted_at ||
               localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            matchPercentage: item.score != null ? Math.max(0, Math.min(100, Math.round(item.score))) : undefined,
           };
         };
 
@@ -1780,9 +1781,9 @@ export default function TalentEngineDashboard() {
   };
 
   const getMatchColor = (percentage: number) => {
-    if (percentage >= 70) return "bg-blue-600";
-    if (percentage >= 40) return "bg-blue-500";
-    return "bg-yellow-500";
+    if (percentage >= 70) return "bg-green-500";
+    if (percentage >= 40) return "bg-yellow-400";
+    return "bg-red-400";
   };
 
   const getActionBadge = (type: string) => {
@@ -2576,10 +2577,7 @@ export default function TalentEngineDashboard() {
                 <button
                   key={getActionCardKey(card)}
                   type="button"
-                  onClick={() => {
-                    setSelectedAction(card);
-                    setIsDrawerOpen(true);
-                  }}
+                  onClick={() => openActionDrawerForCard(card)}
                   className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
                 >
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -3110,10 +3108,7 @@ export default function TalentEngineDashboard() {
                     </div>
 
                     <button
-                      onClick={() => {
-                        setSelectedAction(card);
-                        setIsDrawerOpen(true);
-                      }}
+                      onClick={() => openActionDrawerForCard(card)}
                       className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
                     >
                       Take Action
