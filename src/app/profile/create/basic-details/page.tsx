@@ -2784,7 +2784,7 @@ function BasicDetailsPageContent() {
               <ProfileProgressCard
                 percent={completionPercent}
                 className="!w-full"
-                description="Higher profile strength improves recruiter visibility"
+                description="Complete your profile to get better job recommendations and opportunities."
               />
 
               <MobileAccordionCard
@@ -4740,7 +4740,7 @@ function BasicDetailsPageContent() {
             <ProfileProgressCard
               percent={completionPercent}
               className="!w-full"
-              description="Higher profile strength improves recruiter visibility"
+              description="Complete your profile to get better job recommendations and opportunities."
             />
 
             <section className="bg-white border border-gray-200 rounded-xl overflow-visible">
