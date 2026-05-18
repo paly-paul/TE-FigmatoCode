@@ -472,6 +472,16 @@ export default function ActionDrawer({
       ? (action?.subtitle.split(" - ")[1] ?? "")
       : "");
 
+  const resolvedLocationDisplay = (() => {
+    const city = locationLabel.trim().replace(/^—$/, "");
+    const suffix = (rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix).trim().replace(/^—$/, "");
+    if (!city && !suffix) return "Unknown location";
+    if (!city) return suffix;
+    if (!suffix) return city;
+    if (city.toLowerCase() === suffix.toLowerCase()) return city;
+    return `${city} | ${suffix}`;
+  })();
+
   const resolvedCustomer =
     rrDetails?.customer?.trim() || action?.customer?.trim() || "";
 
@@ -781,7 +791,6 @@ export default function ActionDrawer({
         ? `${action.matchPercentage}%`
         : actionDrawerJobSummary.matchPercentLabel;
   const resolvedPostedAgo = rrDetails?.posted_time || action?.timestamp || actionDrawerJobSummary.postedAgo;
-  const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
   const resolvedRotationCycle =
     rrDetails?.rotation_cycle?.trim() === "0"
@@ -1810,7 +1819,7 @@ export default function ActionDrawer({
         <p className="mt-2 flex items-center gap-2 text-sm text-[#5E7397]">
           <MapPin size={16} className="shrink-0" />
           <span>
-            {locationLabel} | {resolvedLocationSuffix}
+            {resolvedLocationDisplay}
           </span>
         </p>
       </div>
@@ -1871,7 +1880,7 @@ export default function ActionDrawer({
                 <p className="flex items-center gap-1.5 text-xs text-[#5E7397] sm:gap-2 sm:text-sm">
                   <MapPin size={14} className="flex-shrink-0 sm:h-4 sm:w-4" />
                   <span>
-                    {locationLabel} | {resolvedLocationSuffix}
+                    {resolvedLocationDisplay}
                   </span>
                 </p>
               </div>

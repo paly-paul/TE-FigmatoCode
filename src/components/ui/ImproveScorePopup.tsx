@@ -59,7 +59,8 @@ export function ImproveScorePopup({ open, onClose }: ImproveScorePopupProps) {
             Coming Soon
           </span>
           <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
-            This feature is part of our Premium experience. Stay tuned — we&apos;re working on tools to help boost your visibility score and get noticed by the right recruiters.
+            {/* This feature is part of our Premium experience. Stay tuned — we&apos;re working on tools to help boost your visibility score and get noticed by the right recruiters. */}
+            A premium feature to enhance recruiter visibility.
           </p>
 
           <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">

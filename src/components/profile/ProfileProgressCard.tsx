@@ -11,7 +11,7 @@ interface ProfileProgressCardProps {
 export function ProfileProgressCard({
   percent = 10,
   className = "",
-  description = "Complete your profile to get 3x more interview calls",
+  description = "Complete your profile to get better job recommendations and opportunities."
 }: ProfileProgressCardProps) {
   const r = 30;
   const circumference = useMemo(() => 2 * Math.PI * r, [r]);

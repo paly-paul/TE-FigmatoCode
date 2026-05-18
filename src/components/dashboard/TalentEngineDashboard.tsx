@@ -454,9 +454,9 @@ function buildAcceptedRecruiterInterestCard(input: {
 }
 
 function formatJobLocation(location: string, locationFull: string): string {
-  const city = (location || "").trim();
-  const full = (locationFull || "").trim();
-  if (!city) return full || "—";
+  const city = (location || "").trim().replace(/^—$/, "");
+  const full = (locationFull || "").trim().replace(/^—$/, "");
+  if (!city) return full || "Unknown location";
   if (!full) return city;
   const normalizedCity = city.toLowerCase();
   const normalizedFull = full.toLowerCase();
@@ -2696,6 +2696,10 @@ export default function TalentEngineDashboard() {
               </button>
             </div>
 
+            {showSavedOnly && (
+              <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
+            )}
+
             {visibleRecommendedJobs.length > 0 ? (
               <div className="flex flex-col gap-4">
                 {visibleRecommendedJobs.map((job) => (
@@ -3235,6 +3239,10 @@ export default function TalentEngineDashboard() {
               </div>
             </div>
 
+            {showSavedOnly && (
+              <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
+            )}
+
             <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
               {/* <div className="flex flex-col gap-4 mb-6">
                 <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
@@ -3343,11 +3351,8 @@ export default function TalentEngineDashboard() {
               </div> */}
 
               {activeTab === "Recommended" ? (
-                visibleRecommendedJobs.length > 0 ? (
-                  <>
-                    {showSavedOnly && (
-                      <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
-                    )}
+                <>
+                  {visibleRecommendedJobs.length > 0 ? (
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
                       {visibleRecommendedJobs.map((job) => (
                       <div
@@ -3451,10 +3456,10 @@ export default function TalentEngineDashboard() {
                       </div>
                     ))}
                     </div>
-                  </>
-                ) : (
-                  renderEmptyJobs("Try broadening your search, location, or salary range.")
-                )
+                  ) : (
+                    renderEmptyJobs("Try broadening your search, location, or salary range.")
+                  )}
+                </>
               ) : (
                 <>
                   <div className="mb-4 flex items-center justify-between gap-3 border-b border-gray-200">

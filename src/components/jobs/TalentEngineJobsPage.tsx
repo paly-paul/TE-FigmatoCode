@@ -563,10 +563,12 @@ function JobsFilterPanel({
                 type="number"
                 value={draftFilters.salaryMin === 0 ? "" : draftFilters.salaryMin}
                 min={0}
+                max={JOBS_FILTER_DEFAULTS.salaryMax}
                 placeholder="0"
                 onChange={(event) => {
-                  const next = Number(event.target.value);
-                  if (event.target.value === "" || (next >= 0 && next < draftFilters.salaryMax)) setValue("salaryMin", next || 0);
+                  if (event.target.value === "") { setValue("salaryMin", 0); return; }
+                  const next = Math.min(Number(event.target.value), JOBS_FILTER_DEFAULTS.salaryMax);
+                  if (next >= 0 && next < draftFilters.salaryMax) setValue("salaryMin", next);
                 }}
                 className="w-full border border-gray-200 rounded-sm px-2 py-1.5 focus:outline-none"
               />
@@ -581,10 +583,12 @@ function JobsFilterPanel({
                 type="number"
                 value={draftFilters.salaryMax === 0 ? "" : draftFilters.salaryMax}
                 min={0}
+                max={JOBS_FILTER_DEFAULTS.salaryMax}
                 placeholder="Any"
                 onChange={(event) => {
-                  const next = Number(event.target.value);
-                  if (event.target.value === "" || next > draftFilters.salaryMin) setValue("salaryMax", next || 0);
+                  if (event.target.value === "") { setValue("salaryMax", 0); return; }
+                  const next = Math.min(Number(event.target.value), JOBS_FILTER_DEFAULTS.salaryMax);
+                  if (next > draftFilters.salaryMin) setValue("salaryMax", next);
                 }}
                 className="w-full border border-gray-200 rounded-sm px-2 py-1.5 focus:outline-none"
               />

@@ -2553,13 +2553,13 @@ function SkillsProjectsPageContent() {
                             <span className="text-sm font-medium text-gray-800">Exp. in Years <span className="text-red-500">*</span></span>
                             <input
                               type="number"
-                              min="0.1"
+                              min="0"
                               step="1"
                               value={entry.experienceYears}
                               onChange={(e) =>
                                 updateExperience(entry.id, { experienceYears: e.target.value })
                               }
-                              placeholder="0.1"
+                              placeholder="1"
                               className={fieldClass(Boolean(fe?.experienceYears))}
                             />
                             {fe?.experienceYears && (
@@ -2930,11 +2930,11 @@ function SkillsProjectsPageContent() {
                           <span className="text-sm font-medium text-gray-800">Exp. in Years <span className="text-red-500">*</span></span>
                           <input
                             type="number"
-                            min="0.1"
+                            min="0"
                             step="1"
                             value={entry.experienceYears}
                             onChange={(e) => updateExperience(entry.id, { experienceYears: e.target.value })}
-                            placeholder="0.1"
+                            placeholder="1"
                             className={fieldClass(Boolean(fe?.experienceYears))}
                           />
                           {fe?.experienceYears && <p className="text-xs text-red-500">{fe.experienceYears}</p>}
