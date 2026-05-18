@@ -28,6 +28,7 @@ export default function ConfirmationPage() {
   const [showVerifiedSuccess, setShowVerifiedSuccess] = useState(false);
   const [postVerifyDestination, setPostVerifyDestination] = useState<string>("");
   const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(6);
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
@@ -110,8 +111,20 @@ export default function ConfirmationPage() {
       }
       setPostVerifyDestination(destination);
       setShowVerifiedSuccess(true);
+      setRedirectCountdown(6);
 
-      // Allow users to see the success screen (and optionally click "Okay!") before redirect.
+      // Allow users to see the success screen (and optionally click "Continue") before redirect.
+      const interval = window.setInterval(() => {
+        setRedirectCountdown((prev) => {
+          if (prev <= 1) {
+            window.clearInterval(interval);
+            router.replace(destination);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
       window.setTimeout(() => {
         router.replace(destination);
       }, REDIRECT_DELAY_MS);
@@ -165,19 +178,11 @@ export default function ConfirmationPage() {
                 router.replace(postVerifyDestination);
               }}
             >
-              Okay!
+              Continue
             </Button>
 
             <p className="text-sm text-gray-500">
-              Didn&apos;t receive the OTP?{" "}
-              <button
-                type="button"
-                onClick={() => void handleResendOtp()}
-                disabled
-                className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-60"
-              >
-                Resend
-              </button>
+              Redirecting in {redirectCountdown}s...
             </p>
           </>
         ) : (
@@ -220,7 +225,7 @@ export default function ConfirmationPage() {
               {success ? <p className="mb-3 text-sm text-green-600">{success}</p> : null}
 
               <Button type="submit" disabled={isSubmittingOtp || isRedirecting} className="mb-5">
-                {isRedirecting ? "Redirecting..." : isSubmittingOtp ? "Verifying..." : "Submit OTP"}
+                {isSubmittingOtp ? "Verifying..." : "Submit OTP"}
               </Button>
             </form>
 
