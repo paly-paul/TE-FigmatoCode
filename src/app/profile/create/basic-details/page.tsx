@@ -386,6 +386,7 @@ type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
   certifications?: string;
   certificationIssueDateById?: Record<string, string>;
   certificationDateById?: Record<string, string>;
+  educationGraduationYearErrorById?: Record<string, string>;
   languageErrorById?: Record<string, string>;
 };
 
@@ -1867,6 +1868,17 @@ function BasicDetailsPageContent() {
       nextErrors.certificationDateById = certificationDateById;
     }
 
+    const educationGraduationYearErrorById: Record<string, string> = {};
+    for (const entry of education) {
+      const graduationYear = entry.graduationYear?.trim();
+      if (graduationYear && (graduationYear === "0" || graduationYear === "0000")) {
+        educationGraduationYearErrorById[entry.id] = "Graduation year cannot be zero.";
+      }
+    }
+    if (Object.keys(educationGraduationYearErrorById).length) {
+      nextErrors.educationGraduationYearErrorById = educationGraduationYearErrorById;
+    }
+
     const languageErrorById: Record<string, string> = {};
     for (const entry of languages) {
       if (!entry.language) continue;
@@ -3320,7 +3332,7 @@ function BasicDetailsPageContent() {
                                 );
                                 updateGraduationYearSearch(entry.id, "");
                               }}
-                              className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                              className={`${fieldClass(Boolean(errors.educationGraduationYearErrorById?.[entry.id]))} flex items-center justify-between bg-white text-left`}
                             >
                               <span className={entry.graduationYear ? "text-gray-900" : "text-gray-400"}>
                                 {entry.graduationYear || "Select year"}
@@ -3373,6 +3385,9 @@ function BasicDetailsPageContent() {
                               </div>
                             ) : null}
                           </div>
+                          {errors.educationGraduationYearErrorById?.[entry.id] ? (
+                            <p className="text-xs text-red-500">{errors.educationGraduationYearErrorById[entry.id]}</p>
+                          ) : null}
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Score</span>
@@ -4151,7 +4166,7 @@ function BasicDetailsPageContent() {
                               setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : entry.id));
                               updateGraduationYearSearch(entry.id, "");
                             }}
-                            className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                            className={`${fieldClass(Boolean(errors.educationGraduationYearErrorById?.[entry.id]))} flex items-center justify-between bg-white text-left`}
                           >
                             <span className={entry.graduationYear ? "text-gray-900" : "text-gray-400"}>
                               {entry.graduationYear || "Select year"}
@@ -4202,6 +4217,9 @@ function BasicDetailsPageContent() {
                             </div>
                           ) : null}
                         </div>
+                        {errors.educationGraduationYearErrorById?.[entry.id] ? (
+                          <p className="text-xs text-red-500">{errors.educationGraduationYearErrorById[entry.id]}</p>
+                        ) : null}
                       </label>
                       <label className="flex flex-col gap-2">
                         <span className="text-sm font-medium text-gray-800">Score</span>

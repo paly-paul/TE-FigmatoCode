@@ -216,10 +216,12 @@ function SalaryRange({
               type="number"
               value={min === 0 ? "" : min}
               min={0}
+              max={SALARY_SLIDER_MAX}
               placeholder="0"
               onChange={(event) => {
-                const value = Number(event.target.value);
-                if (event.target.value === "" || (value >= 0 && value < max)) onMinChange(value || 0);
+                if (event.target.value === "") { onMinChange(0); return; }
+                const value = Math.min(Number(event.target.value), SALARY_SLIDER_MAX);
+                if (value >= 0 && value < max) onMinChange(value);
               }}
               className="w-full text-sm text-gray-900 focus:outline-none bg-transparent"
             />
@@ -234,10 +236,12 @@ function SalaryRange({
               type="number"
               value={max === 0 ? "" : max}
               min={0}
+              max={SALARY_SLIDER_MAX}
               placeholder="Any"
               onChange={(event) => {
-                const value = Number(event.target.value);
-                if (event.target.value === "" || (value > min)) onMaxChange(value || 0);
+                if (event.target.value === "") { onMaxChange(0); return; }
+                const value = Math.min(Number(event.target.value), SALARY_SLIDER_MAX);
+                if (value > min) onMaxChange(value);
               }}
               className="w-full text-sm text-gray-900 focus:outline-none bg-transparent"
             />
@@ -560,7 +564,7 @@ export function FilterDrawer({
                 onApply(filters);
                 onClose();
               }}
-              className="rounded-md bg-blue-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none"
+              className=" bg-blue-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none"
             >
               Apply
             </button>
