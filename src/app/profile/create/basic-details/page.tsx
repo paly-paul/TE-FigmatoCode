@@ -386,6 +386,7 @@ type FormErrors = Partial<Record<keyof BasicDetailsForm, string>> & {
   certifications?: string;
   certificationIssueDateById?: Record<string, string>;
   certificationDateById?: Record<string, string>;
+  languageErrorById?: Record<string, string>;
 };
 
 function normalizeExperienceYears(value: string | undefined): string {
@@ -983,6 +984,7 @@ function BasicDetailsPageContent() {
       ],
       externalLinks: [],
       languages: [{ language: "", proficiency: "", read: "", write: "", speak: "" }],
+      profilePicPreview: null,
     })
   );
   const [snapshotRevision, setSnapshotRevision] = useState(0);
@@ -1057,6 +1059,7 @@ function BasicDetailsPageContent() {
         write: entry.write.trim(),
         speak: entry.speak.trim(),
       })),
+      profilePicPreview: profilePicPreview ?? null,
     });
   }
 
@@ -1412,7 +1415,7 @@ function BasicDetailsPageContent() {
 
   useEffect(() => {
     setHasUnsavedChanges(buildCurrentSnapshot() !== savedSnapshot);
-  }, [form, education, certifications, externalLinks, languages, savedSnapshot]);
+  }, [form, education, certifications, externalLinks, languages, profilePicPreview, savedSnapshot]);
 
   useEffect(() => {
     hasUnsavedChangesRef.current = hasUnsavedChanges;
@@ -1864,6 +1867,21 @@ function BasicDetailsPageContent() {
       nextErrors.certificationDateById = certificationDateById;
     }
 
+    const languageErrorById: Record<string, string> = {};
+    for (const entry of languages) {
+      if (!entry.language) continue;
+      const missing: string[] = [];
+      if (!entry.read) missing.push("Read");
+      if (!entry.write) missing.push("Write");
+      if (!entry.speak) missing.push("Speak");
+      if (missing.length > 0) {
+        languageErrorById[entry.id] = `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required.`;
+      }
+    }
+    if (Object.keys(languageErrorById).length) {
+      nextErrors.languageErrorById = languageErrorById;
+    }
+
     setErrors(nextErrors);
     const isValid = Object.keys(nextErrors).length === 0;
     if (!isValid) {
@@ -2012,6 +2030,12 @@ function BasicDetailsPageContent() {
         }
       }
       return prev.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry));
+    });
+    setErrors((prev) => {
+      if (!prev.languageErrorById?.[id]) return prev;
+      const next = { ...prev.languageErrorById };
+      delete next[id];
+      return { ...prev, languageErrorById: Object.keys(next).length ? next : undefined };
     });
   }
 
@@ -3861,7 +3885,7 @@ function BasicDetailsPageContent() {
                           <select
                             value={entry.read}
                             onChange={(e) => updateLanguageEntry(entry.id, "read", e.target.value)}
-                            className={`${fieldClass(false)} bg-white`}
+                            className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.read))} bg-white`}
                           >
                             <option value="">Select</option>
                             {languageRatings.map((rating) => (
@@ -3876,7 +3900,7 @@ function BasicDetailsPageContent() {
                           <select
                             value={entry.write}
                             onChange={(e) => updateLanguageEntry(entry.id, "write", e.target.value)}
-                            className={`${fieldClass(false)} bg-white`}
+                            className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.write))} bg-white`}
                           >
                             <option value="">Select</option>
                             {languageRatings.map((rating) => (
@@ -3891,7 +3915,7 @@ function BasicDetailsPageContent() {
                           <select
                             value={entry.speak}
                             onChange={(e) => updateLanguageEntry(entry.id, "speak", e.target.value)}
-                            className={`${fieldClass(false)} bg-white`}
+                            className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.speak))} bg-white`}
                           >
                             <option value="">Select</option>
                             {languageRatings.map((rating) => (
@@ -3902,6 +3926,9 @@ function BasicDetailsPageContent() {
                           </select>
                         </label>
                       </div>
+                      {errors.languageErrorById?.[entry.id] ? (
+                        <p className="text-xs text-red-500">{errors.languageErrorById[entry.id]}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -4641,7 +4668,7 @@ function BasicDetailsPageContent() {
                         <select
                           value={entry.read}
                           onChange={(e) => updateLanguageEntry(entry.id, "read", e.target.value)}
-                          className={`${fieldClass(false)} bg-white`}
+                          className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.read))} bg-white`}
                         >
                           <option value="">Select</option>
                           {languageRatings.map((rating) => (
@@ -4656,7 +4683,7 @@ function BasicDetailsPageContent() {
                         <select
                           value={entry.write}
                           onChange={(e) => updateLanguageEntry(entry.id, "write", e.target.value)}
-                          className={`${fieldClass(false)} bg-white`}
+                          className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.write))} bg-white`}
                         >
                           <option value="">Select</option>
                           {languageRatings.map((rating) => (
@@ -4671,7 +4698,7 @@ function BasicDetailsPageContent() {
                         <select
                           value={entry.speak}
                           onChange={(e) => updateLanguageEntry(entry.id, "speak", e.target.value)}
-                          className={`${fieldClass(false)} bg-white`}
+                          className={`${fieldClass(Boolean(errors.languageErrorById?.[entry.id] && !entry.speak))} bg-white`}
                         >
                           <option value="">Select</option>
                           {languageRatings.map((rating) => (
@@ -4682,6 +4709,9 @@ function BasicDetailsPageContent() {
                         </select>
                       </label>
                     </div>
+                    {errors.languageErrorById?.[entry.id] ? (
+                      <p className="text-xs text-red-500">{errors.languageErrorById[entry.id]}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>

@@ -2,6 +2,7 @@
 
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 type JobSuccessPopupProps = {
   open: boolean;
@@ -12,6 +13,7 @@ type JobSuccessPopupProps = {
 
 export function JobSuccessPopup({ open, title, message, onClose }: JobSuccessPopupProps) {
   const [visible, setVisible] = useState(false);
+  useScrollLock(open);
 
   useEffect(() => {
     if (!open) {

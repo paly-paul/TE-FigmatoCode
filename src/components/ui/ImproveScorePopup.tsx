@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PencilLine } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { useScrollLock } from "@/lib/useScrollLock";
 
-type DraftProfilePopupProps = {
+type ImproveScorePopupProps = {
   open: boolean;
-  onContinueEditing: () => void;
-  onDoItLater: () => void;
+  onClose: () => void;
 };
 
-export function DraftProfilePopup({ open, onContinueEditing, onDoItLater }: DraftProfilePopupProps) {
+export function ImproveScorePopup({ open, onClose }: ImproveScorePopupProps) {
   const [visible, setVisible] = useState(false);
   useScrollLock(open);
 
@@ -50,34 +49,26 @@ export function DraftProfilePopup({ open, onContinueEditing, onDoItLater }: Draf
         <div className="relative z-10 text-center">
           <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-sm">
             <span className="absolute inset-0 rounded-full bg-amber-400/25 animate-ping" />
-            <PencilLine className="relative h-7 w-7" />
+            <TrendingUp className="relative h-7 w-7" />
           </div>
 
           <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
-            Profile in Draft
+            Improve Your Score
           </p>
-          <p className="mt-1 text-sm text-slate-500 animate-in slide-in-from-bottom-1 duration-400">
-            Your profile is currently in draft status.
-          </p>
+          <span className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-700 animate-in slide-in-from-bottom-1 duration-400">
+            Coming Soon
+          </span>
           <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
-            You have unsaved or incomplete changes pending. Would you like to continue updating your profile now or finish it later?
+            This feature is part of our Premium experience. Stay tuned — we&apos;re working on tools to help boost your visibility score and get noticed by the right recruiters.
           </p>
 
           <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
             <button
               type="button"
-              onClick={onContinueEditing}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#174EE7] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-            >
-              <PencilLine className="h-4 w-4" />
-              Continue Editing
-            </button>
-            <button
-              type="button"
-              onClick={onDoItLater}
+              onClick={onClose}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              Do It Later
+              Got It
             </button>
           </div>
         </div>

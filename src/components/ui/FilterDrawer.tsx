@@ -91,19 +91,44 @@ function CheckboxGroup({
   selected,
   onChange,
   singleSelect = false,
+  radio = false,
 }: {
   options: string[];
   selected: string[];
   onChange: (val: string[]) => void;
   singleSelect?: boolean;
+  radio?: boolean;
 }) {
   const toggle = (option: string) => {
-    if (singleSelect) {
+    if (singleSelect || radio) {
       onChange(selected.includes(option) ? [] : [option]);
       return;
     }
     onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
   };
+
+  if (radio) {
+    const groupName = options.join("-");
+    return (
+      <div className="space-y-3">
+        {options.map((option) => (
+          <label key={option} className="flex items-center gap-2.5 cursor-pointer group">
+            <input
+              type="radio"
+              name={groupName}
+              checked={selected.includes(option)}
+              onChange={() => {}}
+              onClick={() => toggle(option)}
+              className="w-4 h-4 accent-blue-600"
+            />
+            <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">
+              {option}
+            </span>
+          </label>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -124,6 +149,8 @@ function CheckboxGroup({
   );
 }
 
+const SALARY_SLIDER_MAX = 10000;
+
 function SalaryRange({
   min,
   max,
@@ -135,59 +162,48 @@ function SalaryRange({
   onMinChange: (v: number) => void;
   onMaxChange: (v: number) => void;
 }) {
-  const rangeMin = 0;
-  const rangeMax = 10000;
-
-  const minPct = ((min - rangeMin) / (rangeMax - rangeMin)) * 100;
-  const maxPct = ((max - rangeMin) / (rangeMax - rangeMin)) * 100;
+  const minPct = (min / SALARY_SLIDER_MAX) * 100;
+  const maxPct = (max / SALARY_SLIDER_MAX) * 100;
 
   return (
-    <div className="space-y-4">
-      <div className="relative h-1.5 bg-gray-200 rounded-full mx-1">
+    <div>
+      <div className="relative h-5 mx-1 mb-5">
+        <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full bg-gray-200" />
         <div
-          className="absolute h-1.5 bg-blue-600 rounded-full"
+          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-blue-600"
           style={{ left: `${minPct}%`, right: `${100 - maxPct}%` }}
         />
-
+        <div
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+          style={{ left: `${minPct}%` }}
+        />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+          style={{ left: `${maxPct}%` }}
+        />
         <input
           type="range"
-          min={rangeMin}
-          max={rangeMax}
-          step={500}
+          min={0}
+          max={SALARY_SLIDER_MAX}
+          step={100}
           value={min}
           onChange={(event) => {
-            const value = Number(event.target.value);
-            if (value < max) onMinChange(value);
+            const val = Number(event.target.value);
+            if (val < max) onMinChange(val);
           }}
-          className="dual-range-input absolute w-full h-full opacity-0"
-          style={{
-            zIndex: 3,
-          }}
+          className="dual-range-input absolute inset-0 w-full h-full"
         />
-
         <input
           type="range"
-          min={rangeMin}
-          max={rangeMax}
-          step={500}
+          min={0}
+          max={SALARY_SLIDER_MAX}
+          step={100}
           value={max}
           onChange={(event) => {
-            const value = Number(event.target.value);
-            if (value > min) onMaxChange(value);
+            const val = Number(event.target.value);
+            if (val > min) onMaxChange(val);
           }}
-          className="dual-range-input absolute w-full h-full opacity-0"
-          style={{
-            zIndex: 4,
-          }}
-        />
-
-        <div
-          className="absolute w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow -translate-y-1/2 top-1/2 -translate-x-1/2"
-          style={{ left: `${minPct}%`, zIndex: 2, pointerEvents: "none" }}
-        />
-        <div
-          className="absolute w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow -translate-y-1/2 top-1/2 -translate-x-1/2"
-          style={{ left: `${maxPct}%`, zIndex: 2, pointerEvents: "none" }}
+          className="dual-range-input absolute inset-0 w-full h-full"
         />
       </div>
 
@@ -198,13 +214,12 @@ function SalaryRange({
             <span className="text-sm text-gray-400">$</span>
             <input
               type="number"
-              value={min}
-              min={rangeMin}
-              max={max - 500}
-              step={500}
+              value={min === 0 ? "" : min}
+              min={0}
+              placeholder="0"
               onChange={(event) => {
                 const value = Number(event.target.value);
-                if (value < max) onMinChange(value);
+                if (event.target.value === "" || (value >= 0 && value < max)) onMinChange(value || 0);
               }}
               className="w-full text-sm text-gray-900 focus:outline-none bg-transparent"
             />
@@ -213,17 +228,16 @@ function SalaryRange({
 
         <div>
           <p className="text-xs text-gray-500 mb-1">Max</p>
-          <div className="flex items-center border border-blue-500 rounded-md px-3 py-2 gap-1 ring-1 ring-blue-500">
+          <div className="flex items-center border border-gray-200 rounded-md px-3 py-2 gap-1">
             <span className="text-sm text-gray-400">$</span>
             <input
               type="number"
-              value={max}
-              min={min + 500}
-              max={rangeMax}
-              step={500}
+              value={max === 0 ? "" : max}
+              min={0}
+              placeholder="Any"
               onChange={(event) => {
                 const value = Number(event.target.value);
-                if (value > min) onMaxChange(value);
+                if (event.target.value === "" || (value > min)) onMaxChange(value || 0);
               }}
               className="w-full text-sm text-gray-900 focus:outline-none bg-transparent"
             />
@@ -476,6 +490,7 @@ export function FilterDrawer({
       options={dynamicEmploymentTypes}
       selected={filters.employmentTypes}
       onChange={(value) => setValue("employmentTypes", value)}
+      radio
     />
   );
 
@@ -484,7 +499,7 @@ export function FilterDrawer({
       options={dynamicSeniorityLevels}
       selected={filters.seniorityLevels}
       onChange={(value) => setValue("seniorityLevels", value)}
-      singleSelect={true}
+      radio
     />
   );
 

@@ -57,6 +57,15 @@ export type ActionCenterCard = {
   matchScore?: number;
 };
 
+function parseLocation(raw?: string): { city: string; country: string } {
+  if (!raw || raw.trim() === "—") return { city: "", country: "" };
+  const idx = raw.indexOf(",");
+  if (idx !== -1) {
+    return { city: raw.slice(0, idx).trim(), country: raw.slice(idx + 1).trim() };
+  }
+  return { city: raw.trim(), country: "" };
+}
+
 function formatRelativeDaysAgo(date?: string): string {
   if (!date) return "—";
   const parsed = new Date(date);
@@ -139,12 +148,13 @@ export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJob
   const { label, value } = formatBillRateRange(j);
   const locId = slugifyLocationId(j.location);
   const score = Math.round(j.match_score);
+  const loc = parseLocation(j.location);
   return {
     id: stableJobNumericId(j.job_id),
     title: j.job_title,
-    location: j.location,
+    location: loc.city,
     locationId: locId,
-    locationFull: j.location,
+    locationFull: loc.country,
     company: j.customer || "—",
     salary: label,
     hourlyRate: value,
@@ -152,7 +162,7 @@ export function mapRecommendedToDashboardJob(j: RecommendedJobApi): DashboardJob
     matchPercentage: score,
     status: recommendedStatusFromScore(score),
     stage: "Received",
-    postedTime: j.posted_time || formatRelativeDaysAgo(j.creation),
+    postedTime: j.status || j.posted_time || formatRelativeDaysAgo(j.creation),
     skills: j.key_skills ?? [],
     employmentType: billingFrequencyLabel(j),
     seniorityLevel: rotationYesNo(j),
@@ -236,12 +246,13 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
 export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): DashboardJobListing {
   const locId = slugifyLocationId(item.location || item.rr);
   const score = coerceMatchPercent(item.score);
+  const loc = parseLocation(item.location);
   return {
     id: stableJobNumericId(item.candidate_interest_for_rr + item.rr),
     title: item.job_title || item.rr,
-    location: item.location || "—",
+    location: loc.city,
     locationId: locId,
-    locationFull: item.location || "—",
+    locationFull: loc.country,
     company: item.customer || "—",
     salary: "—",
     hourlyRate: 0,

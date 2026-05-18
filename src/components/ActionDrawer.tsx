@@ -17,7 +17,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { BaseDrawer } from "./ui/BaseDrawer";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
@@ -75,6 +75,7 @@ export interface ActionDrawerActionCard {
   matchPercentage?: number;
   /** Hiring organization (API `customer`); shown until RR details load. */
   customer?: string;
+  skills?: string[];
 }
 
 interface ActionDrawerProps {
@@ -120,6 +121,12 @@ const metaIcons = {
 function getTodayIsoDate(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function getMaxAvailableDateIso(daysFromToday: number): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000 + daysFromToday * 24 * 60 * 60 * 1000);
   return local.toISOString().slice(0, 10);
 }
 
@@ -267,6 +274,7 @@ export default function ActionDrawer({
   jobAlreadyApplied = false,
 }: ActionDrawerProps) {
   const minAvailableDate = getTodayIsoDate();
+  const maxAvailableDate = getMaxAvailableDateIso(90);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [activeTab, setActiveTab] = useState<ActionDrawerTab>("Job Action");
   const [availableDate, setAvailableDate] = useState<string>(minAvailableDate);
@@ -753,9 +761,9 @@ export default function ActionDrawer({
       interviewSlots.length === 0 ||
       !selectedInterviewSlot);
   const parsedExpectedSalary = Number.parseFloat(expectedSalary);
-  const recruiterDateInvalid = !availableDate || availableDate < minAvailableDate;
+  const recruiterDateInvalid = !availableDate || availableDate < minAvailableDate || availableDate > maxAvailableDate;
   const recruiterSalaryInvalid = !Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0;
-  const directApplyDateInvalid = isDirectApply && (!availableDate || availableDate < minAvailableDate);
+  const directApplyDateInvalid = isDirectApply && (!availableDate || availableDate < minAvailableDate || availableDate > maxAvailableDate);
   const directApplySalaryInvalid =
     isDirectApply && (!Number.isFinite(parsedExpectedSalary) || parsedExpectedSalary <= 0);
   const directApplyTermsInvalid = isDirectApply && !hasAcceptedTerms;
@@ -772,7 +780,7 @@ export default function ActionDrawer({
       : action?.matchPercentage != null
         ? `${action.matchPercentage}%`
         : actionDrawerJobSummary.matchPercentLabel;
-  const resolvedPostedAgo = rrDetails?.posted_time || actionDrawerJobSummary.postedAgo;
+  const resolvedPostedAgo = rrDetails?.posted_time || action?.timestamp || actionDrawerJobSummary.postedAgo;
   const resolvedLocationSuffix = rrDetails?.location_full || actionDrawerJobSummary.locationCountrySuffix;
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
   const resolvedRotationCycle =
@@ -834,9 +842,13 @@ export default function ActionDrawer({
               type="date"
               value={availableDate}
               min={minAvailableDate}
+              max={maxAvailableDate}
               onChange={(event) => {
                 const next = event.target.value;
-                setAvailableDate(next && next < minAvailableDate ? minAvailableDate : next);
+                if (!next) { setAvailableDate(next); return; }
+                if (next < minAvailableDate) { setAvailableDate(minAvailableDate); return; }
+                if (next > maxAvailableDate) { setAvailableDate(maxAvailableDate); return; }
+                setAvailableDate(next);
               }}
               className="te-date-input h-10 w-full appearance-none rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
             />
@@ -936,9 +948,10 @@ export default function ActionDrawer({
                 <div className="flex items-center justify-center">
                   <input
                     type="radio"
-                    name="interview-slot"
+                    name="interview-slot-desktop"
                     checked={selectedInterviewSlot === slot.slot_id}
-                    onChange={() => setSelectedInterviewSlot(slot.slot_id)}
+                    onChange={() => {}}
+                    onClick={() => setSelectedInterviewSlot(slot.slot_id)}
                     className="h-4 w-4 cursor-pointer accent-[#1D4ED8]"
                   />
                 </div>
@@ -964,9 +977,10 @@ export default function ActionDrawer({
                 <label className="flex cursor-pointer items-start gap-3">
                   <input
                     type="radio"
-                    name="interview-slot"
+                    name="interview-slot-mobile"
                     checked={selectedInterviewSlot === slot.slot_id}
-                    onChange={() => setSelectedInterviewSlot(slot.slot_id)}
+                    onChange={() => {}}
+                    onClick={() => setSelectedInterviewSlot(slot.slot_id)}
                     className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#1D4ED8]"
                   />
                   <div className="min-w-0 flex-1 space-y-1.5 text-xs text-[#202939] sm:text-sm">
@@ -1426,6 +1440,23 @@ export default function ActionDrawer({
         isMobile ? "space-y-5 p-4" : "space-y-4 p-4 sm:p-5"
       }`}
     >
+      {action?.skills && action.skills.length > 0 ? (
+        <section>
+          <h4 className={`font-semibold text-[#202939] ${isMobile ? "mb-3 text-[15px]" : "mb-2 text-sm sm:text-base"}`}>
+            Key Skills
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {action.skills.map((skill) => (
+              <span
+                key={skill}
+                className="rounded-full border border-[#D6DCEA] bg-white px-2.5 py-1 text-xs font-medium text-[#374151]"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {jobDescriptionLoading ? (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
@@ -1549,45 +1580,35 @@ export default function ActionDrawer({
       return;
     }
     if (isDirectApply && (directApplyDateInvalid || directApplySalaryInvalid || directApplyTermsInvalid)) {
-      setValidationMessage(
-        "Please enter a valid available date, expected salary greater than 0, and accept the terms to continue."
-      );
       if (directApplyDateInvalid) {
+        setValidationMessage("Please enter a valid available date to continue.");
         scrollToMissingField(availableDateFieldRef.current);
-        return;
-      }
-      if (directApplySalaryInvalid) {
+      } else if (directApplySalaryInvalid) {
+        setValidationMessage("Expected salary must be greater than 0.");
         scrollToMissingField(expectedSalaryFieldRef.current);
-        return;
-      }
-      if (directApplyTermsInvalid) {
+      } else if (directApplyTermsInvalid) {
+        setValidationMessage("Please accept the terms to continue.");
         scrollToMissingField(termsFieldRef.current);
-        return;
       }
+      return;
     }
     setValidationMessage(null);
     if (isRecruiterInterestReceived && recruiterSubmitDisabled) {
-      if (recruiterDateInvalid || recruiterSalaryInvalid || !hasAcceptedTerms) {
-        setValidationMessage(
-          "Please enter a valid available date, expected salary greater than 0, and accept the terms to continue."
-        );
-      }
       if (recruiterDateInvalid) {
+        setValidationMessage("Please enter a valid available date to continue.");
         scrollToMissingField(availableDateFieldRef.current);
-        return;
-      }
-      if (recruiterSalaryInvalid) {
+      } else if (recruiterSalaryInvalid) {
+        setValidationMessage("Expected salary must be greater than 0.");
         scrollToMissingField(expectedSalaryFieldRef.current);
-        return;
-      }
-      if (!hasAcceptedTerms) {
+      } else if (!hasAcceptedTerms) {
+        setValidationMessage("Please accept the terms to continue.");
         scrollToMissingField(termsFieldRef.current);
-        return;
       }
+      return;
     }
     if (isRecruiterInterestReceived) {
       const parsedAvailableDate = availableDate.trim();
-      if (!isIsoDateString(parsedAvailableDate) || parsedAvailableDate < minAvailableDate) {
+      if (!isIsoDateString(parsedAvailableDate) || parsedAvailableDate < minAvailableDate || parsedAvailableDate > maxAvailableDate) {
         setValidationMessage("Please enter a valid available date to continue.");
         scrollToMissingField(availableDateFieldRef.current);
         return;
@@ -1670,6 +1691,11 @@ export default function ActionDrawer({
       }
     })();
   };
+
+  const guardedOnClose = useCallback(() => {
+    if (showAcceptConfirmation || showSalaryPopup || showSlotConfirmPopup || showSuccessPopup) return;
+    onClose();
+  }, [showAcceptConfirmation, showSalaryPopup, showSlotConfirmPopup, showSuccessPopup, onClose]);
 
   const footerContent = isApplicationTimelineCard(action)
     ? undefined
@@ -1812,7 +1838,7 @@ export default function ActionDrawer({
     <>
       <BaseDrawer
         open={open}
-        onClose={onClose}
+        onClose={guardedOnClose}
         title={actionDrawerChrome.drawerTitle}
         placement={isMobileViewport ? "bottom" : "right"}
         panelClassName={isMobileViewport ? "h-[80svh] max-h-[80svh]" : ""}

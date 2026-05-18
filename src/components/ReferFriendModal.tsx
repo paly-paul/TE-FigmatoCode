@@ -2,6 +2,7 @@
 
 import { CheckCircle2, ChevronDown, Search, X } from "lucide-react";
 import React, { useMemo, useState } from "react";
+import { useScrollLock } from "@/lib/useScrollLock";
 import { normalizeCountryCode } from "@/services/profile/phone";
 
 interface Props {
@@ -16,6 +17,7 @@ function sanitizePhoneInput(value: string): string {
 }
 
 export default function ReferFriendModal({ open, onClose }: Props) {
+  useScrollLock(open);
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const countryCodeOptions = useMemo(() => {
     const isoCountryCodes = [

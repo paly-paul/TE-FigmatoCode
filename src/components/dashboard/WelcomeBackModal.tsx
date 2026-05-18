@@ -1,6 +1,7 @@
 "use client";
 
 import { X, Laptop, Sparkles } from "lucide-react";
+import { useScrollLock } from "@/lib/useScrollLock";
 import { Button } from "@/components/ui/Button";
 import Image from "next/image";
 
@@ -19,6 +20,7 @@ export default function WelcomeBackModal({
   onYesOpenToOpportunities,
   onNotRightNow,
 }: WelcomeBackModalProps) {
+  useScrollLock(open);
   if (!open) return null;
 
   const greeting =

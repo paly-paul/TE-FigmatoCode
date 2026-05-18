@@ -106,6 +106,7 @@ interface ActionCard {
   matchPercentage?: number;
   /** API `customer`; shown in job drawer. */
   customer?: string;
+  skills?: string[];
 }
 
 function mapActionableInterviewSlots(
@@ -1704,6 +1705,7 @@ export default function TalentEngineDashboard() {
       jobDocumentId: job.jobDocumentId,
       matchPercentage: job.matchPercentage,
       customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
+      skills: job.skills.length ? job.skills : undefined,
     };
 
     const isSameJobAlreadyOpen =
@@ -1732,6 +1734,7 @@ export default function TalentEngineDashboard() {
       applicationAppliedDate: job.appliedDate,
       matchPercentage: job.matchPercentage,
       customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
+      skills: job.skills.length ? job.skills : undefined,
     };
     setSelectedAction(nextAction);
     setIsDrawerOpen(true);
@@ -2710,7 +2713,12 @@ export default function TalentEngineDashboard() {
                     className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
                   >
                     <div className="mb-3">
-                      <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                        {job.postedTime && job.postedTime !== "—" && (
+                          <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
+                        )}
+                      </div>
                       <DashboardRecommendedJobCustomerLine company={job.company} />
                     </div>
 
@@ -3336,8 +3344,12 @@ export default function TalentEngineDashboard() {
 
               {activeTab === "Recommended" ? (
                 visibleRecommendedJobs.length > 0 ? (
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-                    {visibleRecommendedJobs.map((job) => (
+                  <>
+                    {showSavedOnly && (
+                      <h2 className="mb-3 text-base font-semibold text-gray-900">Saved Jobs</h2>
+                    )}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+                      {visibleRecommendedJobs.map((job) => (
                       <div
                         key={job.id}
                         role="button"
@@ -3352,10 +3364,15 @@ export default function TalentEngineDashboard() {
                         className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
                         <div className="mb-4">
-                          <h3 className="mb-2 font-semibold text-base sm:mb-3 sm:text-lg">{job.title}</h3>
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="mb-2 font-semibold text-base sm:mb-3 sm:text-lg">{job.title}</h3>
+                            {job.postedTime && job.postedTime !== "—" && (
+                              <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
+                            )}
+                          </div>
                           <DashboardRecommendedJobCustomerLine company={job.company} />
                           <div className="mb-3 mt-2 flex flex-wrap gap-2">
-                            {job.skills.map((skill) => (
+                            {job.skills.slice(0, 6).map((skill) => (
                               <span
                                 key={skill}
                                 className="px-2.5 py-1 rounded-full bg-gray-100 text-xs text-gray-700"
@@ -3363,6 +3380,11 @@ export default function TalentEngineDashboard() {
                                 {skill}
                               </span>
                             ))}
+                            {job.skills.length > 6 && (
+                              <span className="px-2.5 py-1 rounded-full bg-gray-100 text-xs text-gray-500">
+                                +{job.skills.length - 6} more
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -3428,7 +3450,8 @@ export default function TalentEngineDashboard() {
                         </div>
                       </div>
                     ))}
-                  </div>
+                    </div>
+                  </>
                 ) : (
                   renderEmptyJobs("Try broadening your search, location, or salary range.")
                 )
