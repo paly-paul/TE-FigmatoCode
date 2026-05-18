@@ -647,9 +647,9 @@ function getStatusColor(status: JobCard["status"]) {
 }
 
 function getMatchColor(percentage: number) {
-  if (percentage >= 70) return "bg-blue-600";
-  if (percentage >= 40) return "bg-blue-500";
-  return "bg-yellow-400";
+  if (percentage >= 70) return "bg-green-500";
+  if (percentage >= 40) return "bg-yellow-400";
+  return "bg-red-400";
 }
 
 function JobsCard({

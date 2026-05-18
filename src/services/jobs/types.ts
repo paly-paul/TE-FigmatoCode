@@ -72,6 +72,7 @@ export type CandidateActionableApi = {
   rr_candidate: string;
   stage: string;
   status: string;
+  score?: number | null;
   /** Recruiter interest accepted timestamp (when available). */
   accepted_at?: string;
   /** Raw actionable received/created timestamp when returned by backend. */
