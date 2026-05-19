@@ -2,7 +2,6 @@
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
-import { setDraftProfilePending } from "@/lib/draftProfilePending";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -219,17 +218,6 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     }
     const resumeUploaded = await hasUploadedResume(profileName);
     const profileStarted = resumeUploaded ? true : await hasStartedProfileFlow(profileName);
-    // Only treat draft as "in-progress draft to recover" when the user has actual content.
-    // A brand-new profile (e.g. first-time Google sign-up) starts as Frappe "draft" by default
-    // but has no wizard data, so we send them to the create flow instead.
-    if (isDraft && profileStarted) {
-      setDraftProfilePending();
-      console.log("[login-routing] decision", {
-        reason: "profile-in-draft:show-draft-popup",
-        destination: "/dashboard",
-      });
-      return "/dashboard";
-    }
     console.log("[login-routing] decision", {
       reason: profileStarted
         ? "server-profile-incomplete:resume-uploaded"

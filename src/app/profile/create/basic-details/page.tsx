@@ -1000,7 +1000,6 @@ function BasicDetailsPageContent() {
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
   const editBackBypassRef = useRef(false);
-  const countryCodeTouchMovedRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -2903,12 +2902,17 @@ function BasicDetailsPageContent() {
                       <div
                         className="relative"
                         style={{ width: 150 }}
-                        onBlur={(e) => {
-                          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                            setOpenCountryCodeDropdown(false);
-                          }
-                        }}
                       >
+                        {openCountryCodeDropdown && (
+                          <div
+                            className="fixed inset-0 z-[69]"
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              setOpenCountryCodeDropdown(false);
+                              setCountryCodeSearch("");
+                            }}
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -2923,10 +2927,7 @@ function BasicDetailsPageContent() {
                           <ChevronDown className="h-4 w-4 text-gray-400" />
                         </button>
                         {openCountryCodeDropdown ? (
-                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => {
-                            if (e.target instanceof HTMLInputElement) return;
-                            e.preventDefault();
-                          }}>
+                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
                             <div className="border-b border-gray-100 p-2">
                               <div className="relative">
                                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2939,18 +2940,14 @@ function BasicDetailsPageContent() {
                                 />
                               </div>
                             </div>
-                            <div
-                              className="max-h-48 overflow-y-scroll py-1"
-                              onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
-                              onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
-                            >
+                            <div className="max-h-48 overflow-y-scroll py-1">
                               {getFilteredCountryCodeOptions().length ? (
                                 getFilteredCountryCodeOptions().map((code) => (
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
                                     onClick={() => handleCountryCodePick(code)}
-                                    onTouchEnd={(e) => { if (!countryCodeTouchMovedRef.current) { e.preventDefault(); handleCountryCodePick(code); } }}
+                                    style={{ touchAction: "manipulation" }}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                       form.countryCode === code
                                         ? "bg-primary-50 text-primary-700"
@@ -3350,6 +3347,7 @@ function BasicDetailsPageContent() {
                                       onChange={(e) =>
                                         updateGraduationYearSearch(entry.id, e.target.value)
                                       }
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       placeholder="Search year"
                                       inputMode="numeric"
                                       maxLength={4}
@@ -4176,6 +4174,7 @@ function BasicDetailsPageContent() {
                                     type="text"
                                     value={graduationYearSearchById[entry.id] ?? ""}
                                     onChange={(e) => updateGraduationYearSearch(entry.id, e.target.value)}
+                                    onMouseDown={(e) => e.stopPropagation()}
                                     placeholder="Search year"
                                     inputMode="numeric"
                                     maxLength={4}
@@ -4954,12 +4953,17 @@ function BasicDetailsPageContent() {
                   <div className="grid grid-cols-[120px_1fr] gap-2">
                     <div
                       className="relative"
-                      onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                          setOpenCountryCodeDropdown(false);
-                        }
-                      }}
                     >
+                      {openCountryCodeDropdown && (
+                        <div
+                          className="fixed inset-0 z-[69]"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            setOpenCountryCodeDropdown(false);
+                            setCountryCodeSearch("");
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -4974,10 +4978,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openCountryCodeDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => {
-                          if (e.target instanceof HTMLInputElement) return;
-                          e.preventDefault();
-                        }}>
+                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4990,18 +4991,14 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div
-                            className="max-h-48 overflow-y-scroll py-1"
-                            onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
-                            onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
-                          >
+                          <div className="max-h-48 overflow-y-scroll py-1">
                             {getFilteredCountryCodeOptions().length ? (
                               getFilteredCountryCodeOptions().map((code) => (
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
                                   onClick={() => handleCountryCodePick(code)}
-                                  onTouchEnd={(e) => { if (!countryCodeTouchMovedRef.current) { e.preventDefault(); handleCountryCodePick(code); } }}
+                                  style={{ touchAction: "manipulation" }}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                     form.countryCode === code
                                       ? "bg-primary-50 text-primary-700"
