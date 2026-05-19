@@ -1000,6 +1000,8 @@ function BasicDetailsPageContent() {
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
   const editBackBypassRef = useRef(false);
+  const countryCodeTouchMovedRef = useRef(false);
+  const graduationYearTouchMovedRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -2943,18 +2945,21 @@ function BasicDetailsPageContent() {
                                 />
                               </div>
                             </div>
-                            <div className="max-h-48 overflow-y-auto py-1">
+                            <div
+                              className="max-h-48 overflow-y-auto py-1"
+                              onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
+                              onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
+                            >
                               {getFilteredCountryCodeOptions().length ? (
                                 getFilteredCountryCodeOptions().map((code) => (
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
-                                    onPointerDown={(e) => {
-                                      // Fire before iOS can classify as a scroll gesture.
-                                      // preventDefault stops scroll-steal and suppresses
-                                      // the subsequent click (no double-fire on desktop).
-                                      e.preventDefault();
-                                      handleCountryCodePick(code);
+                                    onTouchEnd={(e) => {
+                                      if (!countryCodeTouchMovedRef.current) {
+                                        e.preventDefault();
+                                        handleCountryCodePick(code);
+                                      }
                                     }}
                                     onClick={() => handleCountryCodePick(code)}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
@@ -3215,7 +3220,19 @@ function BasicDetailsPageContent() {
                       <input
                         type="date"
                         value={form.availableDate}
-                        onChange={(e) => setField("availableDate", e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setField("availableDate", val);
+                          if (val) {
+                            const todayStr = getLocalIsoDate();
+                            const maxStr = getLocalIsoDate(3);
+                            if (val < todayStr) {
+                              setErrors((prev) => ({ ...prev, availableDate: "Available date cannot be in the past." }));
+                            } else if (val > maxStr) {
+                              setErrors((prev) => ({ ...prev, availableDate: "Available date must be within 3 months from today." }));
+                            }
+                          }
+                        }}
                         min={getLocalIsoDate()}
                         max={getLocalIsoDate(3)}
                         className={`${fieldClass(Boolean(errors.availableDate))} te-date-input`}
@@ -3324,12 +3341,17 @@ function BasicDetailsPageContent() {
                           <span className="text-sm font-medium text-gray-800">Graduation Year</span>
                           <div
                             className={`relative ${openGraduationYearDropdownId === entry.id ? "z-30" : ""}`}
-                            onBlur={(e) => {
-                              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                                setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : prev));
-                              }
-                            }}
                           >
+                            {openGraduationYearDropdownId === entry.id && (
+                              <div
+                                className="fixed inset-0 z-[49]"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  setOpenGraduationYearDropdownId(null);
+                                  setGraduationYearSearchById((prev) => ({ ...prev, [entry.id]: "" }));
+                                }}
+                              />
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -3346,7 +3368,7 @@ function BasicDetailsPageContent() {
                               <ChevronDown className="h-4 w-4 text-gray-400" />
                             </button>
                             {openGraduationYearDropdownId === entry.id ? (
-                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                                 <div className="border-b border-gray-100 p-2">
                                   <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3356,7 +3378,6 @@ function BasicDetailsPageContent() {
                                       onChange={(e) =>
                                         updateGraduationYearSearch(entry.id, e.target.value)
                                       }
-                                      onMouseDown={(e) => e.stopPropagation()}
                                       placeholder="Search year"
                                       inputMode="numeric"
                                       maxLength={4}
@@ -3364,12 +3385,25 @@ function BasicDetailsPageContent() {
                                     />
                                   </div>
                                 </div>
-                                <div className="max-h-40 overflow-y-scroll py-1">
+                                <div
+                                  className="max-h-40 overflow-y-auto py-1"
+                                  onTouchStart={() => { graduationYearTouchMovedRef.current = false; }}
+                                  onTouchMove={() => { graduationYearTouchMovedRef.current = true; }}
+                                >
                                   {getFilteredGraduationYearOptions(entry.id).length ? (
                                     getFilteredGraduationYearOptions(entry.id).map((year) => (
                                       <button
                                         key={`${entry.id}-graduation-${year}`}
                                         type="button"
+                                        onTouchEnd={(e) => {
+                                          if (!graduationYearTouchMovedRef.current) {
+                                            e.preventDefault();
+                                            const yearValue = String(year);
+                                            updateEducationEntry(entry.id, "graduationYear", yearValue);
+                                            updateGraduationYearSearch(entry.id, yearValue);
+                                            setOpenGraduationYearDropdownId(null);
+                                          }
+                                        }}
                                         onClick={() => {
                                           const yearValue = String(year);
                                           updateEducationEntry(entry.id, "graduationYear", yearValue);
@@ -4045,7 +4079,19 @@ function BasicDetailsPageContent() {
                     <input
                       type="date"
                       value={form.availableDate}
-                      onChange={(e) => setField("availableDate", e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setField("availableDate", val);
+                        if (val) {
+                          const todayStr = getLocalIsoDate();
+                          const maxStr = getLocalIsoDate(3);
+                          if (val < todayStr) {
+                            setErrors((prev) => ({ ...prev, availableDate: "Available date cannot be in the past." }));
+                          } else if (val > maxStr) {
+                            setErrors((prev) => ({ ...prev, availableDate: "Available date must be within 3 months from today." }));
+                          }
+                        }
+                      }}
                       min={getLocalIsoDate()}
                       max={getLocalIsoDate(3)}
                       className={`${fieldClass(Boolean(errors.availableDate))} te-date-input`}
@@ -4155,12 +4201,17 @@ function BasicDetailsPageContent() {
                         <span className="text-sm font-medium text-gray-800">Graduation Year</span>
                         <div
                           className={`relative ${openGraduationYearDropdownId === entry.id ? "z-30" : ""}`}
-                          onBlur={(e) => {
-                            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                              setOpenGraduationYearDropdownId((prev) => (prev === entry.id ? null : prev));
-                            }
-                          }}
                         >
+                          {openGraduationYearDropdownId === entry.id && (
+                            <div
+                              className="fixed inset-0 z-[49]"
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                setOpenGraduationYearDropdownId(null);
+                                setGraduationYearSearchById((prev) => ({ ...prev, [entry.id]: "" }));
+                              }}
+                            />
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -4175,7 +4226,7 @@ function BasicDetailsPageContent() {
                             <ChevronDown className="h-4 w-4 text-gray-400" />
                           </button>
                           {openGraduationYearDropdownId === entry.id ? (
-                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                               <div className="border-b border-gray-100 p-2">
                                 <div className="relative">
                                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4183,7 +4234,6 @@ function BasicDetailsPageContent() {
                                     type="text"
                                     value={graduationYearSearchById[entry.id] ?? ""}
                                     onChange={(e) => updateGraduationYearSearch(entry.id, e.target.value)}
-                                    onMouseDown={(e) => e.stopPropagation()}
                                     placeholder="Search year"
                                     inputMode="numeric"
                                     maxLength={4}
@@ -4191,12 +4241,25 @@ function BasicDetailsPageContent() {
                                   />
                                 </div>
                               </div>
-                              <div className="max-h-40 overflow-y-scroll py-1">
+                              <div
+                                className="max-h-40 overflow-y-auto py-1"
+                                onTouchStart={() => { graduationYearTouchMovedRef.current = false; }}
+                                onTouchMove={() => { graduationYearTouchMovedRef.current = true; }}
+                              >
                                 {getFilteredGraduationYearOptions(entry.id).length ? (
                                   getFilteredGraduationYearOptions(entry.id).map((year) => (
                                     <button
                                       key={`${entry.id}-graduation-${year}`}
                                       type="button"
+                                      onTouchEnd={(e) => {
+                                        if (!graduationYearTouchMovedRef.current) {
+                                          e.preventDefault();
+                                          const yearValue = String(year);
+                                          updateEducationEntry(entry.id, "graduationYear", yearValue);
+                                          updateGraduationYearSearch(entry.id, yearValue);
+                                          setOpenGraduationYearDropdownId(null);
+                                        }
+                                      }}
                                       onClick={() => {
                                         const yearValue = String(year);
                                         updateEducationEntry(entry.id, "graduationYear", yearValue);
@@ -5000,15 +5063,21 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-y-auto py-1">
+                          <div
+                            className="max-h-48 overflow-y-auto py-1"
+                            onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
+                            onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
+                          >
                             {getFilteredCountryCodeOptions().length ? (
                               getFilteredCountryCodeOptions().map((code) => (
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
-                                  onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    handleCountryCodePick(code);
+                                  onTouchEnd={(e) => {
+                                    if (!countryCodeTouchMovedRef.current) {
+                                      e.preventDefault();
+                                      handleCountryCodePick(code);
+                                    }
                                   }}
                                   onClick={() => handleCountryCodePick(code)}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${

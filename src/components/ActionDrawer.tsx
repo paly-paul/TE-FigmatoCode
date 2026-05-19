@@ -303,6 +303,7 @@ export default function ActionDrawer({
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [availableDateError, setAvailableDateError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [apiExpectedSalary, setApiExpectedSalary] = useState<number | null>(null);
@@ -876,15 +877,24 @@ export default function ActionDrawer({
               max={maxAvailableDate}
               onChange={(event) => {
                 const next = event.target.value;
-                if (!next) { setAvailableDate(next); return; }
-                if (next < minAvailableDate) { setAvailableDate(minAvailableDate); return; }
-                if (next > maxAvailableDate) { setAvailableDate(maxAvailableDate); return; }
                 setAvailableDate(next);
+                if (!next) {
+                  setAvailableDateError("Available date is required.");
+                } else if (next < minAvailableDate) {
+                  setAvailableDateError("Available date cannot be in the past.");
+                } else if (next > maxAvailableDate) {
+                  setAvailableDateError("Available date must be within 90 days from today.");
+                } else {
+                  setAvailableDateError(null);
+                }
               }}
-              className="te-date-input h-10 w-full appearance-none rounded border border-[#D6DCEA] bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition focus:border-[#1D4ED8] sm:h-11 sm:px-3.5 sm:text-sm"
+              className={`te-date-input h-10 w-full appearance-none rounded border bg-white px-3 pr-10 text-xs text-[#202939] outline-none transition sm:h-11 sm:px-3.5 sm:text-sm ${availableDateError ? "border-red-400 focus:border-red-500" : "border-[#D6DCEA] focus:border-[#1D4ED8]"}`}
             />
             <Calendar className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5E7397] sm:right-3.5 sm:h-4 sm:w-4" />
           </div>
+          {availableDateError && (
+            <p className="mt-1 text-xs text-red-500">{availableDateError}</p>
+          )}
         </div>
 
         <div ref={expectedSalaryFieldRef}>
