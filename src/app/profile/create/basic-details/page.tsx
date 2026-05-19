@@ -2134,6 +2134,9 @@ function BasicDetailsPageContent() {
   }
 
   function handleCountryCodePick(code: string) {
+    // Explicitly blur active element so iOS Safari dismisses the keyboard
+    // before React processes the state update that unmounts the dropdown.
+    (document.activeElement as HTMLElement | null)?.blur();
     setField("countryCode", code);
     setOpenCountryCodeDropdown(false);
     setCountryCodeSearch("");
@@ -2940,14 +2943,20 @@ function BasicDetailsPageContent() {
                                 />
                               </div>
                             </div>
-                            <div className="max-h-48 overflow-y-scroll py-1">
+                            <div className="max-h-48 overflow-y-auto py-1">
                               {getFilteredCountryCodeOptions().length ? (
                                 getFilteredCountryCodeOptions().map((code) => (
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
+                                    onPointerDown={(e) => {
+                                      // Fire before iOS can classify as a scroll gesture.
+                                      // preventDefault stops scroll-steal and suppresses
+                                      // the subsequent click (no double-fire on desktop).
+                                      e.preventDefault();
+                                      handleCountryCodePick(code);
+                                    }}
                                     onClick={() => handleCountryCodePick(code)}
-                                    style={{ touchAction: "manipulation" }}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                       form.countryCode === code
                                         ? "bg-primary-50 text-primary-700"
@@ -4991,14 +5000,17 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-y-scroll py-1">
+                          <div className="max-h-48 overflow-y-auto py-1">
                             {getFilteredCountryCodeOptions().length ? (
                               getFilteredCountryCodeOptions().map((code) => (
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
+                                  onPointerDown={(e) => {
+                                    e.preventDefault();
+                                    handleCountryCodePick(code);
+                                  }}
                                   onClick={() => handleCountryCodePick(code)}
-                                  style={{ touchAction: "manipulation" }}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                     form.countryCode === code
                                       ? "bg-primary-50 text-primary-700"
