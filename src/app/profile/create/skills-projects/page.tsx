@@ -390,6 +390,7 @@ function SkillsProjectsPageContent() {
   const [selectedSkill, setSelectedSkill] = useState("");
   const [skillOptionSearch, setSkillOptionSearch] = useState("");
   const [isSkillsDropdownOpen, setIsSkillsDropdownOpen] = useState(false);
+  const skillsTouchMovedRef = useRef(false);
   const [experiences, setExperiences] = useState<ExperienceEntry[]>(() => [createExperienceEntry()]);
   const [projects, setProjects] = useState<ProjectEntry[]>(() => [createProjectEntry()]);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -1329,6 +1330,7 @@ function SkillsProjectsPageContent() {
 
   function handleSkillsChange(value: string) {
     if (!value) return;
+    (document.activeElement as HTMLElement | null)?.blur();
     setSkills((prev) => {
       if (prev.includes(value)) return prev;
       const next = [...prev, value];
@@ -2405,7 +2407,17 @@ function SkillsProjectsPageContent() {
                     <span className="text-sm font-medium text-gray-800">
                       Skills <span className="text-red-500">*</span>
                     </span>
-                    <div className="relative">
+                    <div className={`relative ${isSkillsDropdownOpen ? "z-30" : ""}`}>
+                      {isSkillsDropdownOpen && (
+                        <div
+                          className="fixed inset-0 z-[49]"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            setIsSkillsDropdownOpen(false);
+                            setSkillOptionSearch("");
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -2421,7 +2433,7 @@ function SkillsProjectsPageContent() {
                       </button>
 
                       {isSkillsDropdownOpen ? (
-                        <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                        <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                           <div className="p-2">
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2435,7 +2447,11 @@ function SkillsProjectsPageContent() {
                             </div>
                           </div>
 
-                          <div className="max-h-72 overflow-y-scroll py-1">
+                          <div
+                            className="max-h-72 overflow-y-auto py-1"
+                            onTouchStart={() => { skillsTouchMovedRef.current = false; }}
+                            onScroll={() => { skillsTouchMovedRef.current = true; }}
+                          >
                             {suggestedSkillOptions.length ? (
                               suggestedSkillOptions.map((opt) => {
                                 const isAlreadyAdded = skills.some(
@@ -2446,7 +2462,13 @@ function SkillsProjectsPageContent() {
                                     key={opt}
                                     type="button"
                                     disabled={isAlreadyAdded}
-                                    onClick={() => handleSkillsChange(opt)}
+                                    onTouchEnd={(e) => {
+                                      if (!skillsTouchMovedRef.current && !isAlreadyAdded) {
+                                        e.preventDefault();
+                                        handleSkillsChange(opt);
+                                      }
+                                    }}
+                                    onClick={() => { if (!isAlreadyAdded) handleSkillsChange(opt); }}
                                     className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
                                       isAlreadyAdded
                                         ? "cursor-not-allowed bg-primary-50 text-primary-700 font-medium"
