@@ -1211,7 +1211,7 @@ function SkillsProjectsPageContent() {
         const combinedSkills = dedupeSkillOptions([...generatedSkills, ...existingSkills]);
 
         if (combinedSkills.length) {
-          setSuggestedSkills(combinedSkills);
+          setSuggestedSkills((prev) => dedupeSkillOptions([...combinedSkills, ...prev]));
           setGeneratedSkillOptions(dedupeSkillOptions(generatedSkills));
 
           if (generatedSkills.length && existingSkills.length) {
