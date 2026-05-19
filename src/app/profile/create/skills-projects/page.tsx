@@ -2555,7 +2555,7 @@ function SkillsProjectsPageContent() {
                               type="number"
                               min="0"
                               step="1"
-                              value={entry.experienceYears}
+                              value={!entry.experienceYears || entry.experienceYears === "0" ? "" : entry.experienceYears}
                               onChange={(e) =>
                                 updateExperience(entry.id, { experienceYears: e.target.value })
                               }
@@ -2930,7 +2930,7 @@ function SkillsProjectsPageContent() {
                             type="number"
                             min="0"
                             step="1"
-                            value={entry.experienceYears}
+                            value={!entry.experienceYears || entry.experienceYears === "0" ? "" : entry.experienceYears}
                             onChange={(e) => updateExperience(entry.id, { experienceYears: e.target.value })}
                             placeholder="1"
                             className={fieldClass(Boolean(fe?.experienceYears))}

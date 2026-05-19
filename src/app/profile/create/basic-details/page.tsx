@@ -1003,6 +1003,8 @@ function BasicDetailsPageContent() {
   const countryCodeTouchMovedRef = useRef(false);
   const graduationYearTouchMovedRef = useRef(false);
   const languageTouchMovedRef = useRef(false);
+  const workAuthorizationTouchMovedRef = useRef(false);
+  const preferredIndustryTouchMovedRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -2187,9 +2189,11 @@ function BasicDetailsPageContent() {
   }
 
   function handleWorkAuthorizationPick(option: string) {
+    (document.activeElement as HTMLElement | null)?.blur();
     const selected = parseMultiSelectString(form.workAuthorization);
     if (selected.some((value) => value.toLowerCase() === option.toLowerCase())) return;
     setField("workAuthorization", serializeMultiSelect([...selected, option]));
+    setOpenWorkAuthorizationDropdown(false);
     setWorkAuthorizationSearch("");
   }
 
@@ -2207,6 +2211,7 @@ function BasicDetailsPageContent() {
   }
 
   function handlePreferredIndustryPick(option: string) {
+    (document.activeElement as HTMLElement | null)?.blur();
     const selected = parseMultiSelectString(form.preferredIndustry);
     if (selected.some((value) => value.toLowerCase() === option.toLowerCase())) return;
     setField("preferredIndustry", serializeMultiSelect([...selected, option]));
@@ -3586,14 +3591,17 @@ function BasicDetailsPageContent() {
                 <div className="p-4 sm:p-6 space-y-5">
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Work Authorization</span>
-                    <div
-                      className="relative"
-                      onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                          setOpenWorkAuthorizationDropdown(false);
-                        }
-                      }}
-                    >
+                    <div className={`relative ${openWorkAuthorizationDropdown ? "z-30" : ""}`}>
+                      {openWorkAuthorizationDropdown && (
+                        <div
+                          className="fixed inset-0 z-[49]"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            setOpenWorkAuthorizationDropdown(false);
+                            setWorkAuthorizationSearch("");
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -3606,7 +3614,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openWorkAuthorizationDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3619,12 +3627,22 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-y-scroll py-1">
+                          <div
+                            className="max-h-48 overflow-y-auto py-1"
+                            onTouchStart={() => { workAuthorizationTouchMovedRef.current = false; }}
+                            onScroll={() => { workAuthorizationTouchMovedRef.current = true; }}
+                          >
                             {getFilteredWorkAuthorizationOptions().length ? (
                               getFilteredWorkAuthorizationOptions().map((option) => (
                                 <button
                                   key={`work-auth-mobile-${option}`}
                                   type="button"
+                                  onTouchEnd={(e) => {
+                                    if (!workAuthorizationTouchMovedRef.current) {
+                                      e.preventDefault();
+                                      handleWorkAuthorizationPick(option);
+                                    }
+                                  }}
                                   onClick={() => handleWorkAuthorizationPick(option)}
                                   className={`block w-full px-3 py-2 text-left text-sm ${
                                     parseMultiSelectString(form.workAuthorization).some(
@@ -3663,14 +3681,17 @@ function BasicDetailsPageContent() {
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-gray-800">Preferred Industry</span>
-                    <div
-                      className="relative"
-                      onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                          setOpenPreferredIndustryDropdown(false);
-                        }
-                      }}
-                    >
+                    <div className={`relative ${openPreferredIndustryDropdown ? "z-30" : ""}`}>
+                      {openPreferredIndustryDropdown && (
+                        <div
+                          className="fixed inset-0 z-[49]"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            setOpenPreferredIndustryDropdown(false);
+                            setPreferredIndustrySearch("");
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -3683,7 +3704,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openPreferredIndustryDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3696,12 +3717,22 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-y-scroll py-1">
+                          <div
+                            className="max-h-48 overflow-y-auto py-1"
+                            onTouchStart={() => { preferredIndustryTouchMovedRef.current = false; }}
+                            onScroll={() => { preferredIndustryTouchMovedRef.current = true; }}
+                          >
                             {getFilteredPreferredIndustryOptions().length ? (
                               getFilteredPreferredIndustryOptions().map((option) => (
                                 <button
                                   key={`preferred-industry-mobile-${option}`}
                                   type="button"
+                                  onTouchEnd={(e) => {
+                                    if (!preferredIndustryTouchMovedRef.current) {
+                                      e.preventDefault();
+                                      handlePreferredIndustryPick(option);
+                                    }
+                                  }}
                                   onClick={() => handlePreferredIndustryPick(option)}
                                   className={`block w-full px-3 py-2 text-left text-sm ${
                                     parseMultiSelectString(form.preferredIndustry).some(
@@ -4428,14 +4459,17 @@ function BasicDetailsPageContent() {
               <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-gray-800">Work Authorization</span>
-                  <div
-                    className="relative"
-                    onBlur={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                        setOpenWorkAuthorizationDropdown(false);
-                      }
-                    }}
-                  >
+                  <div className={`relative ${openWorkAuthorizationDropdown ? "z-30" : ""}`}>
+                    {openWorkAuthorizationDropdown && (
+                      <div
+                        className="fixed inset-0 z-[49]"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          setOpenWorkAuthorizationDropdown(false);
+                          setWorkAuthorizationSearch("");
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -4448,7 +4482,7 @@ function BasicDetailsPageContent() {
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openWorkAuthorizationDropdown ? (
-                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                         <div className="border-b border-gray-100 p-2">
                           <div className="relative">
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4461,13 +4495,23 @@ function BasicDetailsPageContent() {
                             />
                           </div>
                         </div>
-                        <div className="max-h-48 overflow-y-scroll py-1">
+                        <div
+                          className="max-h-48 overflow-y-auto py-1"
+                          onTouchStart={() => { workAuthorizationTouchMovedRef.current = false; }}
+                          onScroll={() => { workAuthorizationTouchMovedRef.current = true; }}
+                        >
                           {getFilteredWorkAuthorizationOptions().length ? (
                             getFilteredWorkAuthorizationOptions().map((option) => (
                               <button
                                 key={`work-auth-desktop-${option}`}
                                 type="button"
-                              onClick={() => handleWorkAuthorizationPick(option)}
+                                onTouchEnd={(e) => {
+                                  if (!workAuthorizationTouchMovedRef.current) {
+                                    e.preventDefault();
+                                    handleWorkAuthorizationPick(option);
+                                  }
+                                }}
+                                onClick={() => handleWorkAuthorizationPick(option)}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.workAuthorization).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
@@ -4505,14 +4549,17 @@ function BasicDetailsPageContent() {
 
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-gray-800">Preferred Industry</span>
-                  <div
-                    className="relative"
-                    onBlur={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                        setOpenPreferredIndustryDropdown(false);
-                      }
-                    }}
-                  >
+                  <div className={`relative ${openPreferredIndustryDropdown ? "z-30" : ""}`}>
+                    {openPreferredIndustryDropdown && (
+                      <div
+                        className="fixed inset-0 z-[49]"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          setOpenPreferredIndustryDropdown(false);
+                          setPreferredIndustrySearch("");
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -4525,7 +4572,7 @@ function BasicDetailsPageContent() {
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openPreferredIndustryDropdown ? (
-                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                         <div className="border-b border-gray-100 p-2">
                           <div className="relative">
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4538,13 +4585,23 @@ function BasicDetailsPageContent() {
                             />
                           </div>
                         </div>
-                        <div className="max-h-48 overflow-y-scroll py-1">
+                        <div
+                          className="max-h-48 overflow-y-auto py-1"
+                          onTouchStart={() => { preferredIndustryTouchMovedRef.current = false; }}
+                          onScroll={() => { preferredIndustryTouchMovedRef.current = true; }}
+                        >
                           {getFilteredPreferredIndustryOptions().length ? (
                             getFilteredPreferredIndustryOptions().map((option) => (
                               <button
                                 key={`preferred-industry-desktop-${option}`}
                                 type="button"
-                              onClick={() => handlePreferredIndustryPick(option)}
+                                onTouchEnd={(e) => {
+                                  if (!preferredIndustryTouchMovedRef.current) {
+                                    e.preventDefault();
+                                    handlePreferredIndustryPick(option);
+                                  }
+                                }}
+                                onClick={() => handlePreferredIndustryPick(option)}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.preferredIndustry).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
