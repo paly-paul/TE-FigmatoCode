@@ -35,11 +35,15 @@ export function ResumeUploadArea({
     if (!files || files.length === 0) return;
     if (isUploading) return;
     const file = files[0];
-    const allowed = [
+    const allowedTypes = [
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
-    if (!allowed.includes(file.type)) {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const allowedByExt = ext === "pdf" || ext === "docx";
+    // iOS Safari omits the MIME type for files picked from iCloud/Files app,
+    // so fall back to the file extension when file.type is missing or generic.
+    if (!allowedTypes.includes(file.type) && !allowedByExt) {
       alert("Only PDF or DOCX files are supported.");
       return;
     }

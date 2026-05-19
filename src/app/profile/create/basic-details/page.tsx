@@ -1000,6 +1000,7 @@ function BasicDetailsPageContent() {
   const hasUnsavedChangesRef = useRef(false);
   const backLogoutInProgressRef = useRef(false);
   const editBackBypassRef = useRef(false);
+  const countryCodeTouchMovedRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -2935,13 +2936,18 @@ function BasicDetailsPageContent() {
                                 />
                               </div>
                             </div>
-                            <div className="max-h-48 overflow-y-scroll py-1">
+                            <div
+                              className="max-h-48 overflow-y-scroll py-1"
+                              onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
+                              onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
+                            >
                               {getFilteredCountryCodeOptions().length ? (
                                 getFilteredCountryCodeOptions().map((code) => (
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
                                     onClick={() => handleCountryCodePick(code)}
+                                    onTouchEnd={(e) => { if (!countryCodeTouchMovedRef.current) { e.preventDefault(); handleCountryCodePick(code); } }}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                       form.countryCode === code
                                         ? "bg-primary-50 text-primary-700"
@@ -4978,13 +4984,18 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-y-scroll py-1">
+                          <div
+                            className="max-h-48 overflow-y-scroll py-1"
+                            onTouchStart={() => { countryCodeTouchMovedRef.current = false; }}
+                            onTouchMove={() => { countryCodeTouchMovedRef.current = true; }}
+                          >
                             {getFilteredCountryCodeOptions().length ? (
                               getFilteredCountryCodeOptions().map((code) => (
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
                                   onClick={() => handleCountryCodePick(code)}
+                                  onTouchEnd={(e) => { if (!countryCodeTouchMovedRef.current) { e.preventDefault(); handleCountryCodePick(code); } }}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                     form.countryCode === code
                                       ? "bg-primary-50 text-primary-700"
