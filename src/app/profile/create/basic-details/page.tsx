@@ -2923,7 +2923,10 @@ function BasicDetailsPageContent() {
                           <ChevronDown className="h-4 w-4 text-gray-400" />
                         </button>
                         {openCountryCodeDropdown ? (
-                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => {
+                            if (e.target instanceof HTMLInputElement) return;
+                            e.preventDefault();
+                          }}>
                             <div className="border-b border-gray-100 p-2">
                               <div className="relative">
                                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4971,7 +4974,10 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openCountryCodeDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => {
+                          if (e.target instanceof HTMLInputElement) return;
+                          e.preventDefault();
+                        }}>
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />

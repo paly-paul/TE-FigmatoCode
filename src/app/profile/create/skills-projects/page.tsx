@@ -2664,7 +2664,7 @@ function SkillsProjectsPageContent() {
                                   updateProject(entry.id, { projectStartDate: e.target.value })
                                 }
                                 max={new Date().toISOString().slice(0, 10)}
-                                className={fieldClass(Boolean(fe?.projectStartDate))}
+                                className={`${fieldClass(Boolean(fe?.projectStartDate))} te-date-input`}
                               />
                               {fe?.projectStartDate && (
                                 <p className="text-xs text-red-500">{fe.projectStartDate}</p>
@@ -2681,7 +2681,7 @@ function SkillsProjectsPageContent() {
                                 }
                                 disabled={entry.inProgress}
                                 max={new Date().toISOString().slice(0, 10)}
-                                className={`${fieldClass(Boolean(fe?.projectEndDate))} ${
+                                className={`${fieldClass(Boolean(fe?.projectEndDate))} te-date-input ${
                                   entry.inProgress ? "bg-gray-100 text-gray-500" : ""
                                 }`}
                               />
@@ -3017,7 +3017,7 @@ function SkillsProjectsPageContent() {
                             value={entry.projectStartDate}
                             onChange={(e) => updateProject(entry.id, { projectStartDate: e.target.value })}
                             max={new Date().toISOString().slice(0, 10)}
-                            className={fieldClass(Boolean(fe?.projectStartDate))}
+                            className={`${fieldClass(Boolean(fe?.projectStartDate))} te-date-input`}
                           />
                           {fe?.projectStartDate && <p className="text-xs text-red-500">{fe.projectStartDate}</p>}
                         </label>
@@ -3030,7 +3030,7 @@ function SkillsProjectsPageContent() {
                             onChange={(e) => updateProject(entry.id, { projectEndDate: e.target.value })}
                             disabled={entry.inProgress}
                             max={new Date().toISOString().slice(0, 10)}
-                            className={`${fieldClass(Boolean(fe?.projectEndDate))} ${entry.inProgress ? "bg-gray-100 text-gray-500" : ""}`}
+                            className={`${fieldClass(Boolean(fe?.projectEndDate))} te-date-input ${entry.inProgress ? "bg-gray-100 text-gray-500" : ""}`}
                           />
                           {fe?.projectEndDate && <p className="text-xs text-red-500">{fe.projectEndDate}</p>}
                           <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-gray-700 mt-1">
