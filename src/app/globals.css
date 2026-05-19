@@ -101,27 +101,25 @@
 }
 
 /*
- * Safari (macOS + iOS): date inputs use a shadow-DOM pseudo-element for the value
- * display that collapses unless given an explicit min-height. Without this the
- * calendar picker field appears very small compared to other browsers.
+ * Safari (macOS + iOS): strip native date-input chrome so our Tailwind
+ * padding classes fully control the field height. The native calendar/wheel
+ * picker still opens on tap/click — appearance:none only removes the visual
+ * chrome, not the picker behaviour.
  */
-input[type="date"]:not(.h-10):not(.h-11) {
-  min-height: 42px;
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+}
+
+/* Remove internal shadow-DOM padding that inflates height on Safari. */
+input[type="date"]::-webkit-datetime-edit {
+  padding: 0;
+  line-height: inherit;
 }
 
 input[type="date"]::-webkit-date-and-time-value {
-  min-height: 1.5em;
   text-align: left;
-  display: block;
-}
-
-/*
- * Safari: the popover calendar size tracks the input's effective font-size.
- * Bump date inputs slightly so the widget looks correct but stays compact.
- * (iOS is already forced to 16px elsewhere to avoid focus-zoom.)
- */
-input[type="date"].te-date-input {
-  font-size: 15px;
 }
 
 /*
@@ -136,9 +134,6 @@ select:not(.h-10):not(.h-11) {
 /*
  * iOS Safari zooms the viewport when focusing controls with computed font-size < 16px.
  * Keep zoom accessibility enabled and prevent focus-zoom by normalizing field font-size.
- * Also undo the desktop-Safari date-input height fixes: the native iOS wheel picker
- * handles its own sizing, so the extra min-height / display:block rules make date inputs
- * visually taller than every other field on mobile.
  */
 @supports (-webkit-touch-callout: none) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
@@ -149,15 +144,5 @@ select:not(.h-10):not(.h-11) {
   textarea,
   select {
     font-size: 16px !important;
-  }
-
-  /* Match the same specificity as the desktop rule so this override wins. */
-  input[type="date"]:not(.h-10):not(.h-11) {
-    min-height: unset;
-  }
-
-  input[type="date"]::-webkit-date-and-time-value {
-    min-height: unset;
-    display: unset;
   }
 }
