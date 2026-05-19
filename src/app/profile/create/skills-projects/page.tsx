@@ -2682,10 +2682,23 @@ function SkillsProjectsPageContent() {
                               <input
                                 type="date"
                                 value={entry.projectStartDate}
-                                onChange={(e) =>
-                                  updateProject(entry.id, { projectStartDate: e.target.value })
-                                }
-                                max={new Date().toISOString().slice(0, 10)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateProject(entry.id, { projectStartDate: val });
+                                  if (val && entry.projectEndDate && val > entry.projectEndDate) {
+                                    setErrors((prev) => ({
+                                      ...prev,
+                                      projects: { ...prev.projects, [entry.id]: { ...prev.projects?.[entry.id], projectStartDate: "Start date cannot be after the end date." } },
+                                    }));
+                                  } else {
+                                    setErrors((prev) => {
+                                      const fe = { ...prev.projects?.[entry.id] };
+                                      delete fe.projectStartDate;
+                                      return { ...prev, projects: { ...prev.projects, [entry.id]: fe } };
+                                    });
+                                  }
+                                }}
+                                max={entry.projectEndDate || new Date().toISOString().slice(0, 10)}
                                 className={`${fieldClass(Boolean(fe?.projectStartDate))} te-date-input`}
                               />
                               {fe?.projectStartDate && (
@@ -2698,10 +2711,24 @@ function SkillsProjectsPageContent() {
                               <input
                                 type="date"
                                 value={entry.projectEndDate}
-                                onChange={(e) =>
-                                  updateProject(entry.id, { projectEndDate: e.target.value })
-                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateProject(entry.id, { projectEndDate: val });
+                                  if (val && entry.projectStartDate && val < entry.projectStartDate) {
+                                    setErrors((prev) => ({
+                                      ...prev,
+                                      projects: { ...prev.projects, [entry.id]: { ...prev.projects?.[entry.id], projectEndDate: "End date cannot be before the start date." } },
+                                    }));
+                                  } else {
+                                    setErrors((prev) => {
+                                      const fe = { ...prev.projects?.[entry.id] };
+                                      delete fe.projectEndDate;
+                                      return { ...prev, projects: { ...prev.projects, [entry.id]: fe } };
+                                    });
+                                  }
+                                }}
                                 disabled={entry.inProgress}
+                                min={entry.projectStartDate || undefined}
                                 max={new Date().toISOString().slice(0, 10)}
                                 className={`${fieldClass(Boolean(fe?.projectEndDate))} te-date-input ${
                                   entry.inProgress ? "bg-gray-100 text-gray-500" : ""
@@ -3037,8 +3064,23 @@ function SkillsProjectsPageContent() {
                           <input
                             type="date"
                             value={entry.projectStartDate}
-                            onChange={(e) => updateProject(entry.id, { projectStartDate: e.target.value })}
-                            max={new Date().toISOString().slice(0, 10)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateProject(entry.id, { projectStartDate: val });
+                              if (val && entry.projectEndDate && val > entry.projectEndDate) {
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  projects: { ...prev.projects, [entry.id]: { ...prev.projects?.[entry.id], projectStartDate: "Start date cannot be after the end date." } },
+                                }));
+                              } else {
+                                setErrors((prev) => {
+                                  const fe = { ...prev.projects?.[entry.id] };
+                                  delete fe.projectStartDate;
+                                  return { ...prev, projects: { ...prev.projects, [entry.id]: fe } };
+                                });
+                              }
+                            }}
+                            max={entry.projectEndDate || new Date().toISOString().slice(0, 10)}
                             className={`${fieldClass(Boolean(fe?.projectStartDate))} te-date-input`}
                           />
                           {fe?.projectStartDate && <p className="text-xs text-red-500">{fe.projectStartDate}</p>}
@@ -3049,8 +3091,24 @@ function SkillsProjectsPageContent() {
                           <input
                             type="date"
                             value={entry.projectEndDate}
-                            onChange={(e) => updateProject(entry.id, { projectEndDate: e.target.value })}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateProject(entry.id, { projectEndDate: val });
+                              if (val && entry.projectStartDate && val < entry.projectStartDate) {
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  projects: { ...prev.projects, [entry.id]: { ...prev.projects?.[entry.id], projectEndDate: "End date cannot be before the start date." } },
+                                }));
+                              } else {
+                                setErrors((prev) => {
+                                  const fe = { ...prev.projects?.[entry.id] };
+                                  delete fe.projectEndDate;
+                                  return { ...prev, projects: { ...prev.projects, [entry.id]: fe } };
+                                });
+                              }
+                            }}
                             disabled={entry.inProgress}
+                            min={entry.projectStartDate || undefined}
                             max={new Date().toISOString().slice(0, 10)}
                             className={`${fieldClass(Boolean(fe?.projectEndDate))} te-date-input ${entry.inProgress ? "bg-gray-100 text-gray-500" : ""}`}
                           />
