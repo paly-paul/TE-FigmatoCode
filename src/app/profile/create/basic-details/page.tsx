@@ -1002,6 +1002,7 @@ function BasicDetailsPageContent() {
   const editBackBypassRef = useRef(false);
   const countryCodeTouchMovedRef = useRef(false);
   const graduationYearTouchMovedRef = useRef(false);
+  const languageTouchMovedRef = useRef(false);
   const [draftPopup, setDraftPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -2142,6 +2143,21 @@ function BasicDetailsPageContent() {
     setField("countryCode", code);
     setOpenCountryCodeDropdown(false);
     setCountryCodeSearch("");
+  }
+
+  function handleGraduationYearPick(entryId: string, year: number) {
+    (document.activeElement as HTMLElement | null)?.blur();
+    const yearValue = String(year);
+    updateEducationEntry(entryId, "graduationYear", yearValue);
+    setGraduationYearSearchById((prev) => ({ ...prev, [entryId]: yearValue }));
+    setOpenGraduationYearDropdownId(null);
+  }
+
+  function handleLanguagePick(entryId: string, option: string) {
+    (document.activeElement as HTMLElement | null)?.blur();
+    updateLanguageEntry(entryId, "language", option);
+    setLanguageSearchById((prev) => ({ ...prev, [entryId]: option }));
+    setOpenLanguageDropdownId(null);
   }
 
   function getFilteredWorkAuthorizationOptions() {
@@ -3398,18 +3414,10 @@ function BasicDetailsPageContent() {
                                         onTouchEnd={(e) => {
                                           if (!graduationYearTouchMovedRef.current) {
                                             e.preventDefault();
-                                            const yearValue = String(year);
-                                            updateEducationEntry(entry.id, "graduationYear", yearValue);
-                                            updateGraduationYearSearch(entry.id, yearValue);
-                                            setOpenGraduationYearDropdownId(null);
+                                            handleGraduationYearPick(entry.id, year);
                                           }
                                         }}
-                                        onClick={() => {
-                                          const yearValue = String(year);
-                                          updateEducationEntry(entry.id, "graduationYear", yearValue);
-                                          updateGraduationYearSearch(entry.id, yearValue);
-                                          setOpenGraduationYearDropdownId(null);
-                                        }}
+                                        onClick={() => handleGraduationYearPick(entry.id, year)}
                                         className={`block w-full px-3 py-2 text-left text-sm ${
                                           String(year) === entry.graduationYear
                                             ? "bg-primary-50 text-primary-700 font-medium"
@@ -3853,12 +3861,17 @@ function BasicDetailsPageContent() {
                           <span className="text-sm font-medium text-gray-800">Language</span>
                           <div
                             className={`relative ${openLanguageDropdownId === entry.id ? "z-30" : ""}`}
-                            onBlur={(e) => {
-                              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                                setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : prev));
-                              }
-                            }}
                           >
+                            {openLanguageDropdownId === entry.id && (
+                              <div
+                                className="fixed inset-0 z-[49]"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  setOpenLanguageDropdownId(null);
+                                  setLanguageSearchById((prev) => ({ ...prev, [entry.id]: "" }));
+                                }}
+                              />
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -3874,7 +3887,7 @@ function BasicDetailsPageContent() {
                             </button>
 
                             {openLanguageDropdownId === entry.id ? (
-                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
                                 <div className="border-b border-gray-100 p-2">
                                   <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3887,17 +3900,24 @@ function BasicDetailsPageContent() {
                                     />
                                   </div>
                                 </div>
-                                <div className="max-h-40 overflow-y-scroll py-1">
+                                <div
+                                  className="max-h-40 overflow-y-auto py-1"
+                                  onTouchStart={() => { languageTouchMovedRef.current = false; }}
+                                  onTouchMove={() => { languageTouchMovedRef.current = true; }}
+                                >
                                   {getFilteredLanguageOptions(entry.id).length ? (
                                     getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
                                       <button
                                         key={`${entry.id}-lang-${option}`}
                                         type="button"
+                                        onTouchEnd={(e) => {
+                                          if (!languageTouchMovedRef.current && !alreadySelected) {
+                                            e.preventDefault();
+                                            handleLanguagePick(entry.id, option);
+                                          }
+                                        }}
                                         onClick={() => {
-                                          if (alreadySelected) return;
-                                          updateLanguageEntry(entry.id, "language", option);
-                                          setOpenLanguageDropdownId(null);
-                                          updateLanguageSearch(entry.id, option);
+                                          if (!alreadySelected) handleLanguagePick(entry.id, option);
                                         }}
                                         disabled={alreadySelected}
                                         className={`block w-full px-3 py-2 text-left text-sm ${
@@ -4254,18 +4274,10 @@ function BasicDetailsPageContent() {
                                       onTouchEnd={(e) => {
                                         if (!graduationYearTouchMovedRef.current) {
                                           e.preventDefault();
-                                          const yearValue = String(year);
-                                          updateEducationEntry(entry.id, "graduationYear", yearValue);
-                                          updateGraduationYearSearch(entry.id, yearValue);
-                                          setOpenGraduationYearDropdownId(null);
+                                          handleGraduationYearPick(entry.id, year);
                                         }
                                       }}
-                                      onClick={() => {
-                                        const yearValue = String(year);
-                                        updateEducationEntry(entry.id, "graduationYear", yearValue);
-                                        updateGraduationYearSearch(entry.id, yearValue);
-                                        setOpenGraduationYearDropdownId(null);
-                                      }}
+                                      onClick={() => handleGraduationYearPick(entry.id, year)}
                                       className={`block w-full px-3 py-2 text-left text-sm ${
                                         String(year) === entry.graduationYear
                                           ? "bg-primary-50 text-primary-700 font-medium"
@@ -4663,77 +4675,89 @@ function BasicDetailsPageContent() {
                         <span className="text-sm font-medium text-gray-800">Language</span>
                           <div
                             className={`relative ${openLanguageDropdownId === entry.id ? "z-30" : ""}`}
-                          onBlur={(e) => {
-                            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                              setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : prev));
-                            }
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
-                              updateLanguageSearch(entry.id, "");
-                            }}
-                            className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
                           >
-                            <span className={entry.language ? "text-gray-900" : "text-gray-400"}>
-                              {entry.language || "Select language"}
-                            </span>
-                            <ChevronDown className="h-4 w-4 text-gray-400" />
-                          </button>
+                            {openLanguageDropdownId === entry.id && (
+                              <div
+                                className="fixed inset-0 z-[49]"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  setOpenLanguageDropdownId(null);
+                                  setLanguageSearchById((prev) => ({ ...prev, [entry.id]: "" }));
+                                }}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenLanguageDropdownId((prev) => (prev === entry.id ? null : entry.id));
+                                updateLanguageSearch(entry.id, "");
+                              }}
+                              className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                            >
+                              <span className={entry.language ? "text-gray-900" : "text-gray-400"}>
+                                {entry.language || "Select language"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 text-gray-400" />
+                            </button>
 
-                          {openLanguageDropdownId === entry.id ? (
-                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
-                              <div className="border-b border-gray-100 p-2">
-                                <div className="relative">
-                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                                  <input
-                                    type="text"
-                                    value={languageSearchById[entry.id] ?? ""}
-                                    onChange={(e) => updateLanguageSearch(entry.id, e.target.value)}
-                                    placeholder="Search language"
-                                    className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-                                  />
+                            {openLanguageDropdownId === entry.id ? (
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                <div className="border-b border-gray-100 p-2">
+                                  <div className="relative">
+                                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                      type="text"
+                                      value={languageSearchById[entry.id] ?? ""}
+                                      onChange={(e) => updateLanguageSearch(entry.id, e.target.value)}
+                                      placeholder="Search language"
+                                      className="w-full rounded-md border border-gray-200 py-2 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                  </div>
+                                </div>
+                                <div
+                                  className="max-h-40 overflow-y-auto py-1"
+                                  onTouchStart={() => { languageTouchMovedRef.current = false; }}
+                                  onTouchMove={() => { languageTouchMovedRef.current = true; }}
+                                >
+                                  {getFilteredLanguageOptions(entry.id).length ? (
+                                    getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
+                                      <button
+                                        key={`${entry.id}-lang-${option}`}
+                                        type="button"
+                                        onTouchEnd={(e) => {
+                                          if (!languageTouchMovedRef.current && !alreadySelected) {
+                                            e.preventDefault();
+                                            handleLanguagePick(entry.id, option);
+                                          }
+                                        }}
+                                        onClick={() => {
+                                          if (!alreadySelected) handleLanguagePick(entry.id, option);
+                                        }}
+                                        disabled={alreadySelected}
+                                        className={`block w-full px-3 py-2 text-left text-sm ${
+                                          alreadySelected
+                                            ? "cursor-not-allowed text-gray-400 bg-gray-50"
+                                            : normalizeLanguageValue(option) ===
+                                                normalizeLanguageValue(entry.language)
+                                              ? "bg-primary-50 text-primary-700 font-medium"
+                                              : "text-gray-700 hover:bg-gray-100"
+                                        }`}
+                                      >
+                                        <span>{option}</span>
+                                        {alreadySelected ? (
+                                          <span className="ml-2 text-xs font-medium text-amber-700">
+                                            Already Selected
+                                          </span>
+                                        ) : null}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <p className="px-3 py-2 text-sm text-gray-500">No languages found</p>
+                                  )}
                                 </div>
                               </div>
-                              <div className="max-h-40 overflow-y-scroll py-1">
-                                {getFilteredLanguageOptions(entry.id).length ? (
-                                  getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
-                                    <button
-                                      key={`${entry.id}-lang-${option}`}
-                                      type="button"
-                                      onClick={() => {
-                                        if (alreadySelected) return;
-                                        updateLanguageEntry(entry.id, "language", option);
-                                        setOpenLanguageDropdownId(null);
-                                        updateLanguageSearch(entry.id, option);
-                                      }}
-                                      disabled={alreadySelected}
-                                      className={`block w-full px-3 py-2 text-left text-sm ${
-                                        alreadySelected
-                                          ? "cursor-not-allowed text-gray-400 bg-gray-50"
-                                          : normalizeLanguageValue(option) ===
-                                              normalizeLanguageValue(entry.language)
-                                            ? "bg-primary-50 text-primary-700 font-medium"
-                                            : "text-gray-700 hover:bg-gray-100"
-                                      }`}
-                                    >
-                                      <span>{option}</span>
-                                      {alreadySelected ? (
-                                        <span className="ml-2 text-xs font-medium text-amber-700">
-                                          Already Selected
-                                        </span>
-                                      ) : null}
-                                    </button>
-                                  ))
-                                ) : (
-                                  <p className="px-3 py-2 text-sm text-gray-500">No languages found</p>
-                                )}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
+                            ) : null}
+                          </div>
                         {isLanguageOptionsLoading ? (
                           <span className="text-xs text-gray-500">Loading languages...</span>
                         ) : languageOptionsError ? (
