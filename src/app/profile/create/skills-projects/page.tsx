@@ -2365,7 +2365,7 @@ function SkillsProjectsPageContent() {
           <h1 className="text-lg font-bold text-gray-900">Create Profile</h1>
         </div>
 
-        <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
+        <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-40 sm:pb-28 overflow-y-auto">
           <ProfileStepper currentStep={3} />
 
           {isMobileViewport ? (
@@ -2421,7 +2421,7 @@ function SkillsProjectsPageContent() {
                       </button>
 
                       {isSkillsDropdownOpen ? (
-                        <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="absolute z-50 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                           <div className="p-2">
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2435,7 +2435,7 @@ function SkillsProjectsPageContent() {
                             </div>
                           </div>
 
-                          <div className="max-h-72 overflow-auto py-1">
+                          <div className="max-h-72 overflow-y-scroll py-1">
                             {suggestedSkillOptions.length ? (
                               suggestedSkillOptions.map((opt) => {
                                 const isAlreadyAdded = skills.some(
@@ -2536,7 +2536,7 @@ function SkillsProjectsPageContent() {
                             <TrashIcon /> Delete
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3">
                           <label className="flex flex-col gap-2">
                             <span className="text-sm font-medium text-gray-800">Tool / Skill <span className="text-red-500">*</span></span>
                             <input
@@ -2567,7 +2567,7 @@ function SkillsProjectsPageContent() {
                             )}
                           </label>
 
-                          <label className="flex flex-col gap-2 col-span-2">
+                          <label className="flex flex-col gap-2">
                             <span className="text-sm font-medium text-gray-800">Reference (Link) (optional)</span>
                             <input
                               type="url"
@@ -2820,7 +2820,7 @@ function SkillsProjectsPageContent() {
                           </div>
                         </div>
 
-                        <div className="max-h-72 overflow-auto py-1">
+                        <div className="max-h-72 overflow-y-scroll py-1">
                           {suggestedSkillOptions.length ? (
                             suggestedSkillOptions.map((opt) => {
                               const isAlreadyAdded = skills.some(
@@ -3138,27 +3138,27 @@ function SkillsProjectsPageContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
         <div>
           {showUploadResumeShortcut ? (
             <Button
               type="button"
               variant="outline"
               fullWidth={false}
-              className="px-4 sm:px-6 text-sm"
+              className="px-3 sm:px-6 text-sm"
               onClick={handleUploadResumeShortcut}
             >
               Upload Resume for Faster Setup
             </Button>
           ) : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
           {showCancelEditProfile ? (
             <Button
               variant="outline"
               fullWidth={false}
               onClick={handleCancelEditProfile}
-              className="px-6 sm:px-8"
+              className="px-3 sm:px-6 lg:px-8"
               disabled={isSubmittingProfile}
             >
               Cancel
@@ -3168,7 +3168,7 @@ function SkillsProjectsPageContent() {
             variant="outline"
             fullWidth={false}
             onClick={() => { setSavingButton("previous"); void handleGoToBasicDetails(); }}
-            className="px-6 sm:px-8"
+            className="px-3 sm:px-6 lg:px-8"
             disabled={isSubmittingProfile}
           >
             {isSubmittingProfile && savingButton === "previous" ? "Saving..." : "Previous"}
@@ -3176,13 +3176,13 @@ function SkillsProjectsPageContent() {
           <Button
             variant="outline"
             fullWidth={false}
-            className="px-6 sm:px-8"
+            className="px-3 sm:px-6 lg:px-8"
             onClick={() => { setSavingButton("save-draft"); void handleSaveDraft(); }}
             disabled={isSubmittingProfile || !hasUnsavedChanges}
           >
             {isSubmittingProfile && savingButton === "save-draft" ? "Saving..." : "Save Draft"}
           </Button>
-          <Button fullWidth={false} className="px-6 sm:px-8" onClick={() => { setSavingButton("finish"); void handleFinish(); }} disabled={isSubmittingProfile}>
+          <Button fullWidth={false} className="px-3 sm:px-6 lg:px-8" onClick={() => { setSavingButton("finish"); void handleFinish(); }} disabled={isSubmittingProfile}>
             {isSubmittingProfile && savingButton === "finish" ? "Saving..." : "Finish"}
           </Button>
         </div>

@@ -80,19 +80,23 @@ export function BaseDrawer({
 
   useEffect(() => {
     if (!open) return;
-
-    const previousOverflow = document.body.style.overflow;
-    const previousTouchAction = document.body.style.touchAction;
-    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
-
-    document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
-    document.body.style.overscrollBehavior = "none";
+    // iOS Safari breaks position:fixed when overflow:hidden is set on body.
+    // Using position:fixed + negative top is the safe cross-browser scroll lock.
+    // touch-action:none on body is intentionally avoided: it is inherited and
+    // would prevent touch-based scrolling inside the drawer's overflow-y-auto area.
+    const scrollY = window.scrollY;
+    const body = document.body;
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflowY = "scroll";
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.style.touchAction = previousTouchAction;
-      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+      body.style.position = "";
+      body.style.top = "";
+      body.style.width = "";
+      body.style.overflowY = "";
+      window.scrollTo(0, scrollY);
     };
   }, [open]);
 

@@ -7,6 +7,7 @@ import { setSessionLoginEmail } from "@/lib/profileOnboarding";
 import { clearResumeWizardSession } from "@/lib/profileSession";
 import { isLikelyDocId, setCandidateId, setProfileGenerated, setProfileName, setUserDisplayName } from "@/lib/authSession";
 import { getPostLoginDestination } from "@/services/login/postLoginRouting";
+import { GOOGLE_AUTH_MODE_KEY } from "@/components/auth/SocialButtons";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { prefetchDynamicKeySkills } from "@/services/profile/keySkills";
 
@@ -66,7 +67,14 @@ export default function GoogleCallbackPage() {
 
         prefetchDropdownDetailsAfterLogin();
 
-        const destination = email ? await getPostLoginDestination(email) : "/profile/create";
+        const isSignupFlow = sessionStorage.getItem(GOOGLE_AUTH_MODE_KEY) === "signup";
+        sessionStorage.removeItem(GOOGLE_AUTH_MODE_KEY);
+
+        const destination = isSignupFlow
+          ? "/profile/create"
+          : email
+            ? await getPostLoginDestination(email)
+            : "/profile/create";
         const skipWizard = destination === "/dashboard";
         if (skipWizard) {
           setDashboardWelcomePending();

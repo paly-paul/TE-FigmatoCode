@@ -1970,8 +1970,8 @@ export default function ActionDrawer({
           <div
             className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl transition-all duration-500 ${
               confirmVisible
-                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                ? "opacity-100 translate-y-0 scale-100"
+                : "opacity-0 translate-y-7 scale-90"
             }`}
           >
             {/* Decorative dots */}
@@ -1989,7 +1989,7 @@ export default function ActionDrawer({
                   <Banknote className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-base font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+                  <p className="text-base font-semibold text-slate-900 ">
                     Confirm Package
                   </p>
                   <p className="text-xs text-slate-500">Review and confirm before submitting</p>
@@ -1997,7 +1997,7 @@ export default function ActionDrawer({
               </div>
 
               {/* Package details card */}
-              <div className="mb-5 rounded-xl border border-blue-100 bg-white/80 p-4 shadow-sm animate-in slide-in-from-bottom-1 duration-400">
+              <div className="mb-5 rounded-xl border border-blue-100 bg-white/80 p-4 shadow-sm ">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Package Summary
                 </p>
@@ -2039,7 +2039,7 @@ export default function ActionDrawer({
               </div>
 
               {/* Actions */}
-              <div className="flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+              <div className="flex flex-col gap-2 ">
                 <button
                   type="button"
                   disabled={primarySubmitDisabled}
@@ -2078,8 +2078,8 @@ export default function ActionDrawer({
                   : "bg-gradient-to-br from-green-50 via-white to-emerald-50"
             } ${
               salaryPopupVisible
-                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                ? "opacity-100 translate-y-0 scale-100"
+                : "opacity-0 translate-y-7 scale-90"
             }`}
           >
             <span className={`absolute left-10 top-10 h-2.5 w-2.5 rounded-full animate-ping ${salaryVsRef === "above" ? "bg-amber-300" : "bg-blue-300"}`} />
@@ -2097,14 +2097,14 @@ export default function ActionDrawer({
                   <Banknote className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="animate-in slide-in-from-bottom-1 text-base font-semibold text-slate-900 duration-300">
+                  <p className="text-base font-semibold text-slate-900">
                     Confirm Salary
                   </p>
                   <p className="text-xs text-slate-500">Review your expected salary before submitting</p>
                 </div>
               </div>
 
-              <div className="animate-in slide-in-from-bottom-1 mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm duration-400">
+              <div className="mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Salary Summary
                 </p>
@@ -2143,7 +2143,7 @@ export default function ActionDrawer({
                 </div>
               </div>
 
-              <div className="animate-in slide-in-from-bottom-1 flex flex-col gap-2 duration-500">
+              <div className="flex flex-col gap-2">
                 <button
                   type="button"
                   disabled={primarySubmitDisabled}
@@ -2177,8 +2177,8 @@ export default function ActionDrawer({
           <div
             className={`relative w-full max-w-md overflow-hidden rounded-2xl p-6 shadow-2xl transition-all duration-500 bg-gradient-to-br from-blue-50 via-white to-indigo-50 ${
               slotConfirmPopupVisible
-                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                ? "opacity-100 translate-y-0 scale-100"
+                : "opacity-0 translate-y-7 scale-90"
             }`}
           >
             <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full animate-ping bg-blue-300" />
@@ -2194,14 +2194,14 @@ export default function ActionDrawer({
                   <Calendar className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="animate-in slide-in-from-bottom-1 text-base font-semibold text-slate-900 duration-300">
+                  <p className="text-base font-semibold text-slate-900">
                     Confirm Interview Slot
                   </p>
                   <p className="text-xs text-slate-500">Review your selected time slot before submitting</p>
                 </div>
               </div>
 
-              <div className="animate-in slide-in-from-bottom-1 mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm duration-400">
+              <div className="mb-5 rounded-xl border border-slate-100 bg-white/80 p-4 shadow-sm">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Selected Slot Details
                 </p>
@@ -2232,7 +2232,7 @@ export default function ActionDrawer({
                 </div>
               </div>
 
-              <div className="animate-in slide-in-from-bottom-1 flex flex-col gap-2 duration-500">
+              <div className="flex flex-col gap-2">
                 <button
                   type="button"
                   disabled={isSubmitting}
@@ -2266,8 +2266,8 @@ export default function ActionDrawer({
           <div
             className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-green-50 p-6 shadow-2xl transition-all duration-500 ${
               successPopupVisible
-                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                ? "opacity-100 translate-y-0 scale-100"
+                : "opacity-0 translate-y-7 scale-90"
             }`}
           >
             <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-emerald-300 animate-ping" />

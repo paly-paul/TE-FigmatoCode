@@ -3,10 +3,20 @@ import { useEffect } from "react";
 export function useScrollLock(locked: boolean) {
   useEffect(() => {
     if (!locked) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // iOS Safari breaks position:fixed when overflow:hidden is set on body.
+    // Fix: freeze the body with position:fixed at the current scroll offset instead.
+    const scrollY = window.scrollY;
+    const body = document.body;
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflowY = "scroll";
     return () => {
-      document.body.style.overflow = previous;
+      body.style.position = "";
+      body.style.top = "";
+      body.style.width = "";
+      body.style.overflowY = "";
+      window.scrollTo(0, scrollY);
     };
   }, [locked]);
 }
