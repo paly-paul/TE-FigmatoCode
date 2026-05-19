@@ -59,8 +59,8 @@ export function JobSuccessPopup({ open, title, message, onClose }: JobSuccessPop
       <div
         className={`relative w-full max-w-[450px] overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl transition-all duration-500 ${
           visible
-            ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-            : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 translate-y-7 scale-90"
         }`}
       >
         {/* Confetti dots — staggered delays */}
@@ -91,13 +91,13 @@ export function JobSuccessPopup({ open, title, message, onClose }: JobSuccessPop
           </div>
 
           <p
-            className="text-xl font-semibold text-slate-900 animate-in slide-in-from-bottom-2 duration-500"
+            className="text-xl font-semibold text-slate-900"
             style={{ animationDelay: "120ms", animationFillMode: "both" }}
           >
             {title}
           </p>
           <p
-            className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-2 duration-500"
+            className="mt-2 text-sm text-slate-600 "
             style={{ animationDelay: "220ms", animationFillMode: "both" }}
           >
             {message}
@@ -106,7 +106,7 @@ export function JobSuccessPopup({ open, title, message, onClose }: JobSuccessPop
           <button
             type="button"
             onClick={onClose}
-            className="mt-6 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 animate-in slide-in-from-bottom-2 duration-500"
+            className="mt-6 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 "
             style={{ animationDelay: "320ms", animationFillMode: "both" }}
           >
             Close

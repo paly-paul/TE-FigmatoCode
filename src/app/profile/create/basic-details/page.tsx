@@ -2776,7 +2776,7 @@ function BasicDetailsPageContent() {
           <h1 className="text-lg font-bold text-gray-900">Create Profile</h1>
         </div>
 
-        <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-28 overflow-y-auto">
+        <div className="flex flex-col xl:flex-row flex-1 gap-4 lg:gap-6 px-4 sm:px-6 lg:px-8 pb-40 sm:pb-28 overflow-y-auto">
           <ProfileStepper currentStep={2} />
 
           {isMobileViewport ? (
@@ -2922,7 +2922,7 @@ function BasicDetailsPageContent() {
                           <ChevronDown className="h-4 w-4 text-gray-400" />
                         </button>
                         {openCountryCodeDropdown ? (
-                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
+                          <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                             <div className="border-b border-gray-100 p-2">
                               <div className="relative">
                                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -2935,16 +2935,13 @@ function BasicDetailsPageContent() {
                                 />
                               </div>
                             </div>
-                            <div className="max-h-48 overflow-auto py-1">
+                            <div className="max-h-48 overflow-y-scroll py-1">
                               {getFilteredCountryCodeOptions().length ? (
                                 getFilteredCountryCodeOptions().map((code) => (
                                   <button
                                     key={`contact-code-mobile-${code}`}
                                     type="button"
-                                    onPointerDown={(e) => {
-                                      e.preventDefault();
-                                      handleCountryCodePick(code);
-                                    }}
+                                    onClick={() => handleCountryCodePick(code)}
                                     className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                       form.countryCode === code
                                         ? "bg-primary-50 text-primary-700"
@@ -3040,7 +3037,7 @@ function BasicDetailsPageContent() {
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       {activeLocationField === "currentLocation" && (
-                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-scroll" onMouseDown={(e) => e.preventDefault()}>
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
                           ) : currentLocationSuggestions.length > 0 ? (
@@ -3048,10 +3045,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onPointerDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
-                                }}
+                                onClick={() => handleLocationSuggestionPick("currentLocation", option.id || option.label)}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
                                 {option.label}
@@ -3083,7 +3077,7 @@ function BasicDetailsPageContent() {
                       />
                       <Search className="h-4 w-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       {activeLocationField === "preferredLocation" && (
-                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-scroll" onMouseDown={(e) => e.preventDefault()}>
                           {isPreferredLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
                           ) : preferredLocationSuggestions.length > 0 ? (
@@ -3091,10 +3085,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onPointerDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("preferredLocation", option.id || option.label);
-                                }}
+                                onClick={() => handleLocationSuggestionPick("preferredLocation", option.id || option.label)}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
                                 {option.label}
@@ -3340,7 +3331,7 @@ function BasicDetailsPageContent() {
                               <ChevronDown className="h-4 w-4 text-gray-400" />
                             </button>
                             {openGraduationYearDropdownId === entry.id ? (
-                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                                 <div className="border-b border-gray-100 p-2">
                                   <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3357,7 +3348,7 @@ function BasicDetailsPageContent() {
                                     />
                                   </div>
                                 </div>
-                                <div className="max-h-40 overflow-auto py-1">
+                                <div className="max-h-40 overflow-y-scroll py-1">
                                   {getFilteredGraduationYearOptions(entry.id).length ? (
                                     getFilteredGraduationYearOptions(entry.id).map((year) => (
                                       <button
@@ -3557,7 +3548,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openWorkAuthorizationDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3570,16 +3561,13 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-auto py-1">
+                          <div className="max-h-48 overflow-y-scroll py-1">
                             {getFilteredWorkAuthorizationOptions().length ? (
                               getFilteredWorkAuthorizationOptions().map((option) => (
                                 <button
                                   key={`work-auth-mobile-${option}`}
                                   type="button"
-                                  onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    handleWorkAuthorizationPick(option);
-                                  }}
+                                  onClick={() => handleWorkAuthorizationPick(option)}
                                   className={`block w-full px-3 py-2 text-left text-sm ${
                                     parseMultiSelectString(form.workAuthorization).some(
                                       (value) => value.toLowerCase() === option.toLowerCase()
@@ -3637,7 +3625,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openPreferredIndustryDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3650,16 +3638,13 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-auto py-1">
+                          <div className="max-h-48 overflow-y-scroll py-1">
                             {getFilteredPreferredIndustryOptions().length ? (
                               getFilteredPreferredIndustryOptions().map((option) => (
                                 <button
                                   key={`preferred-industry-mobile-${option}`}
                                   type="button"
-                                  onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    handlePreferredIndustryPick(option);
-                                  }}
+                                  onClick={() => handlePreferredIndustryPick(option)}
                                   className={`block w-full px-3 py-2 text-left text-sm ${
                                     parseMultiSelectString(form.preferredIndustry).some(
                                       (value) => value.toLowerCase() === option.toLowerCase()
@@ -3839,7 +3824,7 @@ function BasicDetailsPageContent() {
                             </button>
 
                             {openLanguageDropdownId === entry.id ? (
-                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                                 <div className="border-b border-gray-100 p-2">
                                   <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3852,7 +3837,7 @@ function BasicDetailsPageContent() {
                                     />
                                   </div>
                                 </div>
-                                <div className="max-h-40 overflow-auto py-1">
+                                <div className="max-h-40 overflow-y-scroll py-1">
                                   {getFilteredLanguageOptions(entry.id).length ? (
                                     getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
                                       <button
@@ -4174,7 +4159,7 @@ function BasicDetailsPageContent() {
                             <ChevronDown className="h-4 w-4 text-gray-400" />
                           </button>
                           {openGraduationYearDropdownId === entry.id ? (
-                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                               <div className="border-b border-gray-100 p-2">
                                 <div className="relative">
                                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4189,7 +4174,7 @@ function BasicDetailsPageContent() {
                                   />
                                 </div>
                               </div>
-                              <div className="max-h-40 overflow-auto py-1">
+                              <div className="max-h-40 overflow-y-scroll py-1">
                                 {getFilteredGraduationYearOptions(entry.id).length ? (
                                   getFilteredGraduationYearOptions(entry.id).map((year) => (
                                     <button
@@ -4371,7 +4356,7 @@ function BasicDetailsPageContent() {
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openWorkAuthorizationDropdown ? (
-                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                         <div className="border-b border-gray-100 p-2">
                           <div className="relative">
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4384,16 +4369,13 @@ function BasicDetailsPageContent() {
                             />
                           </div>
                         </div>
-                        <div className="max-h-48 overflow-auto py-1">
+                        <div className="max-h-48 overflow-y-scroll py-1">
                           {getFilteredWorkAuthorizationOptions().length ? (
                             getFilteredWorkAuthorizationOptions().map((option) => (
                               <button
                                 key={`work-auth-desktop-${option}`}
                                 type="button"
-                              onPointerDown={(e) => {
-                                e.preventDefault();
-                                handleWorkAuthorizationPick(option);
-                              }}
+                              onClick={() => handleWorkAuthorizationPick(option)}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.workAuthorization).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
@@ -4451,7 +4433,7 @@ function BasicDetailsPageContent() {
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     </button>
                     {openPreferredIndustryDropdown ? (
-                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                      <div className="absolute z-[70] mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                         <div className="border-b border-gray-100 p-2">
                           <div className="relative">
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4464,16 +4446,13 @@ function BasicDetailsPageContent() {
                             />
                           </div>
                         </div>
-                        <div className="max-h-48 overflow-auto py-1">
+                        <div className="max-h-48 overflow-y-scroll py-1">
                           {getFilteredPreferredIndustryOptions().length ? (
                             getFilteredPreferredIndustryOptions().map((option) => (
                               <button
                                 key={`preferred-industry-desktop-${option}`}
                                 type="button"
-                              onPointerDown={(e) => {
-                                e.preventDefault();
-                                handlePreferredIndustryPick(option);
-                              }}
+                              onClick={() => handlePreferredIndustryPick(option)}
                                 className={`block w-full px-3 py-2 text-left text-sm ${
                                   parseMultiSelectString(form.preferredIndustry).some(
                                     (value) => value.toLowerCase() === option.toLowerCase()
@@ -4625,7 +4604,7 @@ function BasicDetailsPageContent() {
                           </button>
 
                           {openLanguageDropdownId === entry.id ? (
-                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                               <div className="border-b border-gray-100 p-2">
                                 <div className="relative">
                                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -4638,7 +4617,7 @@ function BasicDetailsPageContent() {
                                   />
                                 </div>
                               </div>
-                              <div className="max-h-40 overflow-auto py-1">
+                              <div className="max-h-40 overflow-y-scroll py-1">
                                 {getFilteredLanguageOptions(entry.id).length ? (
                                   getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
                                     <button
@@ -4901,7 +4880,7 @@ function BasicDetailsPageContent() {
                         autoComplete="off"
                       />
                       {activeLocationField === "currentLocation" && (
-                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-scroll" onMouseDown={(e) => e.preventDefault()}>
                           {isCurrentLocationLoading ? (
                             <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
                           ) : currentLocationSuggestions.length > 0 ? (
@@ -4909,10 +4888,7 @@ function BasicDetailsPageContent() {
                               <button
                                 key={`${option.id}-${option.label}`}
                                 type="button"
-                                onPointerDown={(e) => {
-                                  e.preventDefault();
-                                  handleLocationSuggestionPick("currentLocation", option.id || option.label);
-                                }}
+                                onClick={() => handleLocationSuggestionPick("currentLocation", option.id || option.label)}
                                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                               >
                                 {option.label}
@@ -4942,7 +4918,7 @@ function BasicDetailsPageContent() {
                       autoComplete="off"
                     />
                     {activeLocationField === "preferredLocation" && (
-                      <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+                      <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-scroll" onMouseDown={(e) => e.preventDefault()}>
                         {isPreferredLocationLoading ? (
                           <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
                         ) : preferredLocationSuggestions.length > 0 ? (
@@ -4950,10 +4926,7 @@ function BasicDetailsPageContent() {
                             <button
                               key={`${option.id}-${option.label}`}
                               type="button"
-                              onPointerDown={(e) => {
-                                e.preventDefault();
-                                handleLocationSuggestionPick("preferredLocation", option.id || option.label);
-                              }}
+                              onClick={() => handleLocationSuggestionPick("preferredLocation", option.id || option.label)}
                               className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                             >
                               {option.label}
@@ -4992,7 +4965,7 @@ function BasicDetailsPageContent() {
                         <ChevronDown className="h-4 w-4 text-gray-400" />
                       </button>
                       {openCountryCodeDropdown ? (
-                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg">
+                        <div className="absolute z-[70] mt-1 w-[280px] rounded-md border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                           <div className="border-b border-gray-100 p-2">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -5005,16 +4978,13 @@ function BasicDetailsPageContent() {
                               />
                             </div>
                           </div>
-                          <div className="max-h-48 overflow-auto py-1">
+                          <div className="max-h-48 overflow-y-scroll py-1">
                             {getFilteredCountryCodeOptions().length ? (
                               getFilteredCountryCodeOptions().map((code) => (
                                 <button
                                   key={`contact-code-desktop-${code}`}
                                   type="button"
-                                  onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    handleCountryCodePick(code);
-                                  }}
+                                  onClick={() => handleCountryCodePick(code)}
                                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
                                     form.countryCode === code
                                       ? "bg-primary-50 text-primary-700"
@@ -5057,26 +5027,26 @@ function BasicDetailsPageContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
         <div>
           {showUploadResumeShortcut ? (
             <Button
               type="button"
               variant="outline"
               fullWidth={false}
-              className="px-4 sm:px-6 text-sm"
+              className="px-3 sm:px-6 text-sm"
               onClick={handleUploadResumeShortcut}
             >
               Upload Resume for Faster Setup
             </Button>
           ) : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
           {showCancelEditProfile ? (
             <Button
               variant="outline"
               fullWidth={false}
-              className="px-6 sm:px-8"
+              className="px-3 sm:px-6 lg:px-8"
               onClick={handleCancelEditProfile}
               disabled={isDraftSaving}
             >
@@ -5086,7 +5056,7 @@ function BasicDetailsPageContent() {
           <Button
             variant="outline"
             fullWidth={false}
-            className="px-6 sm:px-8"
+            className="px-3 sm:px-6 lg:px-8"
             onClick={() => {
               setIsSaveDraftButtonSaving(true);
               void handleSaveDraft().finally(() => setIsSaveDraftButtonSaving(false));
@@ -5095,7 +5065,7 @@ function BasicDetailsPageContent() {
           >
             {isSaveDraftButtonSaving ? "Saving..." : "Save Draft"}
           </Button>
-          <Button fullWidth={false} className="px-6 sm:px-8" onClick={handleNext} disabled={isDraftSaving}>
+          <Button fullWidth={false} className="px-3 sm:px-6 lg:px-8" onClick={handleNext} disabled={isDraftSaving}>
             {isDraftSaving ? "Saving..." : "Next"}
           </Button>
         </div>

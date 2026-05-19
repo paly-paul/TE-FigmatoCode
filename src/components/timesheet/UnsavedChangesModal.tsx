@@ -44,8 +44,8 @@ export default function UnsavedChangesModal({
       <div
         className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl transition-all duration-500 ${
           visible
-            ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-            : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 translate-y-7 scale-90"
         }`}
       >
         <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
@@ -59,16 +59,16 @@ export default function UnsavedChangesModal({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700 shadow-sm animate-bounce">
             <AlertTriangle className="h-7 w-7 animate-in zoom-in-75 duration-300" />
           </div>
-          <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+          <p className="text-lg font-semibold text-slate-900">
             Unsaved changes detected
           </p>
-          <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
+          <p className="mt-2 text-sm text-slate-600">
             Save draft before leaving, otherwise your latest edits will be lost.
           </p>
           <div className="mx-auto mt-4 h-1.5 w-44 overflow-hidden rounded-full bg-amber-100">
             <span className="block h-full w-full rounded-full bg-amber-500 animate-pulse" />
           </div>
-          <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+          <div className="mt-6 flex flex-col gap-2">
             <button
               type="button"
               disabled={submitBusy}

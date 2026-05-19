@@ -12,9 +12,16 @@ export function SocialLoginDivider() {
   );
 }
 
-export function SocialLoginButtons() {
+export const GOOGLE_AUTH_MODE_KEY = "google_auth_mode";
+
+export function SocialLoginButtons({ mode = "login" }: { mode?: "login" | "signup" }) {
   async function handleGoogleClick() {
     try {
+      if (mode === "signup") {
+        sessionStorage.setItem(GOOGLE_AUTH_MODE_KEY, "signup");
+      } else {
+        sessionStorage.removeItem(GOOGLE_AUTH_MODE_KEY);
+      }
       const res = await fetch("/api/auth/google/start", { method: "GET" });
       const data = (await res.json()) as { url?: string; error?: string };
       console.log("[google-login] /api/auth/google/start response", {

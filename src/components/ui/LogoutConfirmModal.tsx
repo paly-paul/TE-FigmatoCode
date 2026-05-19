@@ -42,8 +42,8 @@ export default function LogoutConfirmModal({
       <div
         className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-2xl transition-all duration-500 ${
           visible
-            ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-            : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 translate-y-7 scale-90"
         }`}
       >
         <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
@@ -69,13 +69,13 @@ export default function LogoutConfirmModal({
               style={{ animation: "te-logout-exit 2s ease-in-out infinite" }}
             />
           </div>
-          <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+          <p className="text-lg font-semibold text-slate-900">
             Log out?
           </p>
-          <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
+          <p className="mt-2 text-sm text-slate-600">
             Are you sure you want to log out?
           </p>
-          <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+          <div className="mt-6 flex flex-col gap-2">
             <button
               type="button"
               disabled={busy}

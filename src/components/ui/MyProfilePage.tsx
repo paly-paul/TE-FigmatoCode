@@ -1132,8 +1132,8 @@ export default function MyProfilePage() {
                             <div
                                 className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-violet-50 p-6 shadow-2xl transition-all duration-500 ${
                                     premiumPopupVisible
-                                        ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                                        : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                                        ? "opacity-100 translate-y-0 scale-100"
+                                        : "opacity-0 translate-y-7 scale-90"
                                 }`}
                             >
                                 <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />
@@ -1659,8 +1659,8 @@ export default function MyProfilePage() {
                     <div
                         className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 via-white to-violet-50 p-6 shadow-2xl transition-all duration-500 ${
                             premiumPopupVisible
-                                ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-                                : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+                                ? "opacity-100 translate-y-0 scale-100"
+                                : "opacity-0 translate-y-7 scale-90"
                         }`}
                     >
                         <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-blue-300 animate-ping" />

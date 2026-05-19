@@ -168,7 +168,7 @@ export function MobileSignupScreen() {
 
         <div className="[&_button]:min-h-[48px]">
           <SocialLoginDivider />
-          <SocialLoginButtons />
+          <SocialLoginButtons mode="signup" />
         </div>
       </main>
 

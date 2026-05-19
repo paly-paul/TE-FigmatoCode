@@ -186,7 +186,7 @@ export default function SignupPageClient() {
       </form>
 
       <SocialLoginDivider />
-      <SocialLoginButtons />
+      <SocialLoginButtons mode="signup" />
 
       <LegalHtmlModal
         open={legalModal !== null}

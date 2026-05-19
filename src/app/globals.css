@@ -136,6 +136,9 @@ select:not(.h-10):not(.h-11) {
 /*
  * iOS Safari zooms the viewport when focusing controls with computed font-size < 16px.
  * Keep zoom accessibility enabled and prevent focus-zoom by normalizing field font-size.
+ * Also undo the desktop-Safari date-input height fixes: the native iOS wheel picker
+ * handles its own sizing, so the extra min-height / display:block rules make date inputs
+ * visually taller than every other field on mobile.
  */
 @supports (-webkit-touch-callout: none) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
@@ -146,5 +149,14 @@ select:not(.h-10):not(.h-11) {
   textarea,
   select {
     font-size: 16px !important;
+  }
+
+  input[type="date"] {
+    min-height: unset;
+  }
+
+  input[type="date"]::-webkit-date-and-time-value {
+    min-height: unset;
+    display: unset;
   }
 }

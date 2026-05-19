@@ -35,8 +35,8 @@ export function ImproveScorePopup({ open, onClose }: ImproveScorePopupProps) {
       <div
         className={`relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-amber-50 via-white to-orange-50 p-6 shadow-2xl transition-all duration-500 ${
           visible
-            ? "opacity-100 [transform:translateY(0)_scale(1)_rotateX(0deg)]"
-            : "opacity-0 [transform:translateY(28px)_scale(0.9)_rotateX(10deg)]"
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 translate-y-7 scale-90"
         }`}
       >
         <span className="absolute left-10 top-10 h-2.5 w-2.5 rounded-full bg-amber-300 animate-ping" />
@@ -52,18 +52,18 @@ export function ImproveScorePopup({ open, onClose }: ImproveScorePopupProps) {
             <TrendingUp className="relative h-7 w-7" />
           </div>
 
-          <p className="text-lg font-semibold text-slate-900 animate-in slide-in-from-bottom-1 duration-300">
+          <p className="text-lg font-semibold text-slate-900">
             Improve Your Score
           </p>
-          <span className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-700 animate-in slide-in-from-bottom-1 duration-400">
+          <span className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-700">
             Coming Soon
           </span>
-          <p className="mt-2 text-sm text-slate-600 animate-in slide-in-from-bottom-1 duration-500">
+          <p className="mt-2 text-sm text-slate-600">
             {/* This feature is part of our Premium experience. Stay tuned — we&apos;re working on tools to help boost your visibility score and get noticed by the right recruiters. */}
             A premium feature to enhance recruiter visibility.
           </p>
 
-          <div className="mt-6 flex flex-col gap-2 animate-in slide-in-from-bottom-1 duration-500">
+          <div className="mt-6 flex flex-col gap-2">
             <button
               type="button"
               onClick={onClose}
