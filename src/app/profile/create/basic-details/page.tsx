@@ -3404,7 +3404,7 @@ function BasicDetailsPageContent() {
                                 <div
                                   className="max-h-40 overflow-y-auto py-1"
                                   onTouchStart={() => { graduationYearTouchMovedRef.current = false; }}
-                                  onTouchMove={() => { graduationYearTouchMovedRef.current = true; }}
+                                  onScroll={() => { graduationYearTouchMovedRef.current = true; }}
                                 >
                                   {getFilteredGraduationYearOptions(entry.id).length ? (
                                     getFilteredGraduationYearOptions(entry.id).map((year) => (
@@ -3903,7 +3903,7 @@ function BasicDetailsPageContent() {
                                 <div
                                   className="max-h-40 overflow-y-auto py-1"
                                   onTouchStart={() => { languageTouchMovedRef.current = false; }}
-                                  onTouchMove={() => { languageTouchMovedRef.current = true; }}
+                                  onScroll={() => { languageTouchMovedRef.current = true; }}
                                 >
                                   {getFilteredLanguageOptions(entry.id).length ? (
                                     getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
@@ -4264,7 +4264,7 @@ function BasicDetailsPageContent() {
                               <div
                                 className="max-h-40 overflow-y-auto py-1"
                                 onTouchStart={() => { graduationYearTouchMovedRef.current = false; }}
-                                onTouchMove={() => { graduationYearTouchMovedRef.current = true; }}
+                                onScroll={() => { graduationYearTouchMovedRef.current = true; }}
                               >
                                 {getFilteredGraduationYearOptions(entry.id).length ? (
                                   getFilteredGraduationYearOptions(entry.id).map((year) => (
@@ -4717,7 +4717,7 @@ function BasicDetailsPageContent() {
                                 <div
                                   className="max-h-40 overflow-y-auto py-1"
                                   onTouchStart={() => { languageTouchMovedRef.current = false; }}
-                                  onTouchMove={() => { languageTouchMovedRef.current = true; }}
+                                  onScroll={() => { languageTouchMovedRef.current = true; }}
                                 >
                                   {getFilteredLanguageOptions(entry.id).length ? (
                                     getFilteredLanguageOptions(entry.id).map(({ option, alreadySelected }) => (
