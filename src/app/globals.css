@@ -123,12 +123,18 @@ input[type="date"]::-webkit-date-and-time-value {
 }
 
 /*
- * Safari: native select controls can compute a smaller intrinsic height than
- * text inputs even with the same padding/font-size. Give selects a baseline
- * min-height unless a component already pins height via Tailwind `h-*`.
+ * Safari: date inputs and native selects compute a different intrinsic height
+ * than text inputs even with identical padding/font-size. Pin both to the same
+ * 42px height (py-2.5 + text-sm line-height + 2px border) so all field types
+ * are visually consistent. Skip components that already pin height via `h-*`.
  */
+.te-date-input {
+  height: 42px;
+}
+
 select:not(.h-10):not(.h-11) {
-  min-height: 42px;
+  height: 42px;
+  min-height: unset;
 }
 
 /*
