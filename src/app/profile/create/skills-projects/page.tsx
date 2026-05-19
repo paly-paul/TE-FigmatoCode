@@ -2655,8 +2655,7 @@ function SkillsProjectsPageContent() {
                             )}
                           </label>
 
-                          <div className="grid grid-cols-2 gap-3 col-span-full">
-                            <label className="flex flex-col gap-2">
+                          <label className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">Project Start Date <span className="text-red-500">*</span></span>
                               <input
                                 type="date"
@@ -2719,7 +2718,6 @@ function SkillsProjectsPageContent() {
                                 <span>In progress — end date not required</span>
                               </label>
                             </div>
-                          </div>
                         </div>
 
                         <label className="flex flex-col gap-2">
