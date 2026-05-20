@@ -1677,7 +1677,7 @@ export default function TalentEngineJobsPage() {
       <JobSuccessPopup
         open={showApplicationSuccess}
         title="Application Submitted Successfully"
-        message="Your interest has been shared with the recruiter. We'll notify you about the next steps."
+        message="Your interest has been shared with the recruiter. We'll notify you."
         onClose={() => {
           setShowApplicationSuccess(false);
           setDrawerSuccessMessage(null);

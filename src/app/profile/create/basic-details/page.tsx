@@ -933,6 +933,7 @@ function BasicDetailsPageContent() {
   const [generatedSummary, setGeneratedSummary] = useState("");
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [profilePicPreview, setProfilePicPreview] = useState<string | null>(null);
   const [isUploadingProfilePic, setIsUploadingProfilePic] = useState(false);
   const [mobileAccordionOpen, setMobileAccordionOpen] = useState({
@@ -1327,6 +1328,14 @@ function BasicDetailsPageContent() {
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const onResize = () => setIsKeyboardOpen(vv.height < window.innerHeight * 0.75);
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
   }, []);
 
   function applyProfileToForm(profile: ResumeProfileData) {
@@ -5234,7 +5243,7 @@ function BasicDetailsPageContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
+      <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-3 flex-wrap${isKeyboardOpen ? " hidden" : ""}`}>
         <div>
           {showUploadResumeShortcut ? (
             <Button

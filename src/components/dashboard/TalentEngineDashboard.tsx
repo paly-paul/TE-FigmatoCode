@@ -592,7 +592,10 @@ export default function TalentEngineDashboard() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [allLocationOptions, setAllLocationOptions] = useState<LocationOption[]>([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [recommendedFilters, setRecommendedFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  // Derived — always reflects the current tab's filters (used for chips, count, drawer init).
+  const activeFilters = activeTab === "Recommended" ? recommendedFilters : appliedFilters;
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
   const [draftPopupOpen, setDraftPopupOpen] = useState(false);
@@ -959,16 +962,24 @@ export default function TalentEngineDashboard() {
           receivedAt: row.accepted_at || undefined,
         }));
 
-        const submittedJobIds = new Set(
-          localSubmittedActionCards
-            .map((card) => card.jobDocumentId?.trim() || "")
-            .filter(Boolean)
-        );
+        // Track the highest submitted stage rank per job so we only suppress cards
+        // at the same or lower stage — higher-stage cards (e.g. salary negotiation
+        // after accepting recruiter interest) must still appear.
+        const submittedRankByJobId = new Map<string, number>();
+        for (const card of localSubmittedActionCards) {
+          const key = card.jobDocumentId?.trim() || "";
+          if (!key) continue;
+          const rank = actionCardStageRank(card);
+          if (!submittedRankByJobId.has(key) || rank > submittedRankByJobId.get(key)!) {
+            submittedRankByJobId.set(key, rank);
+          }
+        }
         const mergedByJob = new Map<string, ActionCard>();
         for (const card of [...localAcceptedCards, ...nextActions]) {
           const key = card.jobDocumentId?.trim();
           if (!key) continue;
-          if (submittedJobIds.has(key)) continue;
+          const submittedRank = submittedRankByJobId.get(key) ?? -1;
+          if (submittedRank >= 0 && actionCardStageRank(card) <= submittedRank) continue;
           const acceptedAtForJob = localAcceptedAtByJob.get(key) || "";
           const cardWithTimelineBackfill: ActionCard = {
             ...card,
@@ -1483,8 +1494,9 @@ export default function TalentEngineDashboard() {
   /** Same job set as the list uses for filtering, but ignoring location — avoids orphan locations when search/skills hide all jobs in a place. */
   const jobsForLocationFacets = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    const filters = activeTab === "Recommended" ? recommendedFilters : appliedFilters;
     const selectedRotations = new Set(
-      activeFilters.seniorityLevels.map(normalizeRotationForDashboardFilter)
+      filters.seniorityLevels.map(normalizeRotationForDashboardFilter)
     );
 
     const filterExceptLocation = (sourceJobs: JobListing[]) =>
@@ -1503,20 +1515,20 @@ export default function TalentEngineDashboard() {
             .includes(normalizedQuery);
 
         const matchesSkills =
-          activeFilters.skills.length === 0 ||
-          activeFilters.skills.some((skill) => job.skills.includes(skill));
+          filters.skills.length === 0 ||
+          filters.skills.some((skill) => job.skills.includes(skill));
 
         const matchesEmployment =
-          activeFilters.employmentTypes.length === 0 ||
-          activeFilters.employmentTypes.includes(job.employmentType);
+          filters.employmentTypes.length === 0 ||
+          filters.employmentTypes.includes(job.employmentType);
 
         const matchesSeniority =
-          activeFilters.seniorityLevels.length === 0 ||
+          filters.seniorityLevels.length === 0 ||
           selectedRotations.has(rotationBucketFromJobListing(job));
 
         const matchesSalary =
-          job.hourlyRate >= activeFilters.salaryMin &&
-          job.hourlyRate <= activeFilters.salaryMax;
+          job.hourlyRate >= filters.salaryMin &&
+          job.hourlyRate <= filters.salaryMax;
 
         const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
@@ -1534,7 +1546,8 @@ export default function TalentEngineDashboard() {
     return filterExceptLocation([...apiApplicationJobs, ...apiInterestJobs]);
   }, [
     activeTab,
-    activeFilters,
+    recommendedFilters,
+    appliedFilters,
     apiApplicationJobs,
     apiInterestJobs,
     apiRecommendedJobs,
@@ -1657,47 +1670,41 @@ export default function TalentEngineDashboard() {
 
   const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const selectedRotations = new Set(
-      activeFilters.seniorityLevels.map(normalizeRotationForDashboardFilter)
-    );
+    const normalizedSelectedLocations = selectedLocations
+      .map((id) => normalizeLocationId(id))
+      .filter(Boolean);
 
-    const filterList = (sourceJobs: JobListing[]) =>
-      sourceJobs.filter((job) => {
+    const makeFilterFn = (filters: FilterState) => {
+      const selectedRotations = new Set(
+        filters.seniorityLevels.map(normalizeRotationForDashboardFilter)
+      );
+      return (job: JobListing) => {
         const matchesSearch =
           normalizedQuery.length === 0 ||
-          [
-            job.title,
-            job.company,
-            job.location,
-            job.locationFull,
-            ...job.skills,
-          ]
+          [job.title, job.company, job.location, job.locationFull, ...job.skills]
             .join(" ")
             .toLowerCase()
             .includes(normalizedQuery);
 
-        const normalizedSelectedLocations = selectedLocations
-          .map((id) => normalizeLocationId(id))
-          .filter(Boolean);
         const matchesLocation =
           normalizedSelectedLocations.length === 0 ||
           normalizedSelectedLocations.includes(normalizeLocationId(job.locationId));
 
         const matchesSkills =
-          activeFilters.skills.length === 0 ||
-          activeFilters.skills.some((skill) => job.skills.includes(skill));
+          filters.skills.length === 0 ||
+          filters.skills.some((skill) => job.skills.includes(skill));
 
         const matchesEmployment =
-          activeFilters.employmentTypes.length === 0 ||
-          activeFilters.employmentTypes.includes(job.employmentType);
+          filters.employmentTypes.length === 0 ||
+          filters.employmentTypes.includes(job.employmentType);
 
         const matchesSeniority =
-          activeFilters.seniorityLevels.length === 0 ||
+          filters.seniorityLevels.length === 0 ||
           selectedRotations.has(rotationBucketFromJobListing(job));
 
         const matchesSalary =
-          job.hourlyRate >= activeFilters.salaryMin &&
-          job.hourlyRate <= activeFilters.salaryMax;
+          job.hourlyRate >= filters.salaryMin &&
+          job.hourlyRate <= filters.salaryMax;
 
         const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
@@ -1710,20 +1717,26 @@ export default function TalentEngineDashboard() {
           matchesSalary &&
           matchesSaved
         );
-      });
+      };
+    };
 
-    const recommendedFiltered = filterList(recommendedSourceJobs)
+    const filterRecommended = makeFilterFn(recommendedFilters);
+    const filterApplied = makeFilterFn(appliedFilters);
+
+    const recommendedFiltered = recommendedSourceJobs
+      .filter(filterRecommended)
       .filter((job) => !(job.jobDocumentId && appliedJobDocumentIds.has(job.jobDocumentId)))
       .sort((a, b) => recencyScoreFromPostedTime(a.postedTime) - recencyScoreFromPostedTime(b.postedTime))
       .slice(0, DASHBOARD_RECOMMENDED_JOBS_LIMIT);
 
     return {
       visibleRecommendedJobs: recommendedFiltered,
-      visibleApplicationJobs: filterList(applicationSourceJobs),
-      visibleAppliedInterestJobs: filterList(apiInterestJobs),
+      visibleApplicationJobs: applicationSourceJobs.filter(filterApplied),
+      visibleAppliedInterestJobs: apiInterestJobs.filter(filterApplied),
     };
   }, [
-    activeFilters,
+    recommendedFilters,
+    appliedFilters,
     appliedJobDocumentIds,
     savedJobIds,
     searchQuery,
@@ -2164,6 +2177,7 @@ export default function TalentEngineDashboard() {
           }
           removeSubmittedActionCard();
           countdownResetRef.current();
+          void triggerDashboardRefresh();
           showActionSuccess(
             "Great Choice!",
             "You've successfully accepted the job invitation. Stay tuned for updates from the recruiter."
@@ -2189,7 +2203,7 @@ export default function TalentEngineDashboard() {
             setApplicationSubTab("Applied Jobs");
             showActionSuccess(
               "Application Submitted!",
-              "Your interest has been shared with the recruiter. We'll notify you about the next steps."
+              "Your interest has been shared with the recruiter. We'll notify you."
             );
           }
         }
@@ -2518,7 +2532,7 @@ export default function TalentEngineDashboard() {
       <FilterDrawer
         open={filterDrawerOpen}
         onClose={() => setFilterDrawerOpen(false)}
-        onApply={(filters) => setActiveFilters(filters)}
+        onApply={(filters) => activeTab === "Recommended" ? setRecommendedFilters(filters) : setAppliedFilters(filters)}
         triggerRef={filterButtonRef}
         initialFilters={activeFilters}
         skillsOptions={baseSkills}

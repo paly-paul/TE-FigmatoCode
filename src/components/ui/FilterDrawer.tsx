@@ -167,19 +167,24 @@ function SalaryRange({
 
   return (
     <div>
-      <div className="relative h-5 mx-1 mb-5">
-        <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full bg-gray-200" />
+      <div className="relative h-6 mx-1 mb-5">
+        {/* Track — inline transform avoids Safari multi-class transform bug */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-blue-600"
-          style={{ left: `${minPct}%`, right: `${100 - maxPct}%` }}
+          className="absolute left-0 right-0 h-1.5 rounded-full bg-gray-200"
+          style={{ top: "50%", transform: "translateY(-50%)" }}
         />
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
-          style={{ left: `${minPct}%` }}
+          className="absolute h-1.5 rounded-full bg-blue-600"
+          style={{ left: `${minPct}%`, right: `${100 - maxPct}%`, top: "50%", transform: "translateY(-50%)" }}
+        />
+        {/* Thumb circles — single transform avoids Safari -translate-x + -translate-y stacking issue */}
+        <div
+          className="absolute h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+          style={{ left: `${minPct}%`, top: "50%", transform: "translate(-50%, -50%)" }}
         />
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
-          style={{ left: `${maxPct}%` }}
+          className="absolute h-4 w-4 rounded-full border-2 border-blue-600 bg-white shadow-sm pointer-events-none"
+          style={{ left: `${maxPct}%`, top: "50%", transform: "translate(-50%, -50%)" }}
         />
         <input
           type="range"
