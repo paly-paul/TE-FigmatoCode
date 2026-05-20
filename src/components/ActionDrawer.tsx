@@ -4,6 +4,7 @@ import {
   Banknote,
   Building2,
   Calendar,
+  CalendarRange,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -193,14 +194,25 @@ function normalizeAvailableDateFromApi(raw: string | undefined, minIsoDate: stri
 function formatTimelineDate(value?: string): string | undefined {
   const raw = value?.trim();
   if (!raw) return undefined;
-  const parsed = new Date(raw);
+
+  let parsed = new Date(raw);
+
+  // Handle DD/M/YYYY or DD/MM/YYYY which new Date() can't reliably parse
   if (Number.isNaN(parsed.getTime())) {
-    // Keep raw only for date-like strings; ignore status labels such as "Submitted".
-    const looksDateLike =
-      /\d/.test(raw) && (raw.includes("-") || raw.includes("/") || raw.includes(","));
-    return looksDateLike ? raw : undefined;
+    const ddmmyyyy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+      parsed = new Date(Number(ddmmyyyy[3]), Number(ddmmyyyy[2]) - 1, Number(ddmmyyyy[1]));
+    }
   }
-  return parsed.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString("en-GB", { month: "short", day: "2-digit", year: "numeric" });
+  }
+
+  // Keep raw only for date-like strings; ignore status labels such as "Submitted".
+  const looksDateLike =
+    /\d/.test(raw) && (raw.includes("-") || raw.includes("/") || raw.includes(","));
+  return looksDateLike ? raw : undefined;
 }
 
 /** `isSourcingAccepted` only means "submit already done" for recruiter-interest cards — not interview/salary stages. */
@@ -432,16 +444,6 @@ export default function ActionDrawer({
     setShowSuccessPopup(false);
   }, [open, drawerFormResetKey, minAvailableDate, action]);
 
-  const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
-    ? ["Job Description", "Timeline"]
-    : isRecruiterInterestCard(action)
-      ? ["Job Description", "Job Action", "Timeline"]
-    : isActionableStageCard(action)
-      ? [...actionDrawerChrome.tabs]
-    : shouldUseFirstTimeJobTabs(action)
-      ? ["Job Description", "Job Action", "Timeline"]
-      : [...actionDrawerChrome.tabs];
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia(MOBILE_MQ);
@@ -462,6 +464,20 @@ export default function ActionDrawer({
     normalizedTitle === actionDrawerTitleMatchers.salaryNegotiation ||
     normalizedTitle.includes("negotiation") ||
     normalizedTitle.includes("proposal");
+
+  const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
+    ? ["Job Description", "Timeline"]
+    : isRecruiterInterestCard(action)
+      ? ["Job Description", "Job Action", "Timeline"]
+    : isInterviewScheduled
+      ? ["Job Action", "Job Description", "Timeline"]
+    : isSalaryNegotiation
+      ? ["Job Action", "Job Description", "Timeline"]
+    : isActionableStageCard(action)
+      ? [...actionDrawerChrome.tabs]
+    : shouldUseFirstTimeJobTabs(action)
+      ? ["Job Description", "Job Action", "Timeline"]
+      : [...actionDrawerChrome.tabs];
   const isDirectApply = isDirectJobApplyCard(action);
   const roleTitle =
     (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation
@@ -813,7 +829,15 @@ export default function ActionDrawer({
       : rawMatchScore >= 40
         ? "bg-yellow-400"
         : "bg-red-400";
-  const resolvedPostedAgo = rrDetails?.posted_time || action?.timestamp || actionDrawerJobSummary.postedAgo;
+  const resolvedPostedAgo = (() => {
+    const raw = rrDetails?.posted_time || action?.timestamp || "";
+    if (!raw) return actionDrawerJobSummary.postedAgo;
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    }
+    return raw;
+  })();
   const resolvedReferenceId = action?.jobDocumentId?.trim() || action?.proposalName?.trim() || "—";
   const resolvedRotationCycle =
     rrDetails?.rotation_cycle?.trim() === "0"
@@ -1077,292 +1101,82 @@ export default function ActionDrawer({
       : null;
 
     return (
-    <div className="space-y-3.5">
-      {/* ── Proposal ── */}
-      <div className="overflow-hidden rounded-xl border border-[#D8E3F8] bg-white shadow-sm">
-        <button
-          type="button"
-          onClick={() =>
-            setIsProposalExpanded((current) => {
-              const next = !current;
-              if (next) setIsSalaryNegotiationExpanded(false);
-              return next;
-            })
-          }
-          className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
-              <FileText className="h-4 w-4 text-[#1D4ED8]" />
-            </div>
-            <h3 className="text-base font-semibold text-[#202939]">Proposal Details</h3>
+      <div className="space-y-3.5">
+
+        {/* ── Proposal card ── */}
+        <div className="overflow-hidden rounded-xl border border-[#E6ECF6] bg-white">
+          <div className="px-4 pt-4 pb-1">
+            <h3 className="text-sm font-semibold text-[#202939]">Proposal</h3>
           </div>
-          {isProposalExpanded
-            ? <ChevronUp className="h-5 w-5 text-[#5E7397]" />
-            : <ChevronDown className="h-5 w-5 text-[#5E7397]" />}
-        </button>
 
-        {isProposalExpanded && (
-          <div className="border-t border-[#E6ECF6] divide-y divide-[#F0F4FA]">
+          {/* Loading */}
+          {proposalLoading && (
+            <div className="flex items-center justify-center px-4 py-8 gap-3">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+              <p className="text-sm text-[#5E7397]">Loading proposal…</p>
+            </div>
+          )}
+          {proposalError && !proposalLoading && (
+            <p className="px-4 pb-4 text-xs text-red-500">{proposalError}</p>
+          )}
 
-            {/* Loading / error */}
-            {proposalLoading && (
-              <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
-                <p className="text-sm font-semibold text-[#202939]">Loading proposal details…</p>
-                <p className="text-sm text-[#5E7397]">Fetching your salary proposal.</p>
-              </div>
-            )}
-            {proposalError && !proposalLoading && (
-              <p className="px-4 py-3 text-xs text-red-500">{proposalError}</p>
-            )}
-
-            {/* ── Status banner ── */}
-            {proposalData && (
-              <div className="px-4 py-3 bg-emerald-50 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {proposalData.rr_candidate_status || "Awaiting Candidate Acceptance"}
-                </span>
-                {proposalData.proposal_name && (
-                  <span className="text-xs text-emerald-700 font-medium">{proposalData.proposal_name}</span>
-                )}
-                {proposalData.proposal_version && (
-                  <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                    Version {proposalData.proposal_version}
+          {proposalData && (
+            <>
+              {/* Version row */}
+              {proposalData.proposal_version && (
+                <div className="px-4 py-3">
+                  <span className="text-xs font-semibold text-[#5E7397]">
+                    V{proposalData.proposal_version}
                   </span>
-                )}
-              </div>
-            )}
-
-            {/* ── Your Compensation ── */}
-            {proposalData && (
-              <div className="px-4 py-4 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Banknote className="h-4 w-4 text-[#1D4ED8]" />
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#1D4ED8]">Your Compensation</p>
                 </div>
+              )}
 
-                {/* Hero salary */}
-                <div className="rounded-xl bg-gradient-to-br from-[#1D4ED8] to-[#3B82F6] px-4 py-4 text-white">
-                  <p className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">Base Salary</p>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-bold">
-                      {proposalData.candidate_expected_salary != null
-                        ? `${cur} ${proposalData.candidate_expected_salary.toLocaleString()}`
-                        : "—"}
-                    </span>
-                    <span className="text-base font-medium text-blue-200">/ {freq}</span>
-                  </div>
-                  <p className="mt-1.5 text-xs text-blue-200">All values are rounded off</p>
+              {/* Salary row */}
+              <div className="flex items-end justify-between px-4 pb-4 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-[#1D4ED8]">Base Salary</p>
+                  <p className="mt-0.5 text-xs text-[#1D4ED8]">All values are rounded off.</p>
                 </div>
-
-                {/* Rate breakdown table */}
-                {rateRows.length > 0 && (
-                  <div className="rounded-xl border border-[#E6ECF6] overflow-hidden">
-                    <div className="bg-[#F8FAFF] px-3 py-2 flex items-center gap-2">
-                      <TrendingUp className="h-3.5 w-3.5 text-[#5E7397]" />
-                      <p className="text-xs font-semibold text-[#5E7397] uppercase tracking-wide">Rate Breakdown</p>
-                    </div>
-                    {rateRows.map((row, i) => (
-                      <div
-                        key={row.label}
-                        className={`flex items-center justify-between px-3 py-2.5 ${i < rateRows.length - 1 ? "border-b border-[#F0F4FA]" : ""} ${row.highlight ? "bg-blue-50/50" : ""}`}
-                      >
-                        <span className={`text-sm ${row.highlight ? "font-semibold text-[#202939]" : "text-[#5E7397]"}`}>
-                          {row.label}
-                        </span>
-                        <span className={`text-sm font-bold ${row.highlight ? "text-[#1D4ED8]" : "text-[#202939]"}`}>
-                          {row.value}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Assignment Details ── */}
-            {proposalData && (
-              <div className="px-4 py-4 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-4 w-4 text-[#5E7397]" />
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#5E7397]">Assignment Details</p>
-                </div>
-
-                <div className="rounded-xl border border-[#E6ECF6] overflow-hidden">
-                  {[
-                    {
-                      icon: <Calendar className="h-4 w-4 text-indigo-500 shrink-0" />,
-                      label: "Joining Date",
-                      value: fmtDate(proposalData.proposed_joining_date),
-                      emphasis: true,
-                    },
-                    {
-                      icon: <ChevronRight className="h-4 w-4 text-[#5E7397] shrink-0" />,
-                      label: "Contract Period",
-                      value:
-                        fmtDate(proposalData.start_date) && fmtDate(proposalData.end_date)
-                          ? `${fmtDate(proposalData.start_date)} → ${fmtDate(proposalData.end_date)}`
-                          : fmtDate(proposalData.start_date),
-                      emphasis: false,
-                    },
-                    {
-                      icon: <MapPin className="h-4 w-4 text-[#5E7397] shrink-0" />,
-                      label: "Country",
-                      value: proposalData.country,
-                      emphasis: false,
-                    },
-                    {
-                      icon: <Clock className="h-4 w-4 text-[#5E7397] shrink-0" />,
-                      label: "Working Hours",
-                      value:
-                        proposalData.hours_per_day != null && proposalData.days_per_week != null
-                          ? `${proposalData.hours_per_day} hrs/day · ${proposalData.days_per_week} days/week`
-                          : null,
-                      emphasis: false,
-                    },
-                    {
-                      icon: <Building2 className="h-4 w-4 text-[#5E7397] shrink-0" />,
-                      label: "Client Bill Rate",
-                      value: clientRateStr,
-                      emphasis: false,
-                    },
-                  ]
-                    .filter((r) => r.value)
-                    .map((row, i, arr) => (
-                      <div
-                        key={row.label}
-                        className={`flex items-start gap-3 px-3 py-2.5 ${i < arr.length - 1 ? "border-b border-[#F0F4FA]" : ""}`}
-                      >
-                        <div className="mt-0.5">{row.icon}</div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-[#5E7397]">{row.label}</p>
-                          <p className={`text-sm mt-0.5 ${row.emphasis ? "font-bold text-[#1D4ED8]" : "font-semibold text-[#202939]"}`}>
-                            {row.value}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Customer Remarks ── */}
-            {proposalData?.customer_remarks && (
-              <div className="px-4 py-4">
-                <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1.5">Remarks from Client</p>
-                  <p className="text-sm text-amber-900 leading-relaxed">{proposalData.customer_remarks}</p>
-                </div>
-              </div>
-            )}
-
-            {/* ── Terms & Responsibilities ── */}
-            {(proposalData?.by_customer_terms?.length || proposalData?.by_candidate_terms?.length) && (
-              <div className="px-4 py-4 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Shield className="h-4 w-4 text-[#5E7397]" />
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#5E7397]">
-                    What&apos;s Covered
+                <div className="text-right shrink-0">
+                  <p className="text-2xl font-bold text-[#1D4ED8] leading-none">
+                    {proposalData.candidate_expected_salary != null
+                      ? `$${proposalData.candidate_expected_salary.toLocaleString()}`
+                      : "—"}
+                    <span className="text-sm font-medium text-[#1D4ED8] ml-1">/{freq}</span>
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#1D4ED8]">
+                    Estimated Total
                   </p>
                 </div>
-                <p className="text-xs text-[#5E7397] -mt-2">
-                  Benefits and costs handled on your behalf
-                </p>
-
-                {proposalData?.by_customer_terms?.length ? (
-                  <div className="rounded-xl border border-[#E6ECF6] px-4 py-3">
-                    <p className="text-xs font-semibold text-emerald-700 mb-2.5 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Covered by Client / TE
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {proposalData.by_customer_terms.map((t) => (
-                        <span
-                          key={t}
-                          className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-medium text-emerald-700"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {proposalData?.by_candidate_terms?.length ? (
-                  <div className="rounded-xl border border-[#E6ECF6] px-4 py-3">
-                    <p className="text-xs font-semibold text-orange-700 mb-2.5">Your Responsibility</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {proposalData.by_candidate_terms.map((t) => (
-                        <span
-                          key={t}
-                          className="rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-700"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
               </div>
-            )}
+
+              {/* Proposed joining date */}
+              {proposalData.proposed_joining_date && (
+                <div className="border-t border-[#F0F4FA] px-4 py-3">
+                  <p className="text-sm text-[#202939]">
+                    <span className="text-[#5E7397]">Proposed Joining Date —</span>{" "}
+                    <span className="font-semibold">{fmtDate(proposalData.proposed_joining_date)}</span>
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Clarification box (shown when Request Clarification is tapped) ── */}
+        {showClarificationBox && (
+          <div ref={clarificationBoxRef} className="rounded-xl border border-[#E6ECF6] bg-white px-4 py-4">
+            <h4 className="mb-1 text-sm font-semibold text-[#202939]">Your Remarks</h4>
+            <p className="mb-2.5 text-xs text-[#5E7397]">Share your counter-offer or ask for clarification on any terms.</p>
+            <textarea
+              value={clarificationRemark}
+              onChange={(event) => setClarificationRemark(event.target.value)}
+              placeholder="E.g. I'd like to discuss the base rate or the joining date..."
+              className="min-h-[130px] w-full resize-y rounded-xl border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-blue-100"
+            />
           </div>
         )}
       </div>
-
-      {/* ── Salary Negotiation ── */}
-      <div className="overflow-hidden rounded-xl border border-[#D8E3F8] bg-white shadow-sm">
-        <button
-          type="button"
-          onClick={() =>
-            setIsSalaryNegotiationExpanded((current) => {
-              const next = !current;
-              if (next) {
-                setIsProjectInfoExpanded(false);
-                setIsProposalExpanded(false);
-              }
-              return next;
-            })
-          }
-          className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
-              <Banknote className="h-4 w-4 text-violet-600" />
-            </div>
-            <h3 className="text-base font-semibold text-[#202939]">Salary Negotiation</h3>
-          </div>
-          {isSalaryNegotiationExpanded
-            ? <ChevronUp className="h-5 w-5 text-[#5E7397]" />
-            : <ChevronDown className="h-5 w-5 text-[#5E7397]" />}
-        </button>
-
-        {isSalaryNegotiationExpanded && (
-          <div className="border-t border-[#E6ECF6] px-4 py-4">
-            {showClarificationBox ? (
-              <div ref={clarificationBoxRef}>
-                <h4 className="mb-1.5 text-sm font-semibold text-[#202939]">Your Remarks</h4>
-                <p className="mb-2.5 text-xs text-[#5E7397]">Share your counter-offer or ask for clarification on any terms.</p>
-                <textarea
-                  value={clarificationRemark}
-                  onChange={(event) => setClarificationRemark(event.target.value)}
-                  placeholder="E.g. I'd like to discuss the base rate or the joining date..."
-                  className="min-h-[130px] w-full resize-y rounded-xl border border-[#D6DCEA] p-3 text-sm text-[#202939] outline-none transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-            ) : (
-              <div className="rounded-xl bg-[#F8FAFF] border border-[#E6ECF6] px-4 py-3">
-                <p className="text-sm font-medium text-[#202939] mb-0.5">Want to negotiate?</p>
-                <p className="text-xs text-[#5E7397]">
-                  Tap &quot;Request Clarification&quot; below to share your counter-offer or questions about this proposal.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
     );
   };
 
@@ -1392,7 +1206,7 @@ export default function ActionDrawer({
           date: recruiterAcceptedDateLabel,
         });
       }
-      if (stageReceivedDateLabel && stageReceivedDateLabel !== recruiterAcceptedDateLabel) {
+      if (stageReceivedDateLabel) {
         milestones.push({
           title: "Interview Accepted",
           date: stageReceivedDateLabel,
@@ -1740,6 +1554,8 @@ export default function ActionDrawer({
 
   const footerContent = isApplicationTimelineCard(action)
     ? undefined
+    : ((isInterviewScheduled || isSalaryNegotiation) && activeTab !== "Job Action")
+    ? undefined
     : isSalaryNegotiation ? (
     showClarificationBox ? (
       <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
@@ -1826,9 +1642,11 @@ export default function ActionDrawer({
 
   const mobileDrawerContent = (
     <>
-      <p className="-mt-1 text-sm text-[#5E7397]">
-        {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : jobDescriptionLoading ? "…" : "—"}
-      </p>
+      {(rrDetails?.rr_name || jobDescriptionLoading) ? (
+        <p className="-mt-1 text-sm text-[#5E7397]">
+          {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : "…"}
+        </p>
+      ) : null}
 
       <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -1837,7 +1655,6 @@ export default function ActionDrawer({
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#5E7397]">{resolvedPostedAgo}</span>
-            <ChevronDown className="h-4 w-4 text-[#202939]" />
           </div>
         </div>
 
@@ -1888,11 +1705,13 @@ export default function ActionDrawer({
         contentClassName={isMobileViewport ? "space-y-4" : "mx-auto max-w-[1040px] space-y-3.5 sm:space-y-4"}
         footer={footerContent}
         headerActions={isMobileViewport ? undefined : (
-          <div className="text-right">
-            <p className="text-xs text-[#5E7397] sm:text-sm">
-              {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : jobDescriptionLoading ? "…" : "—"}
-            </p>
-          </div>
+          (rrDetails?.rr_name || jobDescriptionLoading) ? (
+            <div className="text-right">
+              <p className="text-xs text-[#5E7397] sm:text-sm">
+                {rrDetails?.rr_name ? `#${rrDetails.rr_name}` : "…"}
+              </p>
+            </div>
+          ) : undefined
         )}
       >
         {isMobileViewport ? mobileDrawerContent : (
