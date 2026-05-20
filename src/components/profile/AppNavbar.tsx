@@ -114,6 +114,16 @@ export default function AppNavbar() {
     router.push(href);
   };
 
+  const handleLogoutClick = () => {
+    if (isLoggingOut) return;
+    // Let wizard pages intercept (unsaved changes → show their modal first).
+    const event = new CustomEvent("te:logout-attempt", { cancelable: true });
+    window.dispatchEvent(event);
+    if (!event.defaultPrevented) {
+      setShowLogoutConfirm(true);
+    }
+  };
+
   const handleLogout = async () => {
     if (isLoggingOut) return;
 
@@ -131,7 +141,7 @@ export default function AppNavbar() {
       clearAllRecommendedJobsCache();
       setMobileMenuOpen(false);
       setProfileOpen(false);
-      router.push("/login");
+      router.replace("/login");
       router.refresh();
       setIsLoggingOut(false);
     }
@@ -284,7 +294,7 @@ export default function AppNavbar() {
 
                   <button
                     type="button"
-                    onClick={() => setShowLogoutConfirm(true)}
+                    onClick={handleLogoutClick}
                     disabled={isLoggingOut}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
@@ -361,7 +371,7 @@ export default function AppNavbar() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowLogoutConfirm(true)}
+                  onClick={handleLogoutClick}
                   disabled={isLoggingOut}
                   className="flex items-center gap-2 px-4 py-2 rounded-md text-red-600 hover:bg-red-50 text-left text-sm"
                 >

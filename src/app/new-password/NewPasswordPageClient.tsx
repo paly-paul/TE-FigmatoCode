@@ -44,7 +44,7 @@ export default function NewPasswordPageClient() {
     try {
       await resetUserPassword(email, newPassword);
       const encodedEmail = encodeURIComponent(email);
-      router.push(`/password-updated/?email=${encodedEmail}`);
+      router.replace(`/password-updated/?email=${encodedEmail}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to reset password.");
     } finally {

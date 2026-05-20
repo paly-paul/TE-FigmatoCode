@@ -18,7 +18,7 @@ import {
   hasProceededPastResumeUpload,
   markProceededPastResumeUpload,
 } from "@/lib/profileSession";
-import { getLoginIdentityPrefill, getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { getLoginIdentityPrefill, getSessionLoginEmail, isProfileComplete } from "@/lib/profileOnboarding";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import {
   createPreProfile,
@@ -228,6 +228,13 @@ export default function CreateProfilePage() {
   const [isResolvingEntryStep, setIsResolvingEntryStep] = useState(true);
   // Keep initial render identical to server HTML to avoid hydration mismatch.
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  // Redirect completed profiles back to dashboard — back-button guard for the upload step.
+  useEffect(() => {
+    if (isProfileComplete()) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
 
   // Resolve initial entry step before rendering upload UI:
   // if the user already proceeded past this step earlier, restore them to basic details.
@@ -851,7 +858,10 @@ function MobileResumeUploadCard({
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
-    if (!allowed.includes(file.type)) {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const allowedByExt = ext === "pdf" || ext === "docx";
+    // Safari (iCloud/Files app) often omits the MIME type; fall back to extension.
+    if (!allowed.includes(file.type) && !allowedByExt) {
       alert("Only PDF or DOCX files are supported.");
       return;
     }
@@ -908,7 +918,7 @@ function MobileResumeUploadCard({
         ref={inputRef}
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
           void handleFiles(e.target.files);
           e.target.value = "";

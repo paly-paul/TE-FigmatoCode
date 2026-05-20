@@ -32,9 +32,11 @@ import {
 import WelcomeBackModal from "./WelcomeBackModal";
 import { DASHBOARD_WELCOME_PENDING_KEY } from "@/lib/dashboardWelcome";
 import { getDraftProfilePending, clearDraftProfilePending } from "@/lib/draftProfilePending";
+import LogoutConfirmModal from "@/components/ui/LogoutConfirmModal";
 import { DraftProfilePopup } from "@/components/ui/DraftProfilePopup";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
 import {
+  clearAllRecommendedJobsCache,
   readRecommendedJobsCache,
   writeRecommendedJobsCache,
 } from "@/lib/recommendedJobsCache";
@@ -47,8 +49,9 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useIsMobile } from "@/lib/useResponsive";
-import { getCandidateId, getProfileName } from "@/lib/authSession";
-import { getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { clearAuthSession, getCandidateId, getProfileName } from "@/lib/authSession";
+import { clearSessionLoginEmail, getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { clearResumeWizardSession } from "@/lib/profileSession";
 import { getCandidateActionables } from "@/services/jobs/getCandidateActionables";
 import {
   createFavourite,
@@ -594,6 +597,8 @@ export default function TalentEngineDashboard() {
   const [welcomeUserName, setWelcomeUserName] = useState("");
   const [draftPopupOpen, setDraftPopupOpen] = useState(false);
   const [draftQueuedAfterWelcome, setDraftQueuedAfterWelcome] = useState(false);
+  const [showBackLogoutModal, setShowBackLogoutModal] = useState(false);
+  const [isBackLoggingOut, setIsBackLoggingOut] = useState(false);
   const [jobSearchStatusPopup, setJobSearchStatusPopup] = useState<{
     open: boolean;
     variant: "success" | "error";
@@ -1150,6 +1155,39 @@ export default function TalentEngineDashboard() {
       setDraftPopupOpen(true);
     }
   }, []);
+
+  // Intercept browser back / iOS swipe-back on the dashboard.
+  // Pushes a sentinel history entry so popstate fires before the browser
+  // navigates away, then shows a logout confirmation instead.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sentinel = { teDashboardTrap: true };
+    window.history.pushState(sentinel, document.title, window.location.href);
+    const onPopState = () => {
+      // Re-push the sentinel so the next back press is caught too.
+      window.history.pushState(sentinel, document.title, window.location.href);
+      setShowBackLogoutModal(true);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const handleBackButtonLogout = async () => {
+    if (isBackLoggingOut) return;
+    setIsBackLoggingOut(true);
+    try {
+      await fetch("/api/method/logout", { method: "POST" });
+    } catch {
+      // continue with local sign-out even if the server call fails
+    } finally {
+      clearAuthSession();
+      clearSessionLoginEmail();
+      clearResumeWizardSession();
+      clearAllRecommendedJobsCache();
+      router.replace("/login");
+      router.refresh();
+    }
+  };
 
   useEffect(() => {
     const currentCandidateId = getCandidateId();
@@ -2486,6 +2524,12 @@ export default function TalentEngineDashboard() {
         skillsOptions={baseSkills}
         skipDropdownSkillsLoad={true}
         isLoadingSkills={isLoadingSkills}
+      />
+      <LogoutConfirmModal
+        open={showBackLogoutModal}
+        busy={isBackLoggingOut}
+        onConfirm={() => void handleBackButtonLogout()}
+        onCancel={() => setShowBackLogoutModal(false)}
       />
       <DraftProfilePopup
         open={draftPopupOpen}
