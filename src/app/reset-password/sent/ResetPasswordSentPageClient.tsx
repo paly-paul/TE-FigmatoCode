@@ -90,7 +90,7 @@ export default function ResetPasswordSentPageClient() {
     setIsSubmittingOtp(true);
     try {
       await verifyResetPasswordOtp(email, otpValue);
-      router.push(`/new-password/?email=${encodeURIComponent(email)}`);
+      router.replace(`/new-password/?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify OTP.");
     } finally {

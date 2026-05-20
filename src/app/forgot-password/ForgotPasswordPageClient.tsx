@@ -33,7 +33,7 @@ export default function ForgotPasswordPageClient() {
     setIsSubmitting(true);
     try {
       await sendResetPasswordOtp(normalizedEmail);
-      router.push(`/reset-password/sent/?email=${encodeURIComponent(normalizedEmail)}`);
+      router.replace(`/reset-password/sent/?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to send OTP.";
       setError(message);

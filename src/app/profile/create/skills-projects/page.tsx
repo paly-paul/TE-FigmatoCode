@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { LightbulbIcon, TrashIcon } from "@/components/icons";
 import { clearSessionLoginEmail, getSessionLoginEmail, isProfileComplete, markProfileComplete } from "@/lib/profileOnboarding";
 import { setDashboardWelcomePending } from "@/lib/dashboardWelcome";
-import { clearDraftProfilePending } from "@/lib/draftProfilePending";
+import { clearDraftProfilePending, setDraftProfilePending } from "@/lib/draftProfilePending";
 import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
 import { clearAllRecommendedJobsCache } from "@/lib/recommendedJobsCache";
 import {
@@ -436,6 +436,14 @@ function SkillsProjectsPageContent() {
     experiences: false,
     projects: false,
   });
+
+  // Redirect completed profiles back to dashboard unless in explicit edit mode.
+  useEffect(() => {
+    if (!isProfileComplete()) return;
+    const editMode = isLikelyDocId(searchParams.get("profile_name")?.trim() || "");
+    if (editMode) return;
+    router.replace("/dashboard");
+  }, [router, searchParams]);
 
   useEffect(() => {
     const queryProfileName =
@@ -2122,6 +2130,11 @@ function SkillsProjectsPageContent() {
         message: "Your latest changes have been saved.",
       });
       markCurrentAsSaved();
+      // Mark draft pending so the dashboard popup appears on next visit/login.
+      // Only for completed profiles being re-edited, not first-time wizard saves.
+      if (isProfileComplete()) {
+        setDraftProfilePending();
+      }
       return true;
     } catch (error) {
       setDraftPopup({
@@ -2202,6 +2215,19 @@ function SkillsProjectsPageContent() {
     return () => document.removeEventListener("click", onDocumentClick, true);
   }, [hasUnsavedChanges]);
 
+  // When the navbar logout button is clicked, intercept if there are unsaved changes.
+  // Show UnsavedChangesModal first; continueNavigation("__logout__") then shows LogoutConfirmModal.
+  useEffect(() => {
+    const onLogoutAttempt = (event: Event) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      setPendingNavigationUrl("__logout__");
+      setShowUnsavedModal(true);
+    };
+    window.addEventListener("te:logout-attempt", onLogoutAttempt);
+    return () => window.removeEventListener("te:logout-attempt", onLogoutAttempt);
+  }, [hasUnsavedChanges]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const qs = new URLSearchParams(window.location.search);
@@ -2259,6 +2285,10 @@ function SkillsProjectsPageContent() {
       window.history.go(-3);
       return;
     }
+    if (target === "__logout__") {
+      setShowLogoutConfirm(true);
+      return;
+    }
     window.location.assign(target);
   }
 
@@ -2301,7 +2331,7 @@ function SkillsProjectsPageContent() {
     if (!lastSubmitWasEdit) {
       setDashboardWelcomePending({ force: true });
     }
-    router.push("/dashboard");
+    router.replace("/dashboard");
   }
 
   function handleUploadResumeShortcut() {

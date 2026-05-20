@@ -246,12 +246,12 @@ export function ResumeUploadArea({
         </div>
       )}
 
-      {/* Hidden file input */}
+      {/* File input: sr-only instead of hidden so Safari allows programmatic .click() */}
       <input
         ref={inputRef}
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
           void handleFiles(e.target.files);
           e.target.value = "";

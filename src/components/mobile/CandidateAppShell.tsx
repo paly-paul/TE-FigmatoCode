@@ -139,7 +139,7 @@ export default function CandidateAppShell({
       clearSessionLoginEmail();
       clearResumeWizardSession();
       setMenuOpen(false);
-      router.push("/login/");
+      router.replace("/login/");
       router.refresh();
       setIsLoggingOut(false);
     }
