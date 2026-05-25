@@ -76,6 +76,7 @@ import {
 import { mergeResolvedCustomerFromPrevious } from "@/services/jobs/mergeResolvedCustomer";
 import { prefetchDropdownDetailsAfterLogin } from "@/services/jobs/dropdownDetails";
 import { getAllLocationOptions } from "@/services/jobs/locationOptions";
+import { getStageStatusMapping } from "@/services/jobs/stageStatusMapping";
 import { getRrDetails } from "@/services/jobs/rrDetails";
 import { StatusPopup } from "../ui/StatusPopup";
 import { JobSuccessPopup } from "../ui/JobSuccessPopup";
@@ -576,7 +577,8 @@ export default function TalentEngineDashboard() {
   const [isLookingForJob, setIsLookingForJob] = useState(true);
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
   const [applicationSubTab, setApplicationSubTab] = useState<"Shortlisted" | "Applied Jobs">("Shortlisted");
-  const [mobileApplicationStage, setMobileApplicationStage] = useState("Stage");
+  const [showRejectedJobs, setShowRejectedJobs] = useState(false);
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [activeActionTab, setActiveActionTab] = useState<
     "Job" | "Interviews" | "Profile" | "General"
   >("Job");
@@ -629,6 +631,14 @@ export default function TalentEngineDashboard() {
     void getAllLocationOptions()
       .then((options) => { if (!cancelled) setAllLocationOptions(options); })
       .catch(() => { if (!cancelled) setAllLocationOptions([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getStageStatusMapping()
+      .then((stages) => { if (!cancelled && stages.length > 0) setStageOptions(stages); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -1573,6 +1583,7 @@ export default function TalentEngineDashboard() {
       const fromCatalog = catalogByNormalizedId.get(id);
       const fromJob = formatJobLocation(job.location, job.locationFull).trim();
       const label = fromCatalog || fromJob || id;
+      if (label === "Unknown location") continue;
       byId.set(id, label);
     }
 
@@ -1731,7 +1742,10 @@ export default function TalentEngineDashboard() {
 
     return {
       visibleRecommendedJobs: recommendedFiltered,
-      visibleApplicationJobs: applicationSourceJobs.filter(filterApplied),
+      visibleApplicationJobs: applicationSourceJobs
+        .filter(filterApplied)
+        .filter((job) => showRejectedJobs ? job.stage === "Rejected" : job.stage !== "Rejected")
+        .filter((job) => appliedFilters.stages.length === 0 || appliedFilters.stages.includes(job.stage)),
       visibleAppliedInterestJobs: apiInterestJobs.filter(filterApplied),
     };
   }, [
@@ -1742,6 +1756,7 @@ export default function TalentEngineDashboard() {
     searchQuery,
     selectedLocations,
     showSavedOnly,
+    showRejectedJobs,
     recommendedSourceJobs,
     applicationSourceJobs,
     apiInterestJobs,
@@ -2538,6 +2553,7 @@ export default function TalentEngineDashboard() {
         skillsOptions={baseSkills}
         skipDropdownSkillsLoad={true}
         isLoadingSkills={isLoadingSkills}
+        stageOptions={activeTab !== "Recommended" && applicationSubTab === "Shortlisted" && stageOptions.length > 0 ? stageOptions : undefined}
       />
       <LogoutConfirmModal
         open={showBackLogoutModal}
@@ -2778,9 +2794,14 @@ export default function TalentEngineDashboard() {
                     }}
                     className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-xl border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 shadow-sm transition-all"
                   >
-                    <div className="mb-3">
+                    <div className="mb-3 flex flex-col gap-2">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                          {job.jobDocumentId && (
+                            <p className="text-xs text-gray-500 mt-1">{job.jobDocumentId}</p>
+                          )}
+                        </div>
                         {job.postedTime && job.postedTime !== "—" && (
                           <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
                         )}
@@ -2905,20 +2926,15 @@ export default function TalentEngineDashboard() {
             </div>
 
             <div className="mb-5 flex justify-between gap-2">
-              <div className="relative mb-4 w-full">
-                <select
-                  value={mobileApplicationStage}
-                  onChange={(event) => setMobileApplicationStage(event.target.value)}
-                  className="h-11 w-full appearance-none rounded-lg border border-gray-200 bg-white pl-4 pr-10 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  {["Stage", "Received", "Shortlisted", "Interview", "Rejected"].map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
+              <label className="mb-4 flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={showRejectedJobs}
+                  onChange={(e) => setShowRejectedJobs(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
+                />
+                Show Rejected
+              </label>
 
               <button
                 ref={filterButtonRef}
@@ -2946,9 +2962,7 @@ export default function TalentEngineDashboard() {
             ) : applicationSubTab === "Shortlisted" ? (
               visibleApplicationJobs.length > 0 ? (
                 <div className="flex flex-col gap-4">
-                  {visibleApplicationJobs
-                    .filter((job) => mobileApplicationStage === "Stage" || job.stage === mobileApplicationStage)
-                    .map((job) => (
+                  {visibleApplicationJobs.map((job) => (
                       <div
                         key={job.id}
                         role="button"
@@ -2970,6 +2984,9 @@ export default function TalentEngineDashboard() {
 
                         <div className="mb-4">
                           <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+                          {job.jobDocumentId && (
+                            <p className="text-xs text-gray-500 mt-1">{job.jobDocumentId}</p>
+                          )}
                           <p className="mt-1 text-sm text-gray-700">{job.company}</p>
                           <p className="mt-1 text-sm text-[#60708F]">
                             {formatJobLocation(job.location, job.locationFull)}
@@ -3433,9 +3450,14 @@ export default function TalentEngineDashboard() {
                         }}
                         className="group flex min-h-[240px] cursor-pointer flex-col justify-between rounded-lg border border-gray-200 border-b-4 border-b-blue-600 bg-white p-4 transition-all hover:border-blue-600 hover:border-b-blue-600 hover:shadow-md sm:p-6"
                       >
-                        <div className="mb-4">
+                        <div className="mb-4 flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
-                            <h3 className="mb-2 font-semibold text-base sm:mb-3 sm:text-lg">{job.title}</h3>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="mb-2 font-semibold text-base sm:mb-3 sm:text-lg">{job.title}</h3>
+                              {job.jobDocumentId && (
+                                <p className="text-xs text-gray-500">{job.jobDocumentId}</p>
+                              )}
+                            </div>
                             {job.postedTime && job.postedTime !== "—" && (
                               <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
                             )}
@@ -3544,7 +3566,16 @@ export default function TalentEngineDashboard() {
                       </button>
                     ))}
                     </div>
-                    <div className="mb-2 flex items-center gap-2">
+                    <div className="mb-2 flex items-center gap-3">
+                      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={showRejectedJobs}
+                          onChange={(e) => setShowRejectedJobs(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
+                        />
+                        Show Rejected
+                      </label>
                       {!isManualRefreshing && (
                         <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
                       )}
@@ -3594,6 +3625,9 @@ export default function TalentEngineDashboard() {
                             >
                               <div>
                                 <p className="font-medium text-gray-900">{job.title}</p>
+                                {job.jobDocumentId && (
+                                  <p className="text-xs text-gray-400 mt-0.5">{job.jobDocumentId}</p>
+                                )}
                               </div>
                               <p className="text-sm text-gray-700">{job.company}</p>
                               <p className="flex justify-center">
@@ -3625,6 +3659,9 @@ export default function TalentEngineDashboard() {
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1">
                                   <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                                  {job.jobDocumentId && (
+                                    <p className="text-xs text-gray-400 mb-1">{job.jobDocumentId}</p>
+                                  )}
                                   <p className="text-sm text-gray-600">{job.company}</p>
                                   <p className="text-xs text-gray-500 mt-1">
                                     {formatJobLocation(job.location, job.locationFull)}

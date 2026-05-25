@@ -12,6 +12,7 @@ export interface FilterState {
   seniorityLevels: string[];
   salaryMin: number;
   salaryMax: number;
+  stages: string[];
 }
 
 interface FilterDrawerProps {
@@ -30,6 +31,8 @@ interface FilterDrawerProps {
   seniorityLevelOptions?: string[];
   skipDropdownSkillsLoad?: boolean;
   isLoadingSkills?: boolean;
+  /** When provided, the drawer shows only a Stage filter (used for the Shortlisted tab). */
+  stageOptions?: string[];
 }
 
 export const EMPLOYMENT_TYPES = [
@@ -48,6 +51,7 @@ export const DEFAULT_FILTERS: FilterState = {
   seniorityLevels: [],
   salaryMin: 0,
   salaryMax: 10000,
+  stages: [],
 };
 
 const DEFAULT_DROPDOWN_CONFIG = {
@@ -269,7 +273,9 @@ export function FilterDrawer({
   seniorityLevelOptions,
   skipDropdownSkillsLoad = false,
   isLoadingSkills = false,
+  stageOptions,
 }: FilterDrawerProps) {
+  const isStageOnlyMode = !!stageOptions?.length;
   const isCompactFilterUi = useIsBelowLg();
   const [resolvedPlacement, setResolvedPlacement] = useState<"bottom" | "right">(
     isCompactFilterUi ? "bottom" : "right"
@@ -577,7 +583,16 @@ export function FilterDrawer({
         )
       }
     >
-      {resolvedPlacement === "bottom" ? (
+      {isStageOnlyMode ? (
+        <div>
+          <p className="mb-3 text-sm font-semibold text-gray-900">Stage</p>
+          <CheckboxGroup
+            options={stageOptions!}
+            selected={filters.stages}
+            onChange={(value) => setValue("stages", value)}
+          />
+        </div>
+      ) : resolvedPlacement === "bottom" ? (
         <div>
           <CollapsibleFilterSection title="Skills">
             {skillsBody}

@@ -220,7 +220,9 @@ function coerceMatchPercent(value: unknown): number {
 export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJobListing {
   const locId = slugifyLocationId(row.job_id);
   const score = coerceMatchPercent(row.score);
-  const resolvedStage = (row.stage || "").trim() || mapApplicationStatusToStage(row.status);
+  const resolvedStage = /reject/i.test(row.status || "")
+    ? "Rejected"
+    : (row.stage || "").trim() || mapApplicationStatusToStage(row.status);
   return {
     id: stableJobNumericId(row.id + row.job_id),
     title: row.job_title,

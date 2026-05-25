@@ -690,11 +690,16 @@ function JobsCard({
     >
       <div className="mb-3 flex flex-col gap-2 sm:mb-4">
         <div className="flex items-start justify-between gap-2">
-          <h3
-            className={`font-semibold text-gray-900 ${compact ? "text-base" : "text-base sm:text-lg"}`}
-          >
-            {job.title}
-          </h3>
+          <div className="flex-1 min-w-0">
+            <h3
+              className={`font-semibold text-gray-900 ${compact ? "text-base" : "text-base sm:text-lg"}`}
+            >
+              {job.title}
+            </h3>
+            {job.jobDocumentId && (
+              <p className="text-xs text-gray-500 mt-1">{job.jobDocumentId}</p>
+            )}
+          </div>
           {job.postedTime && job.postedTime !== "—" && (
             <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap">{job.postedTime}</span>
           )}
@@ -1141,11 +1146,12 @@ export default function TalentEngineJobsPage() {
     const byId = new Map<string, string>();
     for (const job of jobsMatchingNonLocationFilters) {
       const id = job.locationId?.trim();
-      if (!id || id === "—") continue;
+      if (!id || id === "—" || id.toLowerCase() === "unknown-location") continue;
       const fromCatalog = catalogById.get(id);
       const parts = [job.location, job.locationFull].filter((v) => v && v !== "—");
       const fromJob = [...new Set(parts)].join(", ");
       const label = fromCatalog || fromJob || id;
+      if (label.toLowerCase().replace(/\s/g, "-") === "unknown-location") continue;
       if (!byId.has(id)) byId.set(id, label);
     }
 

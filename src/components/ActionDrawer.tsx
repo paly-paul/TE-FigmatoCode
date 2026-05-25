@@ -850,12 +850,12 @@ export default function ActionDrawer({
   const resolvedMetaFields = [
     {
       label: "Position Est. Start Date",
-      value: rrDetails?.position_start_date || "0",
+      value: formatTimelineDate(rrDetails?.position_start_date) || "0",
       icon: "calendar" as const,
     },
     {
       label: "Position Est. End Date",
-      value: rrDetails?.position_est_end_date || "0",
+      value: formatTimelineDate(rrDetails?.position_est_end_date) || "0",
       icon: "calendar" as const,
     },
     {
@@ -1197,80 +1197,65 @@ export default function ActionDrawer({
   };
 
   const renderTimelineContent = () => {
-    const milestones: { title: string; date: string }[] = [];
+    type Milestone = { title: string; date: string | undefined; isCurrent?: boolean };
+    const milestones: Milestone[] = [];
 
     if (isInterviewScheduled) {
-      if (recruiterAcceptedDateLabel) {
-        milestones.push({
-          title: "Recruiter Interest Accepted",
-          date: recruiterAcceptedDateLabel,
-        });
-      }
-      if (stageReceivedDateLabel) {
-        milestones.push({
-          title: "Interview Accepted",
-          date: stageReceivedDateLabel,
-        });
-      }
+      milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
+      milestones.push({ title: "Interview Scheduled", date: stageReceivedDateLabel, isCurrent: true });
     } else if (isSalaryNegotiation) {
-      if (recruiterAcceptedDateLabel) {
-        milestones.push({
-          title: "Recruiter Interest Accepted",
-          date: recruiterAcceptedDateLabel,
-        });
-      }
-      if (stageReceivedDateLabel) {
-        milestones.push({
-          title: "Interview Accepted",
-          date: stageReceivedDateLabel,
-        });
-      }
-      if (proposalJoiningDateLabel) {
-        milestones.push({
-          title: "Salary Proposal Received",
-          date: proposalJoiningDateLabel,
-        });
-      }
+      milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
+      milestones.push({ title: "Interview Accepted", date: stageReceivedDateLabel });
+      milestones.push({ title: "Salary Proposal Received", date: proposalJoiningDateLabel, isCurrent: true });
     } else if (isDirectApply) {
-      const applicationDate = formatTimelineDate(action?.applicationAppliedDate) || stageReceivedDateLabel;
-      const stageLabel = action?.applicationStage?.trim() || "Received";
-      if (applicationDate) {
-        milestones.push({
-          title: "Application Submitted",
-          date: applicationDate,
-        });
-        milestones.push({
-          title: `Current Stage: ${stageLabel}`,
-          date: applicationDate,
-        });
+      if (isApplicationTimelineCard(action)) {
+        const applicationDate = formatTimelineDate(action?.applicationAppliedDate) || stageReceivedDateLabel;
+        const stageLabel = action?.applicationStage?.trim() || "Received";
+        const isInitialStage = /receive|source|appl|await/i.test(stageLabel);
+        const isBeyondInterview = /salary|negotiat|proposal|onboard|hired|placed|active|started|deployed|joined|offer/i.test(stageLabel);
+        const isBeyondSalary = /onboard|hired|placed|active|started|deployed|joined|offer/i.test(stageLabel);
+        milestones.push({ title: "Application Submitted", date: applicationDate });
+        if (!isInitialStage) {
+          milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
+          if (isBeyondInterview) {
+            milestones.push({ title: "Interview Accepted", date: undefined });
+          }
+          if (isBeyondSalary) {
+            milestones.push({ title: "Salary Proposal Accepted", date: undefined });
+          }
+        }
+        milestones.push({ title: `Current Stage: ${stageLabel}`, date: applicationDate, isCurrent: true });
       }
     } else if (recruiterAcceptedDateLabel) {
-      milestones.push({
-        title: actionDrawerTimeline.milestoneTitles.default,
-        date: recruiterAcceptedDateLabel,
-      });
+      milestones.push({ title: actionDrawerTimeline.milestoneTitles.default, date: recruiterAcceptedDateLabel, isCurrent: true });
     }
 
     const hasMilestones = milestones.length > 0;
     return (
       <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
         {hasMilestones ? (
-          <div className="space-y-4">
-            {milestones.map((milestone) => (
-              <div key={`${milestone.title}|${milestone.date}`} className="flex items-center gap-3 sm:gap-4">
-                <div className="flex shrink-0 items-center justify-center" aria-hidden>
-                  <div className="box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] border-[#1447E6] bg-white" />
+          <div>
+            {milestones.map((milestone, index) => {
+              const isLast = index === milestones.length - 1;
+              return (
+                <div key={`${milestone.title}|${index}`} className="flex gap-3 sm:gap-4">
+                  <div className="flex shrink-0 flex-col items-center" aria-hidden>
+                    <div className={`box-content h-2.5 w-2.5 shrink-0 rounded-full border-[3px] ${milestone.isCurrent ? "border-[#1447E6] bg-[#1447E6]" : "border-[#1447E6] bg-white"}`} />
+                    {!isLast && (
+                      <div className="mt-1 min-h-8 w-px flex-1 bg-[#D1D5DB]" />
+                    )}
+                  </div>
+                  <div className={`min-w-0 flex-1 ${isLast ? "" : "pb-4"}`}>
+                    <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
+                      {milestone.title}
+                    </h4>
+                    <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
+                      {milestone.date ?? "—"}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-semibold leading-snug text-[#202939] sm:text-base">
-                    {milestone.title}
-                  </h4>
-                  <p className="mt-0.5 text-xs leading-snug text-[#5E7397] sm:text-sm">
-                    {milestone.date}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-[#E6ECF6] bg-white px-6 py-10 sm:min-h-[220px] sm:py-12">
@@ -1333,7 +1318,7 @@ export default function ActionDrawer({
               dangerouslySetInnerHTML={{ __html: jobDescriptionContent.job_description }}
             />
           ) : null}
-          {jobDescriptionContent.advertised_position_header ? (
+          {/* {jobDescriptionContent.advertised_position_header ? (
             <div
               className="text-sm text-[#202939] [&_h3]:text-base [&_h3]:font-semibold [&_div]:text-xs [&_div]:text-[#5E7397] [&_div]:sm:text-sm"
               dangerouslySetInnerHTML={{ __html: jobDescriptionContent.advertised_position_header }}
@@ -1344,7 +1329,7 @@ export default function ActionDrawer({
               className="text-xs leading-relaxed text-[#5E7397] sm:text-sm [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:mb-3 [&_p]:leading-relaxed [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1"
               dangerouslySetInnerHTML={{ __html: jobDescriptionContent.advertised_position }}
             />
-          ) : null}
+          ) : null} */}
         </div>
       ) : null}
       {!jobDescriptionLoading && !jobDescriptionContent && jobDescriptionError ? (
