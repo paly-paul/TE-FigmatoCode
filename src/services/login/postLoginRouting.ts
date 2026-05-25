@@ -1,6 +1,7 @@
 "use client";
 
 import { getProfileGenerated, getProfileName, isLikelyDocId, setCandidateId, setProfileName } from "@/lib/authSession";
+import { setDraftProfilePending } from "@/lib/draftProfilePending";
 import { isProfileWizardCompleteOnServer } from "@/services/profile";
 
 type UnknownRecord = Record<string, unknown>;
@@ -212,6 +213,14 @@ export async function getPostLoginDestination(email: string): Promise<PostLoginD
     if (isComplete) {
       console.log("[login-routing] decision", {
         reason: "server-profile-complete:session",
+        destination: "/dashboard",
+      });
+      return "/dashboard";
+    }
+    if (isDraft) {
+      setDraftProfilePending();
+      console.log("[login-routing] decision", {
+        reason: "server-profile-draft",
         destination: "/dashboard",
       });
       return "/dashboard";

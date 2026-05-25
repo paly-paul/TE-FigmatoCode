@@ -57,13 +57,24 @@ function resolveRotationCycle(row: Record<string, unknown>): string {
   const isRotation = asString(row.is_rotation);
   if (isRotation === "0") return "No Rotation";
 
+  const rotationType = asString(row.rotation_type).toLowerCase();
   const onWeeks = asString(row.rotation_on_weeks);
   const onDays = asString(row.rotation_on_days);
   const offWeeks = asString(row.rotation_off_weeks);
   const offDays = asString(row.rotation_off_days);
   if (onWeeks || onDays || offWeeks || offDays) {
-    const on = `${onWeeks || "0"}W ${onDays || "0"}D`;
-    const off = `${offWeeks || "0"}W ${offDays || "0"}D`;
+    let on: string;
+    let off: string;
+    if (rotationType === "week" || rotationType === "weeks") {
+      on = `${onWeeks || "0"} Weeks`;
+      off = `${offWeeks || "0"} Weeks`;
+    } else if (rotationType === "day" || rotationType === "days") {
+      on = `${onDays || "0"} Days`;
+      off = `${offDays || "0"} Days`;
+    } else {
+      on = `${onWeeks || "0"} Weeks ${onDays || "0"} Days`;
+      off = `${offWeeks || "0"} Weeks ${offDays || "0"} Days`;
+    }
     return `On: ${on} / Off: ${off}`;
   }
 
