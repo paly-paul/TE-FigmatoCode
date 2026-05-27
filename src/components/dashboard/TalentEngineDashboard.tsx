@@ -107,10 +107,13 @@ interface ActionCard {
   receivedAt?: string;
   applicationStage?: string;
   applicationAppliedDate?: string;
+  applicationSalary?: number;
   matchPercentage?: number;
   /** API `customer`; shown in job drawer. */
   customer?: string;
   skills?: string[];
+  /** Raw `status` from the actionables API (e.g. "Onboarded"). */
+  candidateStatus?: string;
 }
 
 function mapActionableInterviewSlots(
@@ -156,6 +159,8 @@ interface JobListing {
   seniorityLevel: string;
   jobDocumentId?: string;
   appliedDate?: string;
+  applicationSalary?: number;
+  rrCandidateId?: string;
 }
 
 const ACTION_CARDS: ActionCard[] = [
@@ -220,18 +225,6 @@ const ACTION_CARDS: ActionCard[] = [
 /** Max Action Center cards shown before "See All" (per tab). */
 const ACTION_CENTER_PAGE_SIZE = 4;
 const DASHBOARD_RECOMMENDED_JOBS_LIMIT = 6;
-const SOURCING_ACCEPTED_STORAGE_PREFIX = "dashboard_sourcing_accepted_v1";
-const LOCAL_ACTIONABLES_STORAGE_PREFIX = "dashboard_local_actionables_v1";
-const LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX = "dashboard_local_submitted_action_cards_v1";
-
-type LocalActionableSnapshot = {
-  job_id: string;
-  job_title: string;
-  rr_candidate?: string;
-  accepted_at?: string;
-};
-
-type PersistedActionCard = ActionCard;
 
 const JOB_LISTINGS: JobListing[] = [
   {
@@ -385,6 +378,7 @@ function getActionableDisplayKind(actionable: Pick<CandidateActionableApi, "stag
 }
 
 function toActionTitle(actionable: CandidateActionableApi) {
+  if (actionable.status?.toLowerCase() === "onboarded") return "Onboarded";
   const kind = getActionableDisplayKind(actionable);
   if (kind === "salary-negotiation") return "Salary Negotiation";
   if (kind === "interview") return "Interview Scheduled";
@@ -440,22 +434,6 @@ function jobListingSignature(job: JobListing): string {
   ].join("|");
 }
 
-function buildAcceptedRecruiterInterestCard(input: {
-  jobId: string;
-  jobTitle: string;
-  rrCandidateName?: string;
-}): ActionCard {
-  return {
-    id: Number.parseInt(input.jobId.replace(/\D/g, "").slice(0, 9), 10) || Math.random(),
-    type: "Job",
-    title: "Recruiter interest accepted",
-    subtitle: `${input.jobTitle} - ${input.jobId}`,
-    timestamp: "Accepted",
-    jobDocumentId: input.jobId,
-    rrCandidateName: input.rrCandidateName,
-    isSourcingAccepted: true,
-  };
-}
 
 function formatJobLocation(location: string, locationFull: string): string {
   const city = (location || "").trim().replace(/^—$/, "");
@@ -578,6 +556,7 @@ export default function TalentEngineDashboard() {
   const [activeTab, setActiveTab] = useState<"Recommended" | "Your Applications">("Recommended");
   const [applicationSubTab, setApplicationSubTab] = useState<"Shortlisted" | "Applied Jobs">("Shortlisted");
   const [showRejectedJobs, setShowRejectedJobs] = useState(false);
+  const [showOnboardedCards, setShowOnboardedCards] = useState(false);
   const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [activeActionTab, setActiveActionTab] = useState<
     "Job" | "Interviews" | "Profile" | "General"
@@ -657,15 +636,6 @@ export default function TalentEngineDashboard() {
   const [apiApplicationJobs, setApiApplicationJobs] = useState<JobListing[]>([]);
   const [apiInterestJobs, setApiInterestJobs] = useState<JobListing[]>([]);
   const [appliedJobDocumentIds, setAppliedJobDocumentIds] = useState<Set<string>>(() => new Set());
-  const [sourcingAcceptedRrCandidates, setSourcingAcceptedRrCandidates] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [localAcceptedActionables, setLocalAcceptedActionables] = useState<
-    LocalActionableSnapshot[]
-  >([]);
-  const [localSubmittedActionCards, setLocalSubmittedActionCards] = useState<PersistedActionCard[]>(
-    []
-  );
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
 
@@ -792,7 +762,6 @@ export default function TalentEngineDashboard() {
         setApiApplicationJobs([]);
         setApiInterestJobs([]);
         setAppliedJobDocumentIds(new Set());
-        setLocalAcceptedActionables([]);
         setHasAttemptedJobsLoad(true);
       }
 
@@ -846,13 +815,6 @@ export default function TalentEngineDashboard() {
           actionablesRes = await getCandidateActionables(retryProfileId);
         }
 
-        const localAcceptedAtByJob = new Map<string, string>();
-        for (const row of localAcceptedActionables) {
-          const key = row.job_id?.trim();
-          if (!key) continue;
-          if (row.accepted_at?.trim()) localAcceptedAtByJob.set(key, row.accepted_at.trim());
-        }
-
         const bestActionableByJob = new Map<string, CandidateActionableApi>();
         for (const item of actionablesRes.actions) {
           const key = item.job_id?.trim();
@@ -886,9 +848,7 @@ export default function TalentEngineDashboard() {
             jobDocumentId: item.job_id,
             customer: item.customer?.trim() || undefined,
             rrCandidateName: item.rr_candidate,
-            isSourcingAccepted: Boolean(
-              item.rr_candidate?.trim() && sourcingAcceptedRrCandidates.has(item.rr_candidate.trim())
-            ),
+            isSourcingAccepted: false,
             proposalName: item.name,
             interviewId: isInterviewActionable
               ? item.name?.trim() || item.info?.interview_id
@@ -897,13 +857,10 @@ export default function TalentEngineDashboard() {
             interviewType: item.info?.interview_type,
             interviewMode: item.info?.interview_mode,
             interviewSlots: mapActionableInterviewSlots(item.info?.interview_slots),
-            sourcingAcceptedAt:
-              item.accepted_at || localAcceptedAtByJob.get(item.job_id?.trim() || ""),
-            receivedAt:
-              item.received_at ||
-              item.accepted_at ||
-              localAcceptedAtByJob.get(item.job_id?.trim() || ""),
+            sourcingAcceptedAt: item.accepted_at,
+            receivedAt: item.received_at || item.accepted_at,
             matchPercentage: item.score != null ? Math.max(0, Math.min(100, Math.round(item.score))) : undefined,
+            candidateStatus: item.status || undefined,
           };
         };
 
@@ -957,58 +914,15 @@ export default function TalentEngineDashboard() {
           }
         }
 
-        const localAcceptedCards: ActionCard[] = localAcceptedActionables.map((row) => ({
-          id:
-            Number.parseInt(row.job_id.replace(/\D/g, "").slice(0, 9), 10) ||
-            stableNumericId(`${row.job_id}|${row.job_title}|accepted`),
-          type: "Job",
-          title: "Recruiter interest accepted",
-          subtitle: `${row.job_title} - ${row.job_id}`,
-          timestamp: row.accepted_at || "Accepted",
-          jobDocumentId: row.job_id,
-          rrCandidateName: row.rr_candidate,
-          isSourcingAccepted: true,
-          sourcingAcceptedAt: row.accepted_at || undefined,
-          receivedAt: row.accepted_at || undefined,
-        }));
-
-        // Track the highest submitted stage rank per job so we only suppress cards
-        // at the same or lower stage — higher-stage cards (e.g. salary negotiation
-        // after accepting recruiter interest) must still appear.
-        const submittedRankByJobId = new Map<string, number>();
-        for (const card of localSubmittedActionCards) {
-          const key = card.jobDocumentId?.trim() || "";
-          if (!key) continue;
-          const rank = actionCardStageRank(card);
-          if (!submittedRankByJobId.has(key) || rank > submittedRankByJobId.get(key)!) {
-            submittedRankByJobId.set(key, rank);
-          }
-        }
         const mergedByJob = new Map<string, ActionCard>();
-        for (const card of [...localAcceptedCards, ...nextActions]) {
+        for (const card of nextActions) {
           const key = card.jobDocumentId?.trim();
           if (!key) continue;
-          const submittedRank = submittedRankByJobId.get(key) ?? -1;
-          if (submittedRank >= 0 && actionCardStageRank(card) <= submittedRank) continue;
-          const acceptedAtForJob = localAcceptedAtByJob.get(key) || "";
-          const cardWithTimelineBackfill: ActionCard = {
-            ...card,
-            sourcingAcceptedAt: card.sourcingAcceptedAt || acceptedAtForJob || undefined,
-            receivedAt: card.receivedAt || card.sourcingAcceptedAt || acceptedAtForJob || undefined,
-          };
           const existing = mergedByJob.get(key);
-          const nextRank = actionCardStageRank(cardWithTimelineBackfill);
+          const nextRank = actionCardStageRank(card);
           const existingRank = existing ? actionCardStageRank(existing) : -1;
-          const hasRicherAcceptedTimelineDate =
-            !!cardWithTimelineBackfill.sourcingAcceptedAt &&
-            (!existing?.sourcingAcceptedAt ||
-              cardWithTimelineBackfill.sourcingAcceptedAt !== existing.sourcingAcceptedAt);
-          if (
-            !existing ||
-            nextRank > existingRank ||
-            (nextRank === existingRank && hasRicherAcceptedTimelineDate)
-          ) {
-            mergedByJob.set(key, cardWithTimelineBackfill);
+          if (!existing || nextRank > existingRank) {
+            mergedByJob.set(key, card);
           }
         }
 
@@ -1219,79 +1133,6 @@ export default function TalentEngineDashboard() {
       candidateId: currentCandidateId,
       profileName,
     };
-    const sourcingAcceptedKey = currentCandidateId
-      ? `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-    const localActionablesKey = currentCandidateId
-      ? `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-    const localSubmittedCardsKey = currentCandidateId
-      ? `${LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX}:${currentCandidateId}`
-      : null;
-
-    if (sourcingAcceptedKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(sourcingAcceptedKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const names = parsed
-              .filter((v): v is string => typeof v === "string")
-              .map((v) => v.trim())
-              .filter(Boolean);
-            setSourcingAcceptedRrCandidates(new Set(names));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (localActionablesKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(localActionablesKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const rows = parsed.filter(
-              (row): row is LocalActionableSnapshot =>
-                typeof row === "object" &&
-                row !== null &&
-                typeof (row as LocalActionableSnapshot).job_id === "string" &&
-                typeof (row as LocalActionableSnapshot).job_title === "string"
-            );
-            setLocalAcceptedActionables(rows);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (localSubmittedCardsKey && typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(localSubmittedCardsKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as unknown;
-          if (Array.isArray(parsed)) {
-            const cards = parsed.filter(
-              (row): row is PersistedActionCard =>
-                typeof row === "object" &&
-                row !== null &&
-                typeof (row as PersistedActionCard).id === "number" &&
-                typeof (row as PersistedActionCard).type === "string" &&
-                typeof (row as PersistedActionCard).title === "string" &&
-                typeof (row as PersistedActionCard).subtitle === "string" &&
-                typeof (row as PersistedActionCard).timestamp === "string"
-            );
-            setLocalSubmittedActionCards(cards);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
     void refreshDashboardData({ candidateId: currentCandidateId, profileName });
   }, []);
 
@@ -1468,38 +1309,6 @@ export default function TalentEngineDashboard() {
     };
   }, [isDrawerOpen]);
 
-  useEffect(() => {
-    if (!candidateId || typeof window === "undefined") return;
-    const storageKey = `${SOURCING_ACCEPTED_STORAGE_PREFIX}:${candidateId}`;
-    try {
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify(Array.from(sourcingAcceptedRrCandidates))
-      );
-    } catch {
-      // ignore
-    }
-  }, [candidateId, sourcingAcceptedRrCandidates]);
-
-  useEffect(() => {
-    if (!candidateId || typeof window === "undefined") return;
-    const storageKey = `${LOCAL_ACTIONABLES_STORAGE_PREFIX}:${candidateId}`;
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(localAcceptedActionables));
-    } catch {
-      // ignore
-    }
-  }, [candidateId, localAcceptedActionables]);
-
-  useEffect(() => {
-    if (!candidateId || typeof window === "undefined") return;
-    const storageKey = `${LOCAL_SUBMITTED_ACTION_CARDS_STORAGE_PREFIX}:${candidateId}`;
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(localSubmittedActionCards));
-    } catch {
-      // ignore
-    }
-  }, [candidateId, localSubmittedActionCards]);
 
   /** Same job set as the list uses for filtering, but ignoring location — avoids orphan locations when search/skills hide all jobs in a place. */
   const jobsForLocationFacets = useMemo(() => {
@@ -1627,7 +1436,15 @@ export default function TalentEngineDashboard() {
   }, [apiActionCards, apiGeneralCards, apiProfileCards, hasAttemptedActionablesLoad]);
 
   const filteredActions = resolvedActionCards.filter(
-    (card) => card.type === activeActionTab
+    (card) =>
+      card.type === activeActionTab &&
+      card.candidateStatus?.toLowerCase() !== "onboarded"
+  );
+
+  const onboardedActionCards = resolvedActionCards.filter(
+    (card) =>
+      card.type === activeActionTab &&
+      card.candidateStatus?.toLowerCase() === "onboarded"
   );
 
   const hasMoreActions =
@@ -1648,11 +1465,14 @@ export default function TalentEngineDashboard() {
   );
 
   const actionTabCounts = useMemo(() => {
+    const nonOnboarded = resolvedActionCards.filter(
+      (c) => c.candidateStatus?.toLowerCase() !== "onboarded"
+    );
     return {
-      Job: resolvedActionCards.filter((c) => c.type === "Job").length,
+      Job: nonOnboarded.filter((c) => c.type === "Job").length,
       Interviews: apiScheduledInterviews.length,
-      Profile: resolvedActionCards.filter((c) => c.type === "Profile").length,
-      General: resolvedActionCards.filter((c) => c.type === "General").length,
+      Profile: nonOnboarded.filter((c) => c.type === "Profile").length,
+      General: nonOnboarded.filter((c) => c.type === "General").length,
     };
   }, [resolvedActionCards, apiScheduledInterviews.length]);
 
@@ -1797,8 +1617,10 @@ export default function TalentEngineDashboard() {
       subtitle: `${job.location} - ${job.locationFull}`,
       timestamp: job.appliedDate || job.postedTime,
       jobDocumentId: job.jobDocumentId,
+      rrCandidateName: job.rrCandidateId,
       applicationStage: job.stage,
       applicationAppliedDate: job.appliedDate,
+      applicationSalary: job.applicationSalary,
       matchPercentage: job.matchPercentage,
       customer: job.company.trim() && job.company !== "—" ? job.company.trim() : undefined,
       skills: job.skills.length ? job.skills : undefined,
@@ -1924,7 +1746,8 @@ export default function TalentEngineDashboard() {
       normalized.includes("shortlist") ||
       normalized.includes("select") ||
       normalized.includes("accept") ||
-      normalized.includes("offer")
+      normalized.includes("offer") ||
+      normalized.includes("onboard")
     ) {
       return "bg-green-50 text-green-700 border-green-200";
     }
@@ -2095,16 +1918,6 @@ export default function TalentEngineDashboard() {
             return false;
           }
           await postInterviewSelectSlot(iid, extras.interviewSlotId.trim());
-          setLocalSubmittedActionCards((prev) => {
-            const jobId = action.jobDocumentId?.trim() || "";
-            const nextCard: PersistedActionCard = {
-              ...action,
-              timestamp: "Submitted",
-            };
-            const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
-            next.unshift(nextCard);
-            return next;
-          });
           removeSubmittedActionCard();
           // Remove the submitted interview from the display list
           setApiScheduledInterviews((prev) =>
@@ -2119,16 +1932,6 @@ export default function TalentEngineDashboard() {
           return false;
         } else if (isProposal && action.proposalName) {
           await postProposalCandidateAcceptance(action.proposalName, "");
-          setLocalSubmittedActionCards((prev) => {
-            const jobId = action.jobDocumentId?.trim() || "";
-            const nextCard: PersistedActionCard = {
-              ...action,
-              timestamp: "Submitted",
-            };
-            const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
-            next.unshift(nextCard);
-            return next;
-          });
           removeSubmittedActionCard();
           countdownResetRef.current();
           showActionSuccess(
@@ -2155,39 +1958,10 @@ export default function TalentEngineDashboard() {
             availability_date: availabilityDate,
             accept_terms: true,
           });
-          setSourcingAcceptedRrCandidates((prev) => {
-            const next = new Set(prev);
-            next.add(action.rrCandidateName!.trim());
-            return next;
-          });
           if (action.jobDocumentId?.trim()) {
             const jobId = action.jobDocumentId.trim();
-            const jobTitle = action.subtitle.split(" - ")[0]?.trim() || action.title;
-            const acceptedCard = buildAcceptedRecruiterInterestCard({
-              jobId,
-              jobTitle,
-              rrCandidateName: action.rrCandidateName!.trim(),
-            });
-            setLocalAcceptedActionables((prev) => {
-              const alreadyExists = prev.some((row) => row.job_id === jobId);
-              if (alreadyExists) return prev;
-              return [
-                {
-                  job_id: jobId,
-                  job_title: jobTitle,
-                  rr_candidate: action.rrCandidateName!.trim(),
-                  accepted_at: new Date().toLocaleDateString(),
-                },
-                ...prev,
-              ];
-            });
             setApiActionCards((prev) => {
               return prev.filter((c) => c.jobDocumentId?.trim() !== jobId);
-            });
-            setLocalSubmittedActionCards((prev) => {
-              const next = prev.filter((card) => card.jobDocumentId?.trim() !== jobId);
-              next.unshift(acceptedCard);
-              return next;
             });
           }
           removeSubmittedActionCard();
@@ -2242,24 +2016,6 @@ export default function TalentEngineDashboard() {
       const targetProposalName = action.proposalName?.trim() || "";
       const targetId = action.id;
 
-      // Keep UX consistent with other action submissions by marking and removing
-      // the current actionable row immediately, then refresh from backend.
-      setLocalSubmittedActionCards((prev) => {
-        const nextCard: PersistedActionCard = {
-          ...action,
-          timestamp: "Submitted",
-        };
-        const next = prev.filter(
-          (card) =>
-            !(
-              (targetJobId && card.jobDocumentId?.trim() === targetJobId) ||
-              (targetProposalName && card.proposalName?.trim() === targetProposalName) ||
-              card.id === targetId
-            )
-        );
-        next.unshift(nextCard);
-        return next;
-      });
       setApiActionCards((prev) =>
         prev.filter((card) => {
           const sameJob = targetJobId && card.jobDocumentId?.trim() === targetJobId;
@@ -2383,7 +2139,18 @@ export default function TalentEngineDashboard() {
           </button>
         ))}
       </div>
-      <div className="ml-auto flex w-full items-center justify-end gap-3 sm:w-auto">
+      <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
+        {onboardedActionCards.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={showOnboardedCards}
+              onChange={(e) => setShowOnboardedCards(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
+            />
+            Show Onboarded
+          </label>
+        )}
         {!isManualRefreshing && (
           <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
         )}
@@ -2639,50 +2406,97 @@ export default function TalentEngineDashboard() {
                 <InterviewActionCardsSection items={[]} />
               ) : null}
             </>
-          ) : displayedActions.length === 0 ? (
+          ) : displayedActions.length === 0 && (!showOnboardedCards || onboardedActionCards.length === 0) ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
               <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
               <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
             </div>
           ) : (
-            displayedActions.map((card) => {
-              const badge = getActionBadge(card.type);
-              return (
-                <button
-                  key={getActionCardKey(card)}
-                  type="button"
-                  onClick={() => openActionDrawerForCard(card)}
-                  className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
-                >
-                  <div className="mb-3 flex items-start justify-between gap-2">
-                    <div
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
-                    >
-                      {badge.icon}
-                      {badge.label}
-                    </div>
-                    <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
-                  </div>
-                  <div className="space-y-2.5">
-                    <p className="text-base text-slate-700">
-                      <span className="font-semibold text-slate-600">Role: </span>
-                      <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
-                    </p>
-                    <p className="text-base text-slate-700">
-                      <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
-                      <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
-                    </p>
-                    {card.type !== "General" && (
-                      <span
-                        className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+            <>
+              {displayedActions.map((card) => {
+                const badge = getActionBadge(card.type);
+                return (
+                  <button
+                    key={getActionCardKey(card)}
+                    type="button"
+                    onClick={() => openActionDrawerForCard(card)}
+                    className="w-full rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <div
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
                       >
-                        Status: {getActionStatusLabel(card)}
-                      </span>
-                    )}
+                        {badge.icon}
+                        {badge.label}
+                      </div>
+                      <span className="shrink-0 text-xs text-gray-500">{card.timestamp}</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      <p className="text-base text-slate-700">
+                        <span className="font-semibold text-slate-600">Role: </span>
+                        <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                      </p>
+                      <p className="text-base text-slate-700">
+                        <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
+                        <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                      </p>
+                      {card.type !== "General" && (
+                        <span
+                          className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                        >
+                          Status: {getActionStatusLabel(card)}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {showOnboardedCards && onboardedActionCards.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="h-px flex-1 bg-green-200" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                      Onboarded Jobs
+                    </span>
+                    <div className="h-px flex-1 bg-green-200" />
                   </div>
-                </button>
-              );
-            })
+                  {onboardedActionCards.map((card) => {
+                    const badge = getActionBadge(card.type);
+                    return (
+                      <button
+                        key={getActionCardKey(card)}
+                        type="button"
+                        onClick={() => openActionDrawerForCard(card)}
+                        className="w-full rounded-xl border border-green-200 bg-green-50/40 p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                          <div
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+                          >
+                            {badge.icon}
+                            {badge.label}
+                          </div>
+                          <span className="shrink-0 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                            Onboarded
+                          </span>
+                        </div>
+                        <div className="space-y-2.5">
+                          <p className="text-base text-slate-700">
+                            <span className="font-semibold text-slate-600">Role: </span>
+                            <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                          </p>
+                          <p className="text-base text-slate-700">
+                            <span className="font-semibold text-slate-600">Company: </span>
+                            <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </>
           )}
         </div>
       </main>
@@ -3146,57 +2960,108 @@ export default function TalentEngineDashboard() {
                   </div>
                 ) : null}
               </>
-            ) : displayedActions.length === 0 ? (
+            ) : displayedActions.length === 0 && (!showOnboardedCards || onboardedActionCards.length === 0) ? (
               <div className="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
                 <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
                 <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
               </div>
             ) : (
-              displayedActions.map((card) => {
-                const badge = getActionBadge(card.type);
+              <>
+                {displayedActions.map((card) => {
+                  const badge = getActionBadge(card.type);
 
-                return (
-                  <div
-                    key={getActionCardKey(card)}
-                    className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
-                  >
-                    <div className="flex justify-between mb-3">
-                      <div
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
-                      >
-                        {badge.icon}
-                        {badge.label}
-                      </div>
-                      <span className="text-xs text-gray-500">{card.timestamp}</span>
-                    </div>
-
-                    <div className="mb-4 space-y-2">
-                      <p className="text-sm text-slate-700">
-                        <span className="font-semibold text-slate-600">Role: </span>
-                        <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
-                      </p>
-                      <p className="text-sm text-slate-700">
-                        <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
-                        <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
-                      </p>
-                      {card.type !== "General" && (
-                        <span
-                          className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
-                        >
-                          Status: {getActionStatusLabel(card)}
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => openActionDrawerForCard(card)}
-                      className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
+                  return (
+                    <div
+                      key={getActionCardKey(card)}
+                      className="bg-[#95bcff0c] border border-gray-200 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
                     >
-                      Take Action
-                    </button>
-                  </div>
-                );
-              })
+                      <div className="flex justify-between mb-3">
+                        <div
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
+                        >
+                          {badge.icon}
+                          {badge.label}
+                        </div>
+                        <span className="text-xs text-gray-500">{card.timestamp}</span>
+                      </div>
+
+                      <div className="mb-4 space-y-2">
+                        <p className="text-sm text-slate-700">
+                          <span className="font-semibold text-slate-600">Role: </span>
+                          <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          <span className="font-semibold text-slate-600">{card.type === "General" ? "Location: " : "Company: "}</span>
+                          <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                        </p>
+                        {card.type !== "General" && (
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStageStyle(getActionStatusLabel(card))}`}
+                          >
+                            Status: {getActionStatusLabel(card)}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => openActionDrawerForCard(card)}
+                        className="w-fit border border-gray-300 rounded-md px-4 py-2 text-sm hover:bg-gray-50 mt-auto"
+                      >
+                        Take Action
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {showOnboardedCards && onboardedActionCards.length > 0 && (
+                  <>
+                    <div className="col-span-full flex items-center gap-3 pt-2">
+                      <div className="h-px flex-1 bg-green-200" />
+                      <span className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                        Onboarded Jobs
+                      </span>
+                      <div className="h-px flex-1 bg-green-200" />
+                    </div>
+                    {onboardedActionCards.map((card) => {
+                      const badge = getActionBadge(card.type);
+                      return (
+                        <div
+                          key={getActionCardKey(card)}
+                          className="border border-green-200 bg-green-50/40 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
+                        >
+                          <div className="flex justify-between mb-3">
+                            <div
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${badge.className}`}
+                            >
+                              {badge.icon}
+                              {badge.label}
+                            </div>
+                            <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                              Onboarded
+                            </span>
+                          </div>
+                          <div className="mb-4 space-y-2">
+                            <p className="text-sm text-slate-700">
+                              <span className="font-semibold text-slate-600">Role: </span>
+                              <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
+                            </p>
+                            <p className="text-sm text-slate-700">
+                              <span className="font-semibold text-slate-600">Company: </span>
+                              <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => openActionDrawerForCard(card)}
+                            className="w-fit border border-green-300 rounded-md px-4 py-2 text-sm hover:bg-green-100 mt-auto text-green-800"
+                          >
+                            View Details
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>

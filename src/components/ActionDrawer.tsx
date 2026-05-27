@@ -50,9 +50,12 @@ import {
   type RrGeneratedContentApi,
 } from "@/services/jobs/rrGeneratedContent";
 import { getRrDetails, type RrDetailsApi } from "@/services/jobs/rrDetails";
+import { getCandidateHistory, type CandidateHistoryApi } from "@/services/jobs/getCandidateHistory";
 import { getProposalData, type ProposalDataApi } from "@/services/jobs/getProposalData";
 import { getAvailableDateSalary } from "@/services/jobs/actionCenter";
-import { getProfileName } from "@/lib/authSession";
+import { getCandidateId, getProfileName, getUserDisplayName } from "@/lib/authSession";
+import { getSessionLoginEmail } from "@/lib/profileOnboarding";
+import { ChatTabContent } from "./actionDrawer/ChatTabContent";
 
 export interface ActionDrawerActionCard {
   id: number;
@@ -73,6 +76,7 @@ export interface ActionDrawerActionCard {
   receivedAt?: string;
   applicationStage?: string;
   applicationAppliedDate?: string;
+  applicationSalary?: number;
   matchPercentage?: number;
   /** Hiring organization (API `customer`); shown until RR details load. */
   customer?: string;
@@ -311,6 +315,8 @@ export default function ActionDrawer({
   const [jobDescriptionLoading, setJobDescriptionLoading] = useState(false);
   const [jobDescriptionError, setJobDescriptionError] = useState<string | null>(null);
   const [rrDetails, setRrDetails] = useState<RrDetailsApi | null>(null);
+  const [candidateHistory, setCandidateHistory] = useState<CandidateHistoryApi | null>(null);
+  const [candidateHistoryLoading, setCandidateHistoryLoading] = useState(false);
   const [proposalData, setProposalData] = useState<ProposalDataApi | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
@@ -429,6 +435,8 @@ export default function ActionDrawer({
     setJobDescriptionLoading(false);
     setJobDescriptionError(null);
     setRrDetails(null);
+    setCandidateHistory(null);
+    setCandidateHistoryLoading(false);
     setProposalData(null);
     setProposalLoading(false);
     setProposalError(null);
@@ -465,18 +473,19 @@ export default function ActionDrawer({
     normalizedTitle.includes("negotiation") ||
     normalizedTitle.includes("proposal");
 
+  const hasChatChannel = Boolean(action?.jobDocumentId);
   const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
-    ? ["Job Description", "Timeline"]
+    ? ["Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isRecruiterInterestCard(action)
-      ? ["Job Description", "Job Action", "Timeline"]
+      ? ["Job Description", "Job Action", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isInterviewScheduled
-      ? ["Job Action", "Job Description", "Timeline"]
+      ? ["Job Action", "Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isSalaryNegotiation
-      ? ["Job Action", "Job Description", "Timeline"]
+      ? ["Job Action", "Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isActionableStageCard(action)
-      ? [...actionDrawerChrome.tabs]
+      ? [...actionDrawerChrome.tabs, ...(hasChatChannel ? ["Chat" as const] : [])]
     : shouldUseFirstTimeJobTabs(action)
-      ? ["Job Description", "Job Action", "Timeline"]
+      ? ["Job Description", "Job Action", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
       : [...actionDrawerChrome.tabs];
   const isDirectApply = isDirectJobApplyCard(action);
   const roleTitle =
@@ -753,6 +762,28 @@ export default function ActionDrawer({
       cancelled = true;
     };
   }, [open, action?.jobDocumentId]);
+
+  useEffect(() => {
+    const rrCandidate = action?.rrCandidateName?.trim();
+    if (!open || !rrCandidate) return;
+    let cancelled = false;
+    setCandidateHistoryLoading(true);
+    void (async () => {
+      try {
+        const history = await getCandidateHistory(rrCandidate);
+        if (cancelled) return;
+        setCandidateHistory(history);
+      } catch {
+        if (cancelled) return;
+        setCandidateHistory(null);
+      } finally {
+        if (!cancelled) setCandidateHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, action?.rrCandidateName]);
 
   useEffect(() => {
     if (!open) return;
@@ -1198,9 +1229,42 @@ export default function ActionDrawer({
 
   const renderTimelineContent = () => {
     type Milestone = { title: string; date: string | undefined; isCurrent?: boolean };
+
+    if (candidateHistoryLoading) {
+      return (
+        <div className="rounded-md border border-[#E6ECF6] bg-[#F8FAFD] p-4 sm:p-5">
+          <div className="flex min-h-[200px] flex-col items-center justify-center">
+            <p className="text-sm text-[#5E7397]">Loading history…</p>
+          </div>
+        </div>
+      );
+    }
+
     const milestones: Milestone[] = [];
 
-    if (isInterviewScheduled) {
+    if (candidateHistory && candidateHistory.entries.length > 0) {
+      // Group entries by stage; keep track of insertion order and last entry per stage.
+      const stageOrder: string[] = [];
+      const stageLastEntry = new Map<string, typeof candidateHistory.entries[number]>();
+      for (const entry of candidateHistory.entries) {
+        const stage = entry.candidate_stage.trim();
+        if (!stageLastEntry.has(stage)) stageOrder.push(stage);
+        stageLastEntry.set(stage, entry);
+      }
+      stageOrder.forEach((stage, index) => {
+        const lastEntry = stageLastEntry.get(stage)!;
+        const isLast = index === stageOrder.length - 1;
+        const status = lastEntry.candidate_status.trim();
+        const title = status ? `${stage} — ${status}` : stage;
+        // updated_on uses a space separator ("2026-05-19 15:14:04") — replace with T for reliable parsing.
+        const isoDate = lastEntry.updated_on.replace(" ", "T");
+        milestones.push({
+          title,
+          date: formatTimelineDate(isoDate) || undefined,
+          isCurrent: isLast,
+        });
+      });
+    } else if (isInterviewScheduled) {
       milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
       milestones.push({ title: "Interview Scheduled", date: stageReceivedDateLabel, isCurrent: true });
     } else if (isSalaryNegotiation) {
@@ -1280,6 +1344,26 @@ export default function ActionDrawer({
         isMobile ? "space-y-5 p-4" : "space-y-4 p-4 sm:p-5"
       }`}
     >
+      {isApplicationTimelineCard(action) && (action?.applicationAppliedDate || action?.applicationSalary != null) ? (
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          {action.applicationAppliedDate ? (
+            <div>
+              <p className="text-xs text-[#5E7397]">Applied Date</p>
+              <p className="text-sm font-semibold text-[#202939]">
+                {formatTimelineDate(action.applicationAppliedDate) ?? action.applicationAppliedDate}
+              </p>
+            </div>
+          ) : null}
+          {action.applicationSalary != null ? (
+            <div>
+              <p className="text-xs text-[#5E7397]">Salary</p>
+              <p className="text-sm font-semibold text-[#202939]">
+                ${action.applicationSalary.toLocaleString()}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {action?.skills && action.skills.length > 0 ? (
         <section>
           <h4 className={`font-semibold text-[#202939] ${isMobile ? "mb-3 text-[15px]" : "mb-2 text-sm sm:text-base"}`}>
@@ -1663,6 +1747,14 @@ export default function ActionDrawer({
       {activeTab === "Job Action" ? renderJobActionContent() : null}
       {activeTab === "Timeline" ? renderTimelineContent() : null}
       {activeTab === "Job Description" ? renderJobDescriptionContent(true) : null}
+      {activeTab === "Chat" ? (
+        <ChatTabContent
+          jobId={action?.jobDocumentId ?? ""}
+          profileId={profileId ?? getProfileName() ?? getCandidateId() ?? ""}
+          userEmail={getSessionLoginEmail() ?? ""}
+          userName={getUserDisplayName() ?? undefined}
+        />
+      ) : null}
     </>
   );
 
@@ -1772,6 +1864,15 @@ export default function ActionDrawer({
         {activeTab === "Timeline" ? renderTimelineContent() : null}
 
         {activeTab === "Job Description" ? renderJobDescriptionContent() : null}
+
+        {activeTab === "Chat" ? (
+          <ChatTabContent
+            jobId={action?.jobDocumentId ?? ""}
+            profileId={profileId ?? getProfileName() ?? getCandidateId() ?? ""}
+            userEmail={getSessionLoginEmail() ?? ""}
+            userName={getUserDisplayName() ?? undefined}
+          />
+        ) : null}
           </>
         )}
       </BaseDrawer>
