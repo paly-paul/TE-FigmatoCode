@@ -20,6 +20,8 @@ export type DashboardJobListing = {
   seniorityLevel: string;
   jobDocumentId?: string;
   appliedDate?: string;
+  applicationSalary?: number;
+  rrCandidateId?: string;
 };
 
 export type JobsPageCard = {
@@ -230,7 +232,7 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
     locationId: locId,
     locationFull: "—",
     company: row.company?.trim() || "—",
-    salary: "—",
+    salary: row.salary != null ? `$${row.salary.toLocaleString()}` : "—",
     hourlyRate: 0,
     startDate: row.date ? `Updated: ${row.date}` : "—",
     matchPercentage: Math.max(0, Math.min(100, Math.round(score))),
@@ -242,6 +244,8 @@ export function mapApplicationToDashboardJob(row: JobApplicationApi): DashboardJ
     seniorityLevel: "—",
     jobDocumentId: row.job_id,
     appliedDate: row.date || undefined,
+    applicationSalary: row.salary,
+    rrCandidateId: row.id || undefined,
   };
 }
 

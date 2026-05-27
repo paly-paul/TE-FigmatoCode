@@ -15,13 +15,13 @@ import { getTimesheetByWeek, type WeekTimesheetDay } from "@/services/timesheet/
 import { getTimesheetForWorkorder } from "@/services/timesheet/workorderTimesheet";
 import { useRouter } from "next/navigation";
 import UnsavedChangesModal from "./UnsavedChangesModal";
+import SubmitConfirmModal from "./SubmitConfirmModal";
+import SubmitSuccessModal from "./SubmitSuccessModal";
 
 type WeeklyRow = {
   isoDate?: string;
   date: string;
   day: string;
-  regular?: number;
-  overtime?: number;
   leave?: string;
   total?: number;
 };
@@ -37,8 +37,6 @@ type WeeklySheet = {
   weekStartIso?: string;
   weekEndIso?: string;
 };
-
-type HourSplit = { regular: number; overtime: number };
 
 const FALLBACK_WEEKS: WeeklySheet[] = [
   { range: "—", weekLabel: "Week —", regular: 0, overtime: 0, total: 0, current: true, rows: [] },
@@ -175,6 +173,15 @@ export default function TalentEngineTimesheet() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [submitConfirm, setSubmitConfirm] = useState<{
+    action: "submit" | "re_submit";
+    label: string;
+    weekRange: string;
+  } | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<{
+    label: string;
+    weekRange: string;
+  } | null>(null);
   const workorderFetchKeyRef = useRef<string>("");
   const autoSelectedWeekRef = useRef(false);
   const inFlightOverviewWeekRef = useRef<Set<string>>(new Set());
@@ -188,50 +195,6 @@ export default function TalentEngineTimesheet() {
     triggerElement: HTMLElement | null;
   } | null>(null);
   const [mobileTimesheetTab, setMobileTimesheetTab] = useState<TimesheetBottomTab>("overview");
-
-  const getSplitStorageKey = (candidate: string, rrCandidate: string, weekNumber: number, year: number) =>
-    `te-timesheet-split:${candidate}:${rrCandidate}:${year}:${weekNumber}`;
-
-  const readStoredSplitMap = (
-    candidate: string,
-    rrCandidate: string,
-    weekNumber: number,
-    year: number
-  ): Record<string, HourSplit> => {
-    if (typeof window === "undefined") return {};
-    const key = getSplitStorageKey(candidate, rrCandidate, weekNumber, year);
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw) as Record<string, { regular?: unknown; overtime?: unknown }>;
-      const out: Record<string, HourSplit> = {};
-      for (const [date, split] of Object.entries(parsed)) {
-        out[date] = {
-          regular: toFiniteNonNegative(split?.regular),
-          overtime: toFiniteNonNegative(split?.overtime),
-        };
-      }
-      return out;
-    } catch {
-      return {};
-    }
-  };
-
-  const writeStoredSplitMap = (
-    candidate: string,
-    rrCandidate: string,
-    weekNumber: number,
-    year: number,
-    splitMap: Record<string, HourSplit>
-  ) => {
-    if (typeof window === "undefined") return;
-    const key = getSplitStorageKey(candidate, rrCandidate, weekNumber, year);
-    try {
-      window.localStorage.setItem(key, JSON.stringify(splitMap));
-    } catch {
-      // Ignore storage quota/access errors and continue with API save.
-    }
-  };
 
   const resetWeeklyState = () => {
     setWorkorderWeeks([]);
@@ -255,49 +218,43 @@ export default function TalentEngineTimesheet() {
     setActiveWeekNumber((prev) => (prev === weekNumber ? 0 : weekNumber));
   };
 
-  const navigateMonth = (direction: -1 | 1) => {
-    if (weeksForUi.length === 0) return;
-    const activeWeek = activeWeekData ?? weeksForUi[0];
-    const baseIso = activeWeek?.weekStartIso || activeWeek?.weekEndIso;
-    const baseDate = baseIso ? new Date(`${baseIso}T00:00:00`) : new Date();
-    if (Number.isNaN(baseDate.getTime())) return;
-
-    const target = new Date(baseDate.getFullYear(), baseDate.getMonth() + direction, 1);
-    const targetMonth = target.getMonth();
-    const targetYear = target.getFullYear();
-
-    const candidateWeeks = weeksForUi.filter((week) => {
-      const probe = week.weekStartIso || week.weekEndIso;
-      if (!probe) return false;
-      const d = new Date(`${probe}T00:00:00`);
-      if (Number.isNaN(d.getTime())) return false;
-      return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
-    });
-
-    if (candidateWeeks.length === 0) {
-      setSubmissionStatus("No timesheet weeks available for that month.");
-      return;
-    }
-
-    const sorted = [...candidateWeeks].sort((a, b) => {
-      const aTime = a.weekStartIso ? new Date(`${a.weekStartIso}T00:00:00`).getTime() : 0;
-      const bTime = b.weekStartIso ? new Date(`${b.weekStartIso}T00:00:00`).getTime() : 0;
-      return aTime - bTime;
-    });
-    const targetWeek = direction === 1 ? sorted[0] : sorted[sorted.length - 1];
-    const { weekNumber } = getWeekAndYear(targetWeek);
+  const navigateWeek = (direction: -1 | 1) => {
+    if (sortedWeeksForNav.length === 0) return;
+    const nextIndex =
+      currentNavIndex === -1
+        ? direction === 1
+          ? 0
+          : sortedWeeksForNav.length - 1
+        : currentNavIndex + direction;
+    if (nextIndex < 0 || nextIndex >= sortedWeeksForNav.length) return;
+    const { weekNumber } = getWeekAndYear(sortedWeeksForNav[nextIndex]);
     if (weekNumber > 0) {
       setActiveWeekNumber(weekNumber);
       setSubmissionStatus("");
     }
   };
 
-  const toggleLeave = (date: string) => {
+  const toggleLeave = (weekNumber: number, rowKey: string) => {
     setHasUnsavedChanges(true);
-    setLeaveSelections((prev) => ({
-      ...prev,
-      [date]: !prev[date],
-    }));
+    setLeaveSelections((prev) => {
+      const turningOn = !prev[rowKey];
+      if (turningOn) {
+        // Zero out the hour input immediately when leave is activated
+        setWeekRowsByNumber((rows) => {
+          const current = rows[weekNumber] ?? [];
+          const next = current.map((r) =>
+            (r.isoDate ?? r.date) === rowKey ? { ...r, total: 0 } : r
+          );
+          return { ...rows, [weekNumber]: next };
+        });
+        setHourInputDrafts((drafts) => {
+          const next = { ...drafts };
+          delete next[getHourInputKey(weekNumber, rowKey)];
+          return next;
+        });
+      }
+      return { ...prev, [rowKey]: !prev[rowKey] };
+    });
   };
 
   const handleCommentSubmit = (comment: string) => {
@@ -307,12 +264,7 @@ export default function TalentEngineTimesheet() {
     setDayRemarks((prev) => ({ ...prev, [remarkKey]: comment.trim() }));
   };
 
-  const updateRowHours = (
-    weekNumber: number,
-    rowKey: string,
-    field: "regular" | "overtime",
-    value: string
-  ) => {
+  const updateRowHours = (weekNumber: number, rowKey: string, value: string) => {
     const numeric = Number.parseFloat(value);
     const safeValue = Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
     setHasUnsavedChanges(true);
@@ -321,70 +273,40 @@ export default function TalentEngineTimesheet() {
       const nextRows = currentRows.map((row) => {
         const key = row.isoDate ?? row.date;
         if (key !== rowKey) return row;
-        const nextRegular = field === "regular" ? safeValue : (row.regular ?? 0);
-        const nextOvertime = field === "overtime" ? safeValue : (row.overtime ?? 0);
-        return {
-          ...row,
-          regular: nextRegular,
-          overtime: nextOvertime,
-          total: nextRegular + nextOvertime,
-        };
+        return { ...row, total: safeValue };
       });
       return { ...prev, [weekNumber]: nextRows };
     });
   };
 
-  const getHourInputKey = (weekNumber: number, rowKey: string, field: "regular" | "overtime") =>
-    `${weekNumber}:${rowKey}:${field}`;
+  const getHourInputKey = (weekNumber: number, rowKey: string) =>
+    `${weekNumber}:${rowKey}:total`;
 
-  const getHourInputValue = (
-    weekNumber: number,
-    rowKey: string,
-    field: "regular" | "overtime",
-    fallback: number | undefined
-  ) => {
-    const key = getHourInputKey(weekNumber, rowKey, field);
+  const getHourInputValue = (weekNumber: number, rowKey: string, fallback: number | undefined) => {
+    const key = getHourInputKey(weekNumber, rowKey);
     if (Object.prototype.hasOwnProperty.call(hourInputDrafts, key)) {
       return hourInputDrafts[key];
     }
     return String(fallback ?? 0);
   };
 
-  const handleHourInputFocus = (
-    weekNumber: number,
-    rowKey: string,
-    field: "regular" | "overtime",
-    current: number | undefined
-  ) => {
+  const handleHourInputFocus = (weekNumber: number, rowKey: string, current: number | undefined) => {
     if ((current ?? 0) !== 0) return;
-    const key = getHourInputKey(weekNumber, rowKey, field);
+    const key = getHourInputKey(weekNumber, rowKey);
     setHourInputDrafts((prev) => ({ ...prev, [key]: "" }));
   };
 
-  const handleHourInputChange = (
-    weekNumber: number,
-    rowKey: string,
-    field: "regular" | "overtime",
-    rawValue: string
-  ) => {
-    const key = getHourInputKey(weekNumber, rowKey, field);
+  const handleHourInputChange = (weekNumber: number, rowKey: string, rawValue: string) => {
+    const key = getHourInputKey(weekNumber, rowKey);
     setHourInputDrafts((prev) => ({ ...prev, [key]: rawValue }));
-    if (rawValue.trim() === "") {
-      updateRowHours(weekNumber, rowKey, field, "0");
-      return;
-    }
-    updateRowHours(weekNumber, rowKey, field, rawValue);
+    updateRowHours(weekNumber, rowKey, rawValue.trim() === "" ? "0" : rawValue);
   };
 
-  const handleHourInputBlur = (
-    weekNumber: number,
-    rowKey: string,
-    field: "regular" | "overtime"
-  ) => {
-    const key = getHourInputKey(weekNumber, rowKey, field);
+  const handleHourInputBlur = (weekNumber: number, rowKey: string) => {
+    const key = getHourInputKey(weekNumber, rowKey);
     const rawValue = hourInputDrafts[key];
     if (typeof rawValue === "string" && rawValue.trim() === "") {
-      updateRowHours(weekNumber, rowKey, field, "0");
+      updateRowHours(weekNumber, rowKey, "0");
     }
     setHourInputDrafts((prev) => {
       const next = { ...prev };
@@ -477,6 +399,22 @@ export default function TalentEngineTimesheet() {
     return weeksForUi.find((w) => w.weekLabel === `Week ${activeWeekNumber}`) ?? null;
   }, [activeWeekNumber, weeksForUi]);
 
+  const sortedWeeksForNav = useMemo(
+    () =>
+      [...weeksForUi].sort((a, b) => {
+        const aTime = a.weekStartIso ? new Date(`${a.weekStartIso}T00:00:00`).getTime() : 0;
+        const bTime = b.weekStartIso ? new Date(`${b.weekStartIso}T00:00:00`).getTime() : 0;
+        return aTime - bTime;
+      }),
+    [weeksForUi]
+  );
+
+  const currentNavIndex = sortedWeeksForNav.findIndex(
+    (w) => getWeekAndYear(w).weekNumber === activeWeekNumber
+  );
+  const isFirstWeek = currentNavIndex === 0;
+  const isLastWeek = currentNavIndex === sortedWeeksForNav.length - 1;
+
   const activeWeekRows = useMemo(() => {
     if (!activeWeekNumber) return [];
     return weekRowsByNumber[activeWeekNumber] ?? activeWeekData?.rows ?? [];
@@ -533,10 +471,7 @@ export default function TalentEngineTimesheet() {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   }
 
-  function buildRowsFromWeekData(
-    weekData: WeekTimesheetDay[],
-    splitMap?: Record<string, HourSplit>
-  ): WeeklyRow[] {
+  function buildRowsFromWeekData(weekData: WeekTimesheetDay[]): WeeklyRow[] {
     return weekData
       .filter((d) => typeof d.week_date === "string" && d.week_date.trim().length > 0)
       .map((day) => {
@@ -546,27 +481,16 @@ export default function TalentEngineTimesheet() {
           ? ""
           : parsed.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
         const total = Number.isFinite(day.total_working_hours) ? day.total_working_hours : 0;
-        const split = splitMap?.[isoDate];
-        const overtime = split ? toFiniteNonNegative(split.overtime) : 0;
-        const regular = split
-          ? Math.max(0, total - overtime)
-          : total;
         return {
           isoDate,
           date: formatIsoDateForDisplay(isoDate),
           day: weekday,
-          regular,
-          overtime,
           total,
         };
       });
   }
 
-  function hydrateWeekRowsFromData(
-    weekNumber: number,
-    weekData: WeekTimesheetDay[],
-    splitMap?: Record<string, HourSplit>
-  ) {
+  function hydrateWeekRowsFromData(weekNumber: number, weekData: WeekTimesheetDay[]) {
     setWeekRowsByNumber((prev) => {
       const base = prev[weekNumber] ?? [];
       if (base.length === 0) return prev;
@@ -575,15 +499,7 @@ export default function TalentEngineTimesheet() {
         const match = weekData.find((d) => d.week_date === iso);
         if (!match) return row;
         const total = toFiniteNonNegative(match.total_working_hours);
-        const split = splitMap?.[iso];
-        const overtime = split ? toFiniteNonNegative(split.overtime) : (row.overtime ?? 0);
-        const regular = split ? Math.max(0, total - overtime) : total;
-        return {
-          ...row,
-          total,
-          regular,
-          overtime: split ? overtime : (row.overtime ?? 0),
-        };
+        return { ...row, total };
       });
       return { ...prev, [weekNumber]: next };
     });
@@ -920,20 +836,14 @@ export default function TalentEngineTimesheet() {
 
     const existingWeekData = weekDataByNumber[weekNumber];
     if (existingWeekData) {
-      const candidate = profileId.trim();
-      const rrCandidate = rrCandidateId.trim();
-      const splitMap =
-        candidate && rrCandidate
-          ? readStoredSplitMap(candidate, rrCandidate, weekNumber, year)
-          : {};
       setWeekRowsByNumber((prev) => {
         const currentRows = prev[weekNumber];
         if (Array.isArray(currentRows) && currentRows.length > 0) return prev;
-        const rows = buildRowsFromWeekData(existingWeekData, splitMap);
+        const rows = buildRowsFromWeekData(existingWeekData);
         if (rows.length === 0) return prev;
         return { ...prev, [weekNumber]: rows };
       });
-      hydrateWeekRowsFromData(weekNumber, existingWeekData, splitMap);
+      hydrateWeekRowsFromData(weekNumber, existingWeekData);
       fetchedWeekDataRef.current.add(key);
       return;
     }
@@ -950,21 +860,15 @@ export default function TalentEngineTimesheet() {
     })
       .then((response) => {
         if (cancelled) return;
-        const candidate = profileId.trim();
-        const rrCandidate = rrCandidateId.trim();
-        const splitMap =
-          candidate && rrCandidate
-            ? readStoredSplitMap(candidate, rrCandidate, weekNumber, year)
-            : {};
         setWeekDataByNumber((prev) => ({ ...prev, [weekNumber]: response.week_data }));
         setWeekRowsByNumber((prev) => {
           const currentRows = prev[weekNumber];
           if (Array.isArray(currentRows) && currentRows.length > 0) return prev;
-          const rows = buildRowsFromWeekData(response.week_data, splitMap);
+          const rows = buildRowsFromWeekData(response.week_data);
           if (rows.length === 0) return prev;
           return { ...prev, [weekNumber]: rows };
         });
-        hydrateWeekRowsFromData(weekNumber, response.week_data, splitMap);
+        hydrateWeekRowsFromData(weekNumber, response.week_data);
         fetchedWeekDataRef.current.add(key);
       })
       .catch(() => {
@@ -1028,7 +932,7 @@ export default function TalentEngineTimesheet() {
     for (const row of activeWeekRows) {
       const date = row.isoDate ?? toIsoDate(row.date);
       if (!date) continue;
-      const total = Number(row.total ?? (row.regular ?? 0) + (row.overtime ?? 0));
+      const total = Number(row.total ?? 0);
       rowsByIsoDate.set(date, {
         total_working_hours: Number.isFinite(total) ? total : 0,
         remarks: dayRemarks[row.isoDate ?? row.date] ?? "",
@@ -1071,18 +975,6 @@ export default function TalentEngineTimesheet() {
     setSubmitBusy(true);
     setSubmissionStatus("");
     try {
-      const splitMap: Record<string, HourSplit> = {};
-      for (const row of activeWeekRows) {
-        const iso = row.isoDate ?? toIsoDate(row.date);
-        if (!iso) continue;
-        splitMap[iso] = {
-          regular: toFiniteNonNegative(row.regular),
-          overtime: toFiniteNonNegative(row.overtime),
-        };
-      }
-      if (Object.keys(splitMap).length > 0) {
-        writeStoredSplitMap(candidate, rrCandidate, weekNumber, year, splitMap);
-      }
       const response = await createEditCandidateTimesheet({
         candidate_id: candidate,
         rr_candidate_id: rrCandidate,
@@ -1183,32 +1075,19 @@ export default function TalentEngineTimesheet() {
             <div className="flex items-center justify-between text-m font-semibold">
               <span>Hours Worked - Total</span>
             </div>
-            <div className="mt-5 space-y-5">
+            <div className="mt-5">
               <div className="flex items-center gap-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
                   <Clock className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Total Regular Hours</p>
+                  <p className="text-xs text-slate-500">Total Actual Hours</p>
                   <p className="text-2xl font-semibold text-slate-900">
-                    {workorderWeeks.reduce((acc, w) => acc + (w.regular || 0), 0)}
+                    {workorderWeeks.reduce((acc, w) => acc + (w.total || 0), 0)}
                   </p>
                 </div>
               </div>
-
-              <hr />
-
-              <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
-                  <Clock className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Total Overtime Hours</p>
-                  <p className="text-2xl font-semibold text-slate-900">
-                    {workorderWeeks.reduce((acc, w) => acc + (w.overtime || 0), 0)}
-                  </p>
-                </div>
-              </div>
+              <p className="mt-4 text-xs text-slate-400">Regular &amp; overtime breakdown is calculated by the backend based on your work order settings.</p>
             </div>
           </div>
 
@@ -1330,9 +1209,10 @@ export default function TalentEngineTimesheet() {
                 <div className="flex w-full items-stretch justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => navigateMonth(-1)}
-                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-                    aria-label="Previous month"
+                    onClick={() => navigateWeek(-1)}
+                    disabled={isFirstWeek}
+                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Previous week"
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
@@ -1343,9 +1223,10 @@ export default function TalentEngineTimesheet() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => navigateMonth(1)}
-                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-                    aria-label="Next month"
+                    onClick={() => navigateWeek(1)}
+                    disabled={isLastWeek}
+                    className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Next week"
                   >
                     <ArrowRight className="h-4 w-4" />
                   </button>
@@ -1354,18 +1235,20 @@ export default function TalentEngineTimesheet() {
                 <>
                   <button
                     type="button"
-                    onClick={() => navigateMonth(-1)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    onClick={() => navigateWeek(-1)}
+                    disabled={isFirstWeek}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    Previous Month
+                    Previous Week
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigateMonth(1)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                    onClick={() => navigateWeek(1)}
+                    disabled={isLastWeek}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Next Month
+                    Next Week
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 </>
@@ -1410,8 +1293,6 @@ export default function TalentEngineTimesheet() {
               const submitActionStatus: "submit" | "re_submit" =
                 normalizedStatus.includes("reject") ? "re_submit" : "submit";
               const submitActionLabel = submitActionStatus === "re_submit" ? "Re-submit" : "Submit";
-              const computedRegular = rows.reduce((acc, row) => acc + (row.regular ?? 0), 0);
-              const computedOvertime = rows.reduce((acc, row) => acc + (row.overtime ?? 0), 0);
               const computedTotal = rows.reduce((acc, row) => acc + (row.total ?? 0), 0);
 
               return (
@@ -1446,7 +1327,13 @@ export default function TalentEngineTimesheet() {
                             <button
                               type="button"
                               disabled={submitBusy || !weekEditable}
-                              onClick={() => void saveTimesheet(submitActionStatus)}
+                              onClick={() =>
+                                setSubmitConfirm({
+                                  action: submitActionStatus,
+                                  label: submitActionLabel,
+                                  weekRange: week.range,
+                                })
+                              }
                               className="rounded-xl bg-[#033CE5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {submitActionLabel}
@@ -1480,14 +1367,8 @@ export default function TalentEngineTimesheet() {
                       <div
                         className={`flex flex-wrap items-center gap-2 ${isCompact ? "max-w-[62%] justify-end text-right" : "justify-end"}`}
                       >
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-sm font-semibold text-emerald-700">
-                          Regular Hours: {rows.length > 0 ? computedRegular : week.regular}
-                        </span>
-                        <span className="rounded-full bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-700">
-                          Overtime Hours: {rows.length > 0 ? computedOvertime : week.overtime}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-800">
-                          Total Hours: {rows.length > 0 ? computedTotal : week.total}
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-800">
+                          Actual Hours: {rows.length > 0 ? computedTotal : week.total}
                         </span>
                       </div>
                     </div>
@@ -1500,11 +1381,11 @@ export default function TalentEngineTimesheet() {
                           <table className="min-w-full table-fixed text-sm">
                             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                               <tr>
-                                <th className="px-6 py-3 text-left">Days</th>
-                                <th className="px-6 py-3 text-left">Regular Hours</th>
-                                <th className="px-6 py-3 text-left">Overtime Hours</th>
+                                <th className="px-6 py-3 text-left">Day</th>
+                                <th className="px-6 py-3 text-left">Actual Hours</th>
+                                <th className="px-6 py-3 text-left">Remarks</th>
                                 <th className="px-6 py-3 text-left">Leave</th>
-                                <th className="px-6 py-3 text-left">Total Hours</th>
+                                <th className="px-6 py-3 text-left">Status</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
@@ -1518,71 +1399,35 @@ export default function TalentEngineTimesheet() {
                                       <p className="text-xs text-slate-500">{row.day}</p>
                                     </td>
                                     <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          step="0.5"
-                                          value={getHourInputValue(weekNumber, rowKey, "regular", row.regular)}
-                                          disabled={!weekEditable}
-                                          onFocus={() => handleHourInputFocus(weekNumber, rowKey, "regular", row.regular)}
-                                          onChange={(event) => handleHourInputChange(weekNumber, rowKey, "regular", event.target.value)}
-                                          onBlur={() => handleHourInputBlur(weekNumber, rowKey, "regular")}
-                                          className="h-11 w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={(e) =>
-                                            setCommentModal({
-                                              date: row.date,
-                                              remarkKey: rowKey,
-                                              comment: dayRemarks[rowKey] ?? "",
-                                              triggerElement: e.currentTarget,
-                                            })
-                                          }
-                                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
-                                        >
-                                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="stroke-current">
-                                            <path d="M2 3.5C2 2.67157 2.67157 2 3.5 2H12.5C13.3284 2 14 2.67157 14 3.5V10.5C14 11.3284 13.3284 12 12.5 12H9L5 14V12H3.5C2.67157 12 2 11.3284 2 10.5V3.5Z" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                          </svg>
-                                        </button>
-                                      </div>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step="0.5"
+                                        value={getHourInputValue(weekNumber, rowKey, row.total)}
+                                        disabled={!weekEditable || leaveActive}
+                                        onFocus={() => handleHourInputFocus(weekNumber, rowKey, row.total)}
+                                        onChange={(event) => handleHourInputChange(weekNumber, rowKey, event.target.value)}
+                                        onBlur={() => handleHourInputBlur(weekNumber, rowKey)}
+                                        className="h-11 w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
+                                      />
                                     </td>
                                     <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          step="0.5"
-                                          value={getHourInputValue(weekNumber, rowKey, "overtime", row.overtime)}
-                                          disabled={!weekEditable}
-                                          onFocus={() => handleHourInputFocus(weekNumber, rowKey, "overtime", row.overtime)}
-                                          onChange={(event) => handleHourInputChange(weekNumber, rowKey, "overtime", event.target.value)}
-                                          onBlur={() => handleHourInputBlur(weekNumber, rowKey, "overtime")}
-                                          className="h-11 w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={(e) =>
-                                            setCommentModal({
-                                              date: row.date,
-                                              remarkKey: rowKey,
-                                              comment: dayRemarks[rowKey] ?? "",
-                                              triggerElement: e.currentTarget,
-                                            })
-                                          }
-                                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
-                                        >
-                                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="stroke-current">
-                                            <path d="M2 3.5C2 2.67157 2.67157 2 3.5 2H12.5C13.3284 2 14 2.67157 14 3.5V10.5C14 11.3284 13.3284 12 12.5 12H9L5 14V12H3.5C2.67157 12 2 11.3284 2 10.5V3.5Z" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                          </svg>
-                                        </button>
-                                      </div>
+                                      <textarea
+                                        rows={2}
+                                        value={dayRemarks[rowKey] ?? ""}
+                                        disabled={!weekEditable}
+                                        onChange={(e) => {
+                                          setHasUnsavedChanges(true);
+                                          setDayRemarks((prev) => ({ ...prev, [rowKey]: e.target.value }));
+                                        }}
+                                        placeholder="Add a remark…"
+                                        className="w-full min-w-[180px] resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
+                                      />
                                     </td>
                                     <td className="px-6 py-4">
                                       <button
                                         type="button"
-                                        onClick={() => toggleLeave(rowKey)}
+                                        onClick={() => toggleLeave(weekNumber, rowKey)}
                                         className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                                           leaveActive
                                             ? "border-amber-300 bg-amber-100 text-amber-800"
@@ -1595,12 +1440,13 @@ export default function TalentEngineTimesheet() {
                                     </td>
                                     <td className="px-6 py-4">
                                       <div className="flex flex-col gap-1">
-                                        <span className="text-base font-semibold text-slate-900">
-                                          {leaveActive ? "Sick Leave" : `${row.total ?? "-"} hrs`}
-                                        </span>
-                                        {leaveActive && (
+                                        {leaveActive ? (
                                           <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                                            Recorded
+                                            Leave Recorded
+                                          </span>
+                                        ) : (
+                                          <span className="text-sm text-slate-500">
+                                            {(row.total ?? 0) > 0 ? `${row.total} hrs logged` : "—"}
                                           </span>
                                         )}
                                       </div>
@@ -1630,75 +1476,37 @@ export default function TalentEngineTimesheet() {
                                   {leaveActive ? "Sick Leave" : `${row.total ?? "-"} hrs total`}
                                 </span>
                               </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Regular</p>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step="0.5"
-                                      value={getHourInputValue(weekNumber, rowKey, "regular", row.regular)}
-                                      disabled={!weekEditable}
-                                      onFocus={() => handleHourInputFocus(weekNumber, rowKey, "regular", row.regular)}
-                                      onChange={(event) => handleHourInputChange(weekNumber, rowKey, "regular", event.target.value)}
-                                      onBlur={() => handleHourInputBlur(weekNumber, rowKey, "regular")}
-                                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={(e) =>
-                                        setCommentModal({
-                                          date: row.date,
-                                          remarkKey: rowKey,
-                                          comment: dayRemarks[rowKey] ?? "",
-                                          triggerElement: e.currentTarget,
-                                        })
-                                      }
-                                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
-                                    >
-                                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="stroke-current">
-                                        <path d="M2 3.5C2 2.67157 2.67157 2 3.5 2H12.5C13.3284 2 14 2.67157 14 3.5V10.5C14 11.3284 13.3284 12 12.5 12H9L5 14V12H3.5C2.67157 12 2 11.3284 2 10.5V3.5Z" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Overtime</p>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step="0.5"
-                                      value={getHourInputValue(weekNumber, rowKey, "overtime", row.overtime)}
-                                      disabled={!weekEditable}
-                                      onFocus={() => handleHourInputFocus(weekNumber, rowKey, "overtime", row.overtime)}
-                                      onChange={(event) => handleHourInputChange(weekNumber, rowKey, "overtime", event.target.value)}
-                                      onBlur={() => handleHourInputBlur(weekNumber, rowKey, "overtime")}
-                                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={(e) =>
-                                        setCommentModal({
-                                          date: row.date,
-                                          remarkKey: rowKey,
-                                          comment: dayRemarks[rowKey] ?? "",
-                                          triggerElement: e.currentTarget,
-                                        })
-                                      }
-                                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
-                                    >
-                                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="stroke-current">
-                                        <path d="M2 3.5C2 2.67157 2.67157 2 3.5 2H12.5C13.3284 2 14 2.67157 14 3.5V10.5C14 11.3284 13.3284 12 12.5 12H9L5 14V12H3.5C2.67157 12 2 11.3284 2 10.5V3.5Z" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </div>
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Actual Hours</p>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.5"
+                                  value={getHourInputValue(weekNumber, rowKey, row.total)}
+                                  disabled={!weekEditable || leaveActive}
+                                  onFocus={() => handleHourInputFocus(weekNumber, rowKey, row.total)}
+                                  onChange={(event) => handleHourInputChange(weekNumber, rowKey, event.target.value)}
+                                  onBlur={() => handleHourInputBlur(weekNumber, rowKey)}
+                                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</p>
+                                <textarea
+                                  rows={2}
+                                  value={dayRemarks[rowKey] ?? ""}
+                                  disabled={!weekEditable}
+                                  onChange={(e) => {
+                                    setHasUnsavedChanges(true);
+                                    setDayRemarks((prev) => ({ ...prev, [rowKey]: e.target.value }));
+                                  }}
+                                  placeholder="Add a remark…"
+                                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
+                                />
                               </div>
                               <button
                                 type="button"
-                                onClick={() => toggleLeave(rowKey)}
+                                onClick={() => toggleLeave(weekNumber, rowKey)}
                                 className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                                   leaveActive
                                     ? "border-amber-300 bg-amber-100 text-amber-800"
@@ -1733,6 +1541,33 @@ export default function TalentEngineTimesheet() {
       />
     ) : null;
 
+  const submitSuccessModal = (
+    <SubmitSuccessModal
+      open={!!submitSuccess}
+      actionLabel={submitSuccess?.label ?? "Submitted"}
+      weekRange={submitSuccess?.weekRange ?? ""}
+      onClose={() => setSubmitSuccess(null)}
+    />
+  );
+
+  const submitConfirmModal = (
+    <SubmitConfirmModal
+      open={!!submitConfirm}
+      submitBusy={submitBusy}
+      actionLabel={submitConfirm?.label ?? "Submit"}
+      weekRange={submitConfirm?.weekRange ?? ""}
+      onConfirm={() => {
+        if (!submitConfirm) return;
+        const { action, label, weekRange } = submitConfirm;
+        void saveTimesheet(action).then((ok) => {
+          setSubmitConfirm(null);
+          if (ok) setSubmitSuccess({ label, weekRange });
+        });
+      }}
+      onCancel={() => setSubmitConfirm(null)}
+    />
+  );
+
   const unsavedChangesModal = (
     <UnsavedChangesModal
       open={showUnsavedModal}
@@ -1760,6 +1595,8 @@ export default function TalentEngineTimesheet() {
           {timesheetMain}
         </CandidateAppShell>
         {timesheetModal}
+        {submitConfirmModal}
+        {submitSuccessModal}
         {unsavedChangesModal}
       </>
     );
@@ -1770,6 +1607,7 @@ export default function TalentEngineTimesheet() {
       <AppNavbar />
       {timesheetMain}
       {timesheetModal}
+      {submitConfirmModal}
       {unsavedChangesModal}
     </div>
   );

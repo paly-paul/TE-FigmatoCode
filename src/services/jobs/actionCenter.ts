@@ -342,6 +342,7 @@ function normalizeJobApplications(payload: Record<string, unknown>): JobApplicat
         pickField(row, ["status", "application_status"]),
       score: pickFiniteNumber(row, ["score", "match_score", "matching_score"]),
       date: pickField(row, ["modified", "creation", "date", "applied_on", "posting_date"]),
+      salary: pickFiniteNumber(row, ["salary", "daily_salary", "rate"]),
     });
   }
   return out;

@@ -35,6 +35,7 @@ export type JobApplicationApi = {
   stage?: string;
   score?: number;
   date?: string;
+  salary?: number;
 };
 
 export type CandidateActionableSlotApi = {
