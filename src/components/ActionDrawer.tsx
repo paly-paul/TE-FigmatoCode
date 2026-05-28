@@ -81,6 +81,8 @@ export interface ActionDrawerActionCard {
   /** Hiring organization (API `customer`); shown until RR details load. */
   customer?: string;
   skills?: string[];
+  /** Raw `status` from the actionables API (e.g. "Onboarded"). */
+  candidateStatus?: string;
 }
 
 interface ActionDrawerProps {
@@ -405,8 +407,10 @@ export default function ActionDrawer({
     drawerFormResetSessionRef.current = drawerFormResetKey;
 
     setActiveTab(
-      isApplicationTimelineCard(action)
+      action?.candidateStatus?.toLowerCase() === "onboarded"
         ? "Job Description"
+        : isApplicationTimelineCard(action)
+          ? "Job Description"
         : isRecruiterInterestCard(action)
           ? "Job Description"
         : isActionableStageCard(action)
@@ -462,6 +466,7 @@ export default function ActionDrawer({
   }, []);
 
   const normalizedTitle = action?.title.toLowerCase() ?? "";
+  const isOnboarded = action?.candidateStatus?.toLowerCase() === "onboarded";
   const isRecruiterInterestReceived = isRecruiterInterestCard(action);
   const isFirstRecruiterInterestCard =
     isRecruiterInterestReceived && action?.id === actionDrawerFirstRecruiterCardId;
@@ -474,8 +479,10 @@ export default function ActionDrawer({
     normalizedTitle.includes("proposal");
 
   const hasChatChannel = Boolean(action?.jobDocumentId);
-  const orderedTabs: ActionDrawerTab[] = isApplicationTimelineCard(action)
+  const orderedTabs: ActionDrawerTab[] = isOnboarded
     ? ["Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
+    : isApplicationTimelineCard(action)
+      ? ["Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isRecruiterInterestCard(action)
       ? ["Job Description", "Job Action", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isInterviewScheduled

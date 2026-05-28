@@ -114,6 +114,8 @@ interface ActionCard {
   skills?: string[];
   /** Raw `status` from the actionables API (e.g. "Onboarded"). */
   candidateStatus?: string;
+  expectedJoiningDate?: string;
+  actualJoiningDate?: string;
 }
 
 function mapActionableInterviewSlots(
@@ -861,6 +863,8 @@ export default function TalentEngineDashboard() {
             receivedAt: item.received_at || item.accepted_at,
             matchPercentage: item.score != null ? Math.max(0, Math.min(100, Math.round(item.score))) : undefined,
             candidateStatus: item.status || undefined,
+            expectedJoiningDate: item.info?.expected_joining_date || undefined,
+            actualJoiningDate: item.info?.actual_joining_date || undefined,
           };
         };
 
@@ -2468,7 +2472,7 @@ export default function TalentEngineDashboard() {
                         key={getActionCardKey(card)}
                         type="button"
                         onClick={() => openActionDrawerForCard(card)}
-                        className="w-full rounded-xl border border-green-200 bg-green-50/40 p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
+                        className="w-full rounded-xl border border-green-200 bg-gradient-to-br from-green-50 via-white to-emerald-50 p-4 text-left shadow-sm transition-shadow active:scale-[0.99]"
                       >
                         <div className="mb-3 flex items-start justify-between gap-2">
                           <div
@@ -2477,19 +2481,30 @@ export default function TalentEngineDashboard() {
                             {badge.icon}
                             {badge.label}
                           </div>
-                          <span className="shrink-0 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                          <span className="shrink-0 rounded-full border border-green-200 bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
                             Onboarded
                           </span>
                         </div>
-                        <div className="space-y-2.5">
-                          <p className="text-base text-slate-700">
-                            <span className="font-semibold text-slate-600">Role: </span>
-                            <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
-                          </p>
-                          <p className="text-base text-slate-700">
+                        <p className="mb-2.5 text-center text-base font-bold text-green-700">
+                          You are onboarded!
+                        </p>
+                        <div className="space-y-1.5">
+                          <p className="text-sm text-slate-700">
                             <span className="font-semibold text-slate-600">Company: </span>
                             <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
                           </p>
+                          {card.expectedJoiningDate && (
+                            <p className="text-sm text-slate-700">
+                              <span className="font-semibold text-slate-600">Expected Joining: </span>
+                              <span className="font-medium text-gray-900">{formatAppliedDate(card.expectedJoiningDate)}</span>
+                            </p>
+                          )}
+                          {card.actualJoiningDate && (
+                            <p className="text-sm text-slate-700">
+                              <span className="font-semibold text-slate-600">Actual Joining: </span>
+                              <span className="font-medium text-gray-900">{formatAppliedDate(card.actualJoiningDate)}</span>
+                            </p>
+                          )}
                         </div>
                       </button>
                     );
@@ -2692,36 +2707,35 @@ export default function TalentEngineDashboard() {
           </>
         ) : (
           <>
-            <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#D8E2F1]">
-              <div className="flex">
-              {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
-                <button
-                  key={subTab}
-                  type="button"
-                  onClick={() => setApplicationSubTab(subTab)}
-                  className={`flex items-center gap-2 border-b-4 px-2 pb-3 pt-1 text-sm font-medium ${applicationSubTab === subTab
-                      ? "border-blue-600 text-blue-600"
-                      : "border-transparent text-[#60708F]"
-                    }`}
-                >
-                  <Clock3 className="h-4 w-4" />
-                  {subTab}
-                </button>
-              ))}
-              </div>
-              <div className="mb-2 flex items-center gap-2">
-                {!isManualRefreshing && (
-                  <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void handleManualRefresh()}
-                  disabled={isManualRefreshing}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Repeat size={12} className={isManualRefreshing ? "animate-spin" : ""} />
-                  {isManualRefreshing ? "Refreshing..." : "Refresh"}
-                </button>
+            <div className="mb-4 border-b border-[#D8E2F1]">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex">
+                  {(["Shortlisted", "Applied Jobs"] as const).map((subTab) => (
+                    <button
+                      key={subTab}
+                      type="button"
+                      onClick={() => setApplicationSubTab(subTab)}
+                      className={`border-b-4 px-3 pb-3 pt-1 text-sm font-medium whitespace-nowrap ${
+                        applicationSubTab === subTab
+                          ? "border-blue-600 text-blue-600"
+                          : "border-transparent text-[#60708F]"
+                      }`}
+                    >
+                      {subTab}
+                    </button>
+                  ))}
+                </div>
+                <div className="pb-2 flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handleManualRefresh()}
+                    disabled={isManualRefreshing}
+                    className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Repeat size={11} className={isManualRefreshing ? "animate-spin" : ""} />
+                    {isManualRefreshing ? "Refreshing…" : "Refresh"}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3027,7 +3041,7 @@ export default function TalentEngineDashboard() {
                       return (
                         <div
                           key={getActionCardKey(card)}
-                          className="border border-green-200 bg-green-50/40 rounded-md p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
+                          className="border border-green-200 bg-gradient-to-br from-green-50 via-white to-emerald-50 rounded-xl p-4 hover:shadow-sm min-h-[180px] sm:min-h-[210px] flex flex-col"
                         >
                           <div className="flex justify-between mb-3">
                             <div
@@ -3036,19 +3050,30 @@ export default function TalentEngineDashboard() {
                               {badge.icon}
                               {badge.label}
                             </div>
-                            <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                            <span className="rounded-full border border-green-200 bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
                               Onboarded
                             </span>
                           </div>
-                          <div className="mb-4 space-y-2">
-                            <p className="text-sm text-slate-700">
-                              <span className="font-semibold text-slate-600">Role: </span>
-                              <span className="font-semibold text-gray-900">{getActionRole(card)}</span>
-                            </p>
+                          <p className="mb-3 text-center text-base font-bold text-green-700">
+                            You are onboarded!
+                          </p>
+                          <div className="mb-4 space-y-1.5">
                             <p className="text-sm text-slate-700">
                               <span className="font-semibold text-slate-600">Company: </span>
                               <span className="font-medium text-gray-900">{getActionCompany(card)}</span>
                             </p>
+                            {card.expectedJoiningDate && (
+                              <p className="text-sm text-slate-700">
+                                <span className="font-semibold text-slate-600">Expected Joining: </span>
+                                <span className="font-medium text-gray-900">{formatAppliedDate(card.expectedJoiningDate)}</span>
+                              </p>
+                            )}
+                            {card.actualJoiningDate && (
+                              <p className="text-sm text-slate-700">
+                                <span className="font-semibold text-slate-600">Actual Joining: </span>
+                                <span className="font-medium text-gray-900">{formatAppliedDate(card.actualJoiningDate)}</span>
+                              </p>
+                            )}
                           </div>
                           <button
                             onClick={() => openActionDrawerForCard(card)}
