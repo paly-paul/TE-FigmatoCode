@@ -45,11 +45,15 @@
   .dual-range-input::-webkit-slider-runnable-track {
     height: 100%;
     background: transparent;
+    border: none;
+    box-shadow: none;
   }
 
   .dual-range-input::-moz-range-track {
     height: 100%;
     background: transparent;
+    border: none;
+    box-shadow: none;
   }
 
   .dual-range-input::-webkit-slider-thumb {
@@ -60,6 +64,9 @@
     height: 18px;
     border-radius: 9999px;
     background: transparent;
+    border: none;
+    box-shadow: none;
+    opacity: 0;
     cursor: pointer;
   }
 
@@ -70,6 +77,8 @@
     border: 0;
     border-radius: 9999px;
     background: transparent;
+    box-shadow: none;
+    opacity: 0;
     cursor: pointer;
   }
 }

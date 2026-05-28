@@ -35,12 +35,20 @@ function normalizeActionableInfo(
         slot_status: firstString(s, ["slot_status", "status"]),
       }));
   }
+  const message = firstString(raw, ["message"]);
+  const expected_joining_date = firstString(raw, ["expected_joining_date"]);
+  const actual_joining_date = firstString(raw, ["actual_joining_date"]);
+  const onboarding = firstString(raw, ["onboarding"]);
   const hasAny =
     interview_id ||
     interview_mode ||
     interview_type ||
     interview_round != null ||
-    (interview_slots && interview_slots.length > 0);
+    (interview_slots && interview_slots.length > 0) ||
+    message ||
+    expected_joining_date ||
+    actual_joining_date ||
+    onboarding;
   if (!hasAny) return undefined;
   return {
     interview_id,
@@ -48,6 +56,10 @@ function normalizeActionableInfo(
     interview_type,
     interview_round,
     interview_slots,
+    message,
+    expected_joining_date,
+    actual_joining_date,
+    onboarding,
   };
 }
 

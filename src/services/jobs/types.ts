@@ -52,6 +52,10 @@ export type CandidateActionableInfoApi = {
   interview_type?: string;
   interview_round?: number;
   interview_slots?: CandidateActionableSlotApi[];
+  message?: string;
+  expected_joining_date?: string;
+  actual_joining_date?: string;
+  onboarding?: string;
 };
 
 export type CandidateInterestApi = {
