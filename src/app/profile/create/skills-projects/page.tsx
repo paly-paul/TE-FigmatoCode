@@ -3020,7 +3020,7 @@ function SkillsProjectsPageContent() {
                             step="1"
                             value={!entry.experienceYears || entry.experienceYears === "0" ? "" : entry.experienceYears}
                             onChange={(e) => updateExperience(entry.id, { experienceYears: e.target.value })}
-                            placeholder="1"
+                            placeholder="Eg: 1"
                             className={fieldClass(Boolean(fe?.experienceYears))}
                           />
                           {fe?.experienceYears && <p className="text-xs text-red-500">{fe.experienceYears}</p>}

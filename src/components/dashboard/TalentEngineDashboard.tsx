@@ -2411,7 +2411,7 @@ export default function TalentEngineDashboard() {
         <div className="mb-4">{actionTabsRow}</div>
 
         <div className="flex flex-col gap-3">
-          {activeActionTab === "Interviews" ? (
+          {activeActionTab === "Interviews" && !showOnboardedCards ? (
             <>
               {interviewTabSlotWorkflow.map((interview) => {
                 const card = interviewTabSlotCardsRef.current.get(interview.id);
@@ -2984,7 +2984,7 @@ export default function TalentEngineDashboard() {
           <div className="mb-6 [&_button]:rounded-md">{actionTabsRow}</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {activeActionTab === "Interviews" ? (
+            {activeActionTab === "Interviews" && !showOnboardedCards ? (
               <>
                 {interviewTabSlotWorkflow.map((interview) => {
                   const card = interviewTabSlotCardsRef.current.get(interview.id);
