@@ -112,7 +112,7 @@ function parseMaybeDate(value: string | undefined): string {
     if (!value?.trim()) return "";
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return value;
-    return dt.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+    return dt.toLocaleDateString("en-GB", { month: "short", day: "2-digit", year: "numeric" });
 }
 
 function parseYearsFromDuration(duration: string | undefined, fallbackYears: number): number {
@@ -676,7 +676,7 @@ export default function MyProfilePage() {
                         {PROFILE.availableDate && (
                             <div>
                                 <p className="text-[13px] text-[#5E7397]">Available Date</p>
-                                <p className="mt-1 text-[16px] text-[#202939]">{PROFILE.availableDate}</p>
+                                <p className="mt-1 text-[16px] text-[#202939]">{parseMaybeDate(PROFILE.availableDate)}</p>
                             </div>
                         )}
                     </div>
@@ -1371,7 +1371,7 @@ export default function MyProfilePage() {
                                     <MiniInfo label="Experience" value={PROFILE.experience} />
                                     <MiniInfo label="Salary / Hour" value={PROFILE.salary} />
                                     {PROFILE.availableDate && (
-                                        <MiniInfo label="Available Date" value={PROFILE.availableDate} />
+                                        <MiniInfo label="Available Date" value={parseMaybeDate(PROFILE.availableDate)} />
                                     )}
                                 </div>
                             </div>

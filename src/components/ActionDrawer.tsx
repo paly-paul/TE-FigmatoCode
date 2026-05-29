@@ -478,7 +478,11 @@ export default function ActionDrawer({
     normalizedTitle.includes("negotiation") ||
     normalizedTitle.includes("proposal");
 
-  const hasChatChannel = Boolean(action?.jobDocumentId);
+  const chatEligibleKeywords = ["negotiation", "proposal", "salary", "offer", "select", "onboard"];
+  const isChatEligible =
+    chatEligibleKeywords.some((kw) => normalizedTitle.includes(kw)) ||
+    chatEligibleKeywords.some((kw) => (action?.applicationStage ?? "").toLowerCase().includes(kw));
+  const hasChatChannel = Boolean(action?.jobDocumentId) && isChatEligible;
   const orderedTabs: ActionDrawerTab[] = isOnboarded
     ? ["Job Description", "Timeline", ...(hasChatChannel ? ["Chat" as const] : [])]
     : isApplicationTimelineCard(action)

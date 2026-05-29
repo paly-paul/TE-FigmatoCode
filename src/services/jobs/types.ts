@@ -65,7 +65,13 @@ export type CandidateInterestApi = {
   customer: string;
   job_title: string;
   location: string;
-  score?: number;
+  score?: number | string;
+  stage?: string;
+  status?: string;
+  available_date?: string;
+  expected_salary?: number;
+  updated_date?: string | null;
+  rr_candidate?: string;
 };
 
 export type CandidateActionableApi = {

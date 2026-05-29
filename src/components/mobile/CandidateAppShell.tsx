@@ -367,12 +367,15 @@ export default function CandidateAppShell({
               onClick={onJobsClick ?? (() => navigateTo("/jobs/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
-              <BriefcaseBusiness
-                className={`h-6 w-6 ${
-                  activeBottomTab === "jobs" ? "text-blue-600" : "text-gray-400"
+              <span
+                className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                  activeBottomTab === "jobs"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-transparent text-gray-400"
                 }`}
-                strokeWidth={1.75}
-              />
+              >
+                <BriefcaseBusiness className="h-5 w-5" strokeWidth={1.75} />
+              </span>
               <span
                 className={
                   activeBottomTab === "jobs" ? "text-blue-600" : "text-gray-500"
@@ -387,14 +390,15 @@ export default function CandidateAppShell({
               onClick={onInsightsClick ?? (() => navigateTo("/dashboard/visibility-score/"))}
               className="flex flex-col items-center justify-center gap-1 text-xs font-medium"
             >
-              <BarChart3
-                className={`h-6 w-6 ${
+              <span
+                className={`flex h-10 w-10 items-center justify-center rounded-full ${
                   activeBottomTab === "insights"
-                    ? "text-blue-600"
-                    : "text-gray-400"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-transparent text-gray-400"
                 }`}
-                strokeWidth={1.75}
-              />
+              >
+                <BarChart3 className="h-5 w-5" strokeWidth={1.75} />
+              </span>
               <span
                 className={
                   activeBottomTab === "insights"
