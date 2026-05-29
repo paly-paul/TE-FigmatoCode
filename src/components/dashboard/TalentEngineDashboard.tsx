@@ -1453,9 +1453,11 @@ export default function TalentEngineDashboard() {
 
   const hasMoreActions =
     activeActionTab !== "Interviews" && filteredActions.length > ACTION_CENTER_PAGE_SIZE;
-  const displayedActions = actionCenterSeeAll
-    ? filteredActions
-    : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
+  const displayedActions = showOnboardedCards
+    ? []
+    : actionCenterSeeAll
+      ? filteredActions
+      : filteredActions.slice(0, ACTION_CENTER_PAGE_SIZE);
 
   const upcomingInterviews = apiScheduledInterviews;
 
@@ -1502,6 +1504,7 @@ export default function TalentEngineDashboard() {
 
   const recommendedSourceJobs = apiRecommendedJobs;
   const applicationSourceJobs = apiApplicationJobs;
+  const rejectedJobsCount = applicationSourceJobs.filter((j) => j.stage === "Rejected").length;
 
   const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -2060,9 +2063,13 @@ export default function TalentEngineDashboard() {
 
   const renderEmptyApplications = () => (
     <div className="border border-dashed border-gray-300 rounded-xl bg-gray-50 px-6 py-10 text-center">
-      <p className="text-sm font-medium text-gray-900 mb-1">No applications yet</p>
+      <p className="text-sm font-medium text-gray-900 mb-1">
+        {showRejectedJobs ? "No rejected jobs" : "No applications yet"}
+      </p>
       <p className="text-sm text-gray-500">
-        Once an application record is created for you, it will appear here.
+        {showRejectedJobs
+          ? "You have no rejected applications at the moment."
+          : "Once an application record is created for you, it will appear here."}
       </p>
     </div>
   );
@@ -2123,7 +2130,8 @@ export default function TalentEngineDashboard() {
   );
 
   const actionTabsRow = (
-    <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+    <div className="flex flex-col gap-2">
+      {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {orderedActionTabs.map((tab) => (
           <button
@@ -2143,40 +2151,46 @@ export default function TalentEngineDashboard() {
           </button>
         ))}
       </div>
-      <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
-        {onboardedActionCards.length > 0 && (
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
-            <input
-              type="checkbox"
-              checked={showOnboardedCards}
-              onChange={(e) => setShowOnboardedCards(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
-            />
-            Show Onboarded
-          </label>
-        )}
-        {!isManualRefreshing && (
-          <span className="text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
-        )}
-        <button
-          type="button"
-          onClick={() => void handleManualRefresh()}
-          disabled={isManualRefreshing}
-          className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Repeat size={14} className={isManualRefreshing ? "animate-spin" : ""} />
-          {isManualRefreshing ? "Refreshing..." : "Refresh"}
-        </button>
-        {hasMoreActions ? (
+      {/* Checkbox (left) + controls (right) */}
+      <div className="flex items-center justify-between gap-3">
+        <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+          <input
+            type="checkbox"
+            checked={showOnboardedCards}
+            onChange={(e) => setShowOnboardedCards(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
+          />
+          Show Onboarded
+          {onboardedActionCards.length > 0 && (
+            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-semibold text-white">
+              {onboardedActionCards.length}
+            </span>
+          )}
+        </label>
+        <div className="flex items-center gap-3">
+          {!isManualRefreshing && (
+            <span className="hidden min-[480px]:inline text-xs text-gray-400">Refreshing in {refreshCountdown}s</span>
+          )}
           <button
             type="button"
-            onClick={() => setActionCenterSeeAll((prev) => !prev)}
-            className="flex shrink-0 items-center justify-center gap-1 text-sm font-medium text-blue-600 sm:justify-start"
+            onClick={() => void handleManualRefresh()}
+            disabled={isManualRefreshing}
+            className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {actionCenterSeeAll ? "Show less" : "See All"}
-            {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            <Repeat size={14} className={isManualRefreshing ? "animate-spin" : ""} />
+            {isManualRefreshing ? "Refreshing..." : "Refresh"}
           </button>
-        ) : null}
+          {hasMoreActions ? (
+            <button
+              type="button"
+              onClick={() => setActionCenterSeeAll((prev) => !prev)}
+              className="flex shrink-0 items-center justify-center gap-1 text-sm font-medium text-blue-600"
+            >
+              {actionCenterSeeAll ? "Show less" : "See All"}
+              {actionCenterSeeAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -2412,8 +2426,16 @@ export default function TalentEngineDashboard() {
             </>
           ) : displayedActions.length === 0 && (!showOnboardedCards || onboardedActionCards.length === 0) ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
-              <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
+              <p className="text-sm font-medium text-gray-900">
+                {showOnboardedCards && onboardedActionCards.length === 0
+                  ? "No onboarded jobs"
+                  : getEmptyActionMessage(activeActionTab).title}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {showOnboardedCards && onboardedActionCards.length === 0
+                  ? "You have no onboarded jobs at the moment."
+                  : getEmptyActionMessage(activeActionTab).description}
+              </p>
             </div>
           ) : (
             <>
@@ -2762,6 +2784,11 @@ export default function TalentEngineDashboard() {
                   className="h-3.5 w-3.5 rounded border-gray-300 accent-[#1447E6]"
                 />
                 Show Rejected
+                {rejectedJobsCount > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                    {rejectedJobsCount}
+                  </span>
+                )}
               </label>
 
               <button
@@ -2976,8 +3003,16 @@ export default function TalentEngineDashboard() {
               </>
             ) : displayedActions.length === 0 && (!showOnboardedCards || onboardedActionCards.length === 0) ? (
               <div className="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
-                <p className="text-sm font-medium text-gray-900">{getEmptyActionMessage(activeActionTab).title}</p>
-                <p className="mt-1 text-sm text-gray-500">{getEmptyActionMessage(activeActionTab).description}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {showOnboardedCards && onboardedActionCards.length === 0
+                    ? "No onboarded jobs"
+                    : getEmptyActionMessage(activeActionTab).title}
+                </p>
+                <p className="mt-1 text-sm text-gray-500">
+                  {showOnboardedCards && onboardedActionCards.length === 0
+                    ? "You have no onboarded jobs at the moment."
+                    : getEmptyActionMessage(activeActionTab).description}
+                </p>
               </div>
             ) : (
               <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MessageCircle, Send, Users } from "lucide-react";
 import { WS_BASE_URL } from "@/lib/api";
 import { CusTextarea } from "@/components/forms/CusTextarea";
@@ -130,9 +130,13 @@ export function ChatTabContent({ jobId, profileId, userEmail, userName }: ChatTa
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionPosition, setMentionPosition] = useState(0);
   const participantMapRef = useRef<Record<string, { user_name: string; user_type: string }>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Find the channel for this job
   useEffect(() => {
@@ -284,6 +288,38 @@ export function ChatTabContent({ jobId, profileId, userEmail, userName }: ChatTa
   const customerEmails = channelData?.customer?.map((c) => c.email) ?? [];
   const emailList = [...new Set([...recruiterEmails, ...customerEmails, userEmail])];
   const sendMessageState = emailList.includes(userEmail);
+
+  const mentionableUsers = [
+    ...(channelData?.recruiter?.map((r) => ({ name: r.recruiter_name, role: "TE - Recruiter" })) ?? []),
+    ...(channelData?.customer?.map((c) => ({ name: c.customer_name, role: "Customer - HR" })) ?? []),
+    ...(userName ? [{ name: userName, role: "Candidate" }] : []),
+  ];
+  const filteredMentions = mentionableUsers.filter((u) =>
+    u.name.toLowerCase().includes(mentionQuery.toLowerCase())
+  );
+
+  const handleMentionSelect = (name: string) => {
+    const before = messageInput.slice(0, mentionPosition);
+    const after = messageInput.slice(mentionPosition + mentionQuery.length + 1);
+    setMessageInput(`${before}@${name} ${after}`);
+    setShowMentions(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setMessageInput(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const textBeforeCursor = val.slice(0, cursor);
+    const atIdx = textBeforeCursor.lastIndexOf("@");
+    if (atIdx !== -1 && !textBeforeCursor.slice(atIdx + 1).includes(" ")) {
+      setMentionPosition(atIdx);
+      setMentionQuery(textBeforeCursor.slice(atIdx + 1));
+      setShowMentions(true);
+    } else {
+      setShowMentions(false);
+    }
+  };
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (channelLoading) {
@@ -470,10 +506,34 @@ export function ChatTabContent({ jobId, profileId, userEmail, userName }: ChatTa
             className="relative"
             onSubmit={(e) => { e.preventDefault(); void handleSend(); }}
           >
+            {showMentions && filteredMentions.length > 0 && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 z-10 rounded-lg border border-[#E6ECF6] bg-white shadow-lg overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] font-semibold text-[#5E7397] uppercase tracking-wide border-b border-[#E6ECF6]">
+                  Mention someone
+                </div>
+                {filteredMentions.map((user, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); handleMentionSelect(user.name); }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[#F8FAFD] transition-colors"
+                  >
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#1447E6] to-[#3B82F6] text-[10px] font-bold text-white">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-[#202939]">{user.name}</p>
+                      <p className="text-[10px] text-[#5E7397]">{user.role}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             <CusTextarea
+              ref={inputRef}
               mHeight="72px"
               value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();

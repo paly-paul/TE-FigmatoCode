@@ -253,6 +253,7 @@ export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): 
   const locId = slugifyLocationId(item.location || item.rr);
   const score = coerceMatchPercent(item.score);
   const loc = parseLocation(item.location);
+  const stage = item.stage?.trim() || "Applied";
   return {
     id: stableJobNumericId(item.candidate_interest_for_rr + item.rr),
     title: item.job_title || item.rr,
@@ -260,18 +261,19 @@ export function mapCandidateInterestToDashboardJob(item: CandidateInterestApi): 
     locationId: locId,
     locationFull: loc.country,
     company: item.customer || "—",
-    salary: "—",
+    salary: item.expected_salary != null ? `$${item.expected_salary.toLocaleString()}` : "—",
     hourlyRate: 0,
     startDate: "—",
     matchPercentage: Math.max(0, Math.min(100, Math.round(score))),
     status: "New",
-    stage: "Applied",
-    postedTime: "—",
+    stage,
+    postedTime: item.updated_date ? formatRelativeDaysAgo(item.updated_date) : "—",
     skills: [],
     employmentType: "—",
     seniorityLevel: "—",
     jobDocumentId: item.rr,
-    appliedDate: undefined,
+    appliedDate: item.updated_date || undefined,
+    rrCandidateId: item.rr_candidate || undefined,
   };
 }
 
