@@ -1446,9 +1446,7 @@ export default function TalentEngineDashboard() {
   );
 
   const onboardedActionCards = resolvedActionCards.filter(
-    (card) =>
-      card.type === activeActionTab &&
-      card.candidateStatus?.toLowerCase() === "onboarded"
+    (card) => card.candidateStatus?.toLowerCase() === "onboarded"
   );
 
   const hasMoreActions =
