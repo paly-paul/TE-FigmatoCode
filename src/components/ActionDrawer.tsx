@@ -500,12 +500,12 @@ export default function ActionDrawer({
       : [...actionDrawerChrome.tabs];
   const isDirectApply = isDirectJobApplyCard(action);
   const roleTitle =
-    (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation
+    (isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation || isOnboarded
       ? action?.subtitle.split(" - ")[0]
       : action?.title) ?? "Senior Engineer";
   const locationLabel =
     rrDetails?.location ||
-    (!(isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation)
+    (!(isRecruiterInterestReceived || isInterviewScheduled || isSalaryNegotiation || isOnboarded)
       ? (action?.subtitle.split(" - ")[1] ?? "")
       : "");
 
