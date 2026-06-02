@@ -67,14 +67,11 @@ export default function GoogleCallbackPage() {
 
         prefetchDropdownDetailsAfterLogin();
 
-        const isSignupFlow = sessionStorage.getItem(GOOGLE_AUTH_MODE_KEY) === "signup";
         sessionStorage.removeItem(GOOGLE_AUTH_MODE_KEY);
 
-        const destination = isSignupFlow
-          ? "/profile/create"
-          : email
-            ? await getPostLoginDestination(email)
-            : "/profile/create";
+        const destination = email
+          ? await getPostLoginDestination(email)
+          : "/profile/create";
         const skipWizard = destination === "/dashboard";
         if (skipWizard) {
           setDashboardWelcomePending();

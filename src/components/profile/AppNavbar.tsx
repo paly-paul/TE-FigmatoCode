@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { NotificationDrawer } from "../ui/NotificationDrawer";
 import { getResolvedNavDisplayName } from "@/lib/userDisplayName";
-import { clearAuthSession, getProfileName } from "@/lib/authSession";
+import { clearAuthSession, getProfileName, setUserDisplayName } from "@/lib/authSession";
 import { clearSessionLoginEmail, getSessionLoginEmail } from "@/lib/profileOnboarding";
 import { useUserNotifications } from "@/services/notifications";
 import { clearResumeWizardSession, readResumeProfile } from "@/lib/profileSession";
@@ -59,6 +59,12 @@ export default function AppNavbar() {
   }, [pathname]);
 
   useEffect(() => {
+    const handler = () => setNavDisplayName(getResolvedNavDisplayName());
+    window.addEventListener("te:display-name-updated", handler);
+    return () => window.removeEventListener("te:display-name-updated", handler);
+  }, []);
+
+  useEffect(() => {
     setSessionEmail(getSessionLoginEmail());
   }, [pathname]);
 
@@ -77,6 +83,11 @@ export default function AppNavbar() {
         if (cancelled) return;
         const fromApi = profile.profileImageUrl?.trim() || "";
         if (fromApi) setProfileImageUrl(fromApi);
+        const fullName = [profile.firstName?.trim(), profile.lastName?.trim()].filter(Boolean).join(" ");
+        if (fullName) {
+          setUserDisplayName(fullName);
+          setNavDisplayName(fullName);
+        }
       } catch {
         const fromSession = readResumeProfile()?.profileImageUrl?.trim() || "";
         if (fromSession) setProfileImageUrl(fromSession);

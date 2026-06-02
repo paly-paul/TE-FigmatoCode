@@ -414,6 +414,10 @@ function JobsFilterPanel({
               <div className="py-4 text-center text-sm text-gray-500">
                 Loading skills...
               </div>
+            ) : visibleSkills.length === 0 ? (
+              <div className="py-4 text-center text-sm text-gray-400">
+                No skills matched
+              </div>
             ) : (
               <div
                 className={`overflow-y-auto pr-1 transition-[max-height] duration-300 ease-in-out ${
