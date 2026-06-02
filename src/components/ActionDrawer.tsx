@@ -871,6 +871,12 @@ export default function ActionDrawer({
       : rawMatchScore >= 40
         ? "bg-yellow-400"
         : "bg-red-400";
+  const resolvedMatchBadgeStyle =
+    rawMatchScore == null || rawMatchScore >= 70
+      ? "bg-[#E9FAEE] text-[#16A34A]"
+      : rawMatchScore >= 40
+        ? "bg-yellow-100 text-yellow-700"
+        : "bg-red-100 text-red-700";
   const resolvedPostedAgo = (() => {
     const raw = rrDetails?.posted_time || action?.timestamp || "";
     if (!raw) return actionDrawerJobSummary.postedAgo;
@@ -1253,6 +1259,10 @@ export default function ActionDrawer({
 
     const milestones: Milestone[] = [];
 
+    // If an rrCandidateName was present, history was fetched from the API.
+    // If it came back null/empty, show the empty state — don't fall back to static milestones.
+    const historyWasAttempted = !!action?.rrCandidateName?.trim();
+
     if (candidateHistory && candidateHistory.entries.length > 0) {
       // Group entries by stage; keep track of insertion order and last entry per stage.
       const stageOrder: string[] = [];
@@ -1275,33 +1285,35 @@ export default function ActionDrawer({
           isCurrent: isLast,
         });
       });
-    } else if (isInterviewScheduled) {
+    } else if (!historyWasAttempted && isInterviewScheduled) {
       milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
       milestones.push({ title: "Interview Scheduled", date: stageReceivedDateLabel, isCurrent: true });
-    } else if (isSalaryNegotiation) {
+    } else if (!historyWasAttempted && isSalaryNegotiation) {
       milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
       milestones.push({ title: "Interview Accepted", date: stageReceivedDateLabel });
       milestones.push({ title: "Salary Proposal Received", date: proposalJoiningDateLabel, isCurrent: true });
-    } else if (isDirectApply) {
+    } else if (!historyWasAttempted && isDirectApply) {
       if (isApplicationTimelineCard(action)) {
         const applicationDate = formatTimelineDate(action?.applicationAppliedDate) || stageReceivedDateLabel;
         const stageLabel = action?.applicationStage?.trim() || "Received";
         const isInitialStage = /receive|source|appl|await/i.test(stageLabel);
         const isBeyondInterview = /salary|negotiat|proposal|onboard|hired|placed|active|started|deployed|joined|offer/i.test(stageLabel);
         const isBeyondSalary = /onboard|hired|placed|active|started|deployed|joined|offer/i.test(stageLabel);
-        milestones.push({ title: "Application Submitted", date: applicationDate });
-        if (!isInitialStage) {
-          milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
-          if (isBeyondInterview) {
-            milestones.push({ title: "Interview Accepted", date: undefined });
+        if (applicationDate) {
+          milestones.push({ title: "Application Submitted", date: applicationDate });
+          if (!isInitialStage) {
+            milestones.push({ title: "Recruiter Interest Accepted", date: recruiterAcceptedDateLabel });
+            if (isBeyondInterview) {
+              milestones.push({ title: "Interview Accepted", date: undefined });
+            }
+            if (isBeyondSalary) {
+              milestones.push({ title: "Salary Proposal Accepted", date: undefined });
+            }
           }
-          if (isBeyondSalary) {
-            milestones.push({ title: "Salary Proposal Accepted", date: undefined });
-          }
+          milestones.push({ title: `Current Stage: ${stageLabel}`, date: applicationDate, isCurrent: true });
         }
-        milestones.push({ title: `Current Stage: ${stageLabel}`, date: applicationDate, isCurrent: true });
       }
-    } else if (recruiterAcceptedDateLabel) {
+    } else if (!historyWasAttempted && recruiterAcceptedDateLabel) {
       milestones.push({ title: actionDrawerTimeline.milestoneTitles.default, date: recruiterAcceptedDateLabel, isCurrent: true });
     }
 
@@ -1730,7 +1742,7 @@ export default function ActionDrawer({
 
       <div className="rounded-sm border border-[#D8E3F8] bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <span className="rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A]">
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${resolvedMatchBadgeStyle}`}>
             {resolvedMatchBadge}
           </span>
           <div className="flex items-center gap-2">
@@ -1806,7 +1818,7 @@ export default function ActionDrawer({
           <>
         <div className="rounded-sm border border-[#D8E3F8] p-3.5 sm:p-4">
           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <span className="w-fit rounded-full bg-[#E9FAEE] px-3 py-1 text-xs font-semibold text-[#16A34A] sm:px-3.5 sm:py-1.5 sm:text-sm">
+            <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold sm:px-3.5 sm:py-1.5 sm:text-sm ${resolvedMatchBadgeStyle}`}>
               {resolvedMatchBadge}
             </span>
             <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>

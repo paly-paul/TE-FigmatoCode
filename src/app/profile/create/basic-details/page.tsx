@@ -16,7 +16,7 @@ import {
   hasProceededPastResumeUpload,
   markProceededPastResumeUpload,
 } from "@/lib/profileSession";
-import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName } from "@/lib/authSession";
+import { clearAuthSession, getCandidateId, getProfileName, isLikelyDocId, setProfileName, setUserDisplayName } from "@/lib/authSession";
 import { MOBILE_MQ } from "@/lib/mobileViewport";
 import { getCandidateProfileData, saveProfile, uploadProfileFile } from "@/services/profile";
 import { getCurrencyListOptions } from "@/services/profile/getCurrencyList";
@@ -2596,6 +2596,10 @@ function BasicDetailsPageContent() {
         action: "save",
         mode: profileName ? "edit" : "new",
       });
+      if (fullName) {
+        setUserDisplayName(fullName);
+        window.dispatchEvent(new Event("te:display-name-updated"));
+      }
       setDraftPopup({
         open: true,
         variant: "success",

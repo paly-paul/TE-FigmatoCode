@@ -538,7 +538,7 @@ export function FilterDrawer({
         resolvedPlacement === "bottom" ? (
           <button
             type="button"
-            onClick={() => setFilters(DEFAULT_FILTERS)}
+            onClick={() => { setFilters(DEFAULT_FILTERS); onApply(DEFAULT_FILTERS); }}
             className="text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             Reset
@@ -563,7 +563,7 @@ export function FilterDrawer({
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
+              onClick={() => { setFilters(DEFAULT_FILTERS); onApply(DEFAULT_FILTERS); }}
               className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
             >
               Reset
