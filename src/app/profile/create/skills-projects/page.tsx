@@ -2876,7 +2876,17 @@ function SkillsProjectsPageContent() {
                   <span className="text-sm font-medium text-gray-800">
                     Skills <span className="text-red-500">*</span>
                   </span>
-                  <div className="relative">
+                  <div className={`relative ${isSkillsDropdownOpen ? "z-30" : ""}`}>
+                    {isSkillsDropdownOpen && (
+                      <div
+                        className="fixed inset-0 z-[49]"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          setIsSkillsDropdownOpen(false);
+                          setSkillOptionSearch("");
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => {
