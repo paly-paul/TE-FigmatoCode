@@ -878,8 +878,8 @@ export default function ActionDrawer({
         ? "bg-yellow-100 text-yellow-700"
         : "bg-red-100 text-red-700";
   const resolvedPostedAgo = (() => {
-    const raw = rrDetails?.posted_time || action?.timestamp || "";
-    if (!raw) return actionDrawerJobSummary.postedAgo;
+    const raw = rrDetails?.posted_time?.trim() || "";
+    if (!raw) return null;
     const parsed = new Date(raw);
     if (!Number.isNaN(parsed.getTime())) {
       return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -1745,9 +1745,11 @@ export default function ActionDrawer({
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${resolvedMatchBadgeStyle}`}>
             {resolvedMatchBadge}
           </span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#5E7397]">{resolvedPostedAgo}</span>
-          </div>
+          {resolvedPostedAgo ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#5E7397]">{resolvedPostedAgo}</span>
+            </div>
+          ) : null}
         </div>
 
         <h3 className="text-base font-semibold text-[#202939]">{roleTitle}</h3>
@@ -1821,7 +1823,7 @@ export default function ActionDrawer({
             <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold sm:px-3.5 sm:py-1.5 sm:text-sm ${resolvedMatchBadgeStyle}`}>
               {resolvedMatchBadge}
             </span>
-            <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span>
+            {resolvedPostedAgo ? <span className="text-xs text-[#5E7397] sm:text-sm">{resolvedPostedAgo}</span> : null}
           </div>
 
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">

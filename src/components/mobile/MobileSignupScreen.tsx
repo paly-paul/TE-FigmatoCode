@@ -14,6 +14,9 @@ import { Input } from "@/components/ui/Input";
 import { useSignupSubmit } from "@/services/signup";
 import LegalHtmlModal from "@/components/legal/LegalHtmlModal";
 
+const PASSWORD_REQUIREMENTS = "Password must be at least 8 characters and include one uppercase letter, one number, and one special character";
+const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
 export function MobileSignupScreen() {
   const { submit, isLoading, error } = useSignupSubmit();
   const [form, setForm] = useState({
@@ -24,6 +27,8 @@ export function MobileSignupScreen() {
   });
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const [legalModal, setLegalModal] = useState<null | { title: string; src: string }>(null);
 
   function openLegalModal(kind: "terms" | "privacy") {
@@ -42,11 +47,21 @@ export function MobileSignupScreen() {
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    if (name === "password" && passwordTouched) {
+      setPasswordError(PASSWORD_REGEX.test(value) ? null : PASSWORD_REQUIREMENTS);
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setPasswordTouched(true);
+    if (!PASSWORD_REGEX.test(form.password)) {
+      setPasswordError(PASSWORD_REQUIREMENTS);
+      return;
+    }
+    setPasswordError(null);
     if (!agreeToTerms) {
       setLocalError("Please agree to the Terms & Conditions to continue.");
       return;
@@ -106,11 +121,13 @@ export function MobileSignupScreen() {
             name="password"
             isPassword
             showInfoIcon
+            infoTooltip={PASSWORD_REQUIREMENTS}
             placeholder="Enter password here..."
             value={form.password}
             onChange={handleChange}
             autoComplete="new-password"
             required
+            error={passwordError ?? undefined}
           />
 
           <Checkbox

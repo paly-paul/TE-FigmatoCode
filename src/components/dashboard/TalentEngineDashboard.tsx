@@ -1439,14 +1439,17 @@ export default function TalentEngineDashboard() {
     return [...apiActionCards, ...apiGeneralCards, ...apiProfileCards];
   }, [apiActionCards, apiGeneralCards, apiProfileCards, hasAttemptedActionablesLoad]);
 
+  const isOnboardedOrOnboarding = (status: string | undefined) =>
+    status?.toLowerCase() === "onboarded" || status?.toLowerCase() === "onboarding";
+
   const filteredActions = resolvedActionCards.filter(
     (card) =>
       card.type === activeActionTab &&
-      card.candidateStatus?.toLowerCase() !== "onboarded"
+      !isOnboardedOrOnboarding(card.candidateStatus)
   );
 
   const onboardedActionCards = resolvedActionCards.filter(
-    (card) => card.candidateStatus?.toLowerCase() === "onboarded"
+    (card) => isOnboardedOrOnboarding(card.candidateStatus)
   );
 
   const hasMoreActions =
@@ -1470,7 +1473,7 @@ export default function TalentEngineDashboard() {
 
   const actionTabCounts = useMemo(() => {
     const nonOnboarded = resolvedActionCards.filter(
-      (c) => c.candidateStatus?.toLowerCase() !== "onboarded"
+      (c) => !isOnboardedOrOnboarding(c.candidateStatus)
     );
     return {
       Job: nonOnboarded.filter((c) => c.type === "Job").length,
@@ -1502,7 +1505,9 @@ export default function TalentEngineDashboard() {
 
   const recommendedSourceJobs = apiRecommendedJobs;
   const applicationSourceJobs = apiApplicationJobs;
-  const rejectedJobsCount = applicationSourceJobs.filter((j) => j.stage === "Rejected").length;
+  const rejectedJobsCount =
+    applicationSourceJobs.filter((j) => j.stage === "Rejected").length +
+    apiInterestJobs.filter((j) => j.stage === "Rejected").length;
 
   const { visibleRecommendedJobs, visibleApplicationJobs, visibleAppliedInterestJobs } = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -1571,7 +1576,9 @@ export default function TalentEngineDashboard() {
         .filter(filterApplied)
         .filter((job) => showRejectedJobs ? job.stage === "Rejected" : job.stage !== "Rejected")
         .filter((job) => appliedFilters.stages.length === 0 || appliedFilters.stages.includes(job.stage)),
-      visibleAppliedInterestJobs: apiInterestJobs.filter(filterApplied),
+      visibleAppliedInterestJobs: apiInterestJobs
+        .filter(filterApplied)
+        .filter((job) => showRejectedJobs ? job.stage === "Rejected" : job.stage !== "Rejected"),
     };
   }, [
     recommendedFilters,
@@ -2502,11 +2509,11 @@ export default function TalentEngineDashboard() {
                             {badge.label}
                           </div>
                           <span className="shrink-0 rounded-full border border-green-200 bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
-                            Onboarded
+                            {card.candidateStatus?.toLowerCase() === "onboarding" ? "Onboarding" : "Onboarded"}
                           </span>
                         </div>
                         <p className="mb-2.5 text-center text-base font-bold text-green-700">
-                          You are onboarded!
+                          {card.candidateStatus?.toLowerCase() === "onboarding" ? "You are onboarding!" : "You are onboarded!"}
                         </p>
                         <div className="space-y-1.5">
                           <p className="text-sm text-slate-700">
@@ -2831,7 +2838,7 @@ export default function TalentEngineDashboard() {
                       >
                         <div className="mb-4">
                           <span className={`inline-flex rounded px-2.5 py-1 text-xs font-medium ${getStageStyle(job.stage)}`}>
-                            {job.stage}
+                            {job.stage?.toLowerCase() === "onboarding" ? "Onboarded" : job.stage}
                           </span>
                         </div>
 
@@ -3084,11 +3091,11 @@ export default function TalentEngineDashboard() {
                               {badge.label}
                             </div>
                             <span className="rounded-full border border-green-200 bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
-                              Onboarded
+                              {card.candidateStatus?.toLowerCase() === "onboarding" ? "Onboarding" : "Onboarded"}
                             </span>
                           </div>
                           <p className="mb-3 text-center text-base font-bold text-green-700">
-                            You are onboarded!
+                            {card.candidateStatus?.toLowerCase() === "onboarding" ? "You are onboarding!" : "You are onboarded!"}
                           </p>
                           <div className="mb-4 space-y-1.5">
                             <p className="text-sm text-slate-700">
@@ -3557,7 +3564,7 @@ export default function TalentEngineDashboard() {
                                 <MatchCircle score={job.matchPercentage} />
                               </p>
                               <span className={`text-xs border px-3 py-1 rounded-md w-fit ${getStageStyle(job.stage)}`}>
-                                {job.stage}
+                                {job.stage?.toLowerCase() === "onboarding" ? "Onboarded" : job.stage}
                               </span>
                               <span className="text-sm text-gray-600">{formatAppliedDate(job.appliedDate)}</span>
                             </div>
@@ -3594,7 +3601,7 @@ export default function TalentEngineDashboard() {
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className={`text-xs border px-3 py-1 rounded-md ${getStageStyle(job.stage)}`}>
-                                  {job.stage}
+                                  {job.stage?.toLowerCase() === "onboarding" ? "Onboarded" : job.stage}
                                 </span>
                                 <span className="text-xs text-gray-500">
                                   Applied on {formatAppliedDate(job.appliedDate)}

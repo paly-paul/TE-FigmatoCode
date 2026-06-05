@@ -206,7 +206,12 @@ export function ResumeUploadArea({
               {uploadedFile.name}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Uploaded on {uploadedFile.uploadDate}
+              Uploaded on {(() => {
+                const d = new Date(uploadedFile.uploadDate);
+                return !Number.isNaN(d.getTime())
+                  ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                  : uploadedFile.uploadDate;
+              })()}
             </p>
           </div>
           <button
