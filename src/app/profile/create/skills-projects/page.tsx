@@ -1008,11 +1008,11 @@ function SkillsProjectsPageContent() {
                       : skillFromJson;
                 if (!toolName) continue;
                 const yearsRaw =
-                  typeof row?.experience_years === "number"
+                  typeof row?.experience_years === "number" && row.experience_years > 0
                     ? String(row.experience_years)
                     : typeof row?.experience_years === "string"
                       ? row.experience_years.trim()
-                      : typeof row?.experience === "number"
+                      : typeof row?.experience === "number" && row.experience > 0
                         ? String(row.experience)
                         : typeof row?.experience === "string"
                           ? row.experience.trim()
@@ -1044,11 +1044,11 @@ function SkillsProjectsPageContent() {
                             : skillFromJson;
                   if (!tool) return null;
                   let years =
-                    typeof row?.experience_years === "number"
+                    typeof row?.experience_years === "number" && row.experience_years > 0
                       ? String(row.experience_years)
                       : typeof row?.experience_years === "string"
                         ? row.experience_years.trim()
-                        : typeof row?.experience === "number"
+                        : typeof row?.experience === "number" && row.experience > 0
                           ? String(row.experience)
                           : typeof row?.experience === "string"
                             ? row.experience.trim()

@@ -212,6 +212,7 @@ const countryDialCodes = [
 ];
 const defaultCountryCodeOptions = Array.from(new Set(countryDialCodes.map((item) => item.country_code)));
 const PHONE_MAX_LENGTH = 10;
+const EXTERNAL_LINK_PLATFORMS = ["GitHub", "LinkedIn", "Twitter", "Facebook", "Instagram", "Personal Website", "Others"];
 
 function sanitizePhoneInput(value: string): string {
   return value.replace(/\D/g, "").slice(0, PHONE_MAX_LENGTH);
@@ -960,6 +961,7 @@ function BasicDetailsPageContent() {
   const [isLanguageOptionsLoading, setIsLanguageOptionsLoading] = useState(true);
   const [languageOptionsError, setLanguageOptionsError] = useState("");
   const [openLanguageDropdownId, setOpenLanguageDropdownId] = useState<string | null>(null);
+  const [openExternalLinkDropdownId, setOpenExternalLinkDropdownId] = useState<string | null>(null);
   const [languageSearchById, setLanguageSearchById] = useState<Record<string, string>>({});
   const [openGraduationYearDropdownId, setOpenGraduationYearDropdownId] = useState<string | null>(null);
   const [graduationYearSearchById, setGraduationYearSearchById] = useState<Record<string, string>>({});
@@ -2484,9 +2486,22 @@ function BasicDetailsPageContent() {
     const draftLinks = (Array.isArray(stored.externalLinks) ? stored.externalLinks : [])
       .filter((e) => e && e.label && e.url) as Array<{ label: string; url: string }>;
 
+    // Build a lookup of skill → experience years from the workExperience stored
+    // by the skills-projects page, so saving from basic-details doesn't wipe them.
+    const expBySkill = new Map<string, number>();
+    if (Array.isArray(stored.workExperience)) {
+      for (const entry of stored.workExperience) {
+        const skillName = ((entry as { jobTitle?: string; company?: string }).jobTitle || (entry as { company?: string }).company || "").trim().toLowerCase();
+        const years = Number.parseFloat(((entry as { duration?: string }).duration) || "");
+        if (skillName && Number.isFinite(years) && years > 0) {
+          expBySkill.set(skillName, years);
+        }
+      }
+    }
+
     const draftSkillsTable = draftTools.map((tool) => ({
       key_skills: tool.trim(),
-      experience: 0,
+      experience: expBySkill.get(tool.trim().toLowerCase()) ?? 0,
     }));
 
     const draftProjectsTable = draftProjects
@@ -3873,25 +3888,47 @@ function BasicDetailsPageContent() {
                             </button>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <label className="flex flex-col gap-2">
+                            <div className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">Label</span>
-                              <select
-                                value={entry.label}
-                                onChange={(e) =>
-                                  updateExternalLink(entry.id, "label", e.target.value)
-                                }
-                                className={fieldClass(false)}
-                              >
-                                <option value="">Select platform</option>
-                                <option value="GitHub">GitHub</option>
-                                <option value="LinkedIn">LinkedIn</option>
-                                <option value="Twitter">Twitter</option>
-                                <option value="Facebook">Facebook</option>
-                                <option value="Instagram">Instagram</option>
-                                <option value="Personal Website">Personal Website</option>
-                                <option value="Others">Others</option>
-                              </select>
-                            </label>
+                              <div className={`relative ${openExternalLinkDropdownId === entry.id ? "z-30" : ""}`}>
+                                {openExternalLinkDropdownId === entry.id && (
+                                  <div
+                                    className="fixed inset-0 z-[49]"
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                      setOpenExternalLinkDropdownId(null);
+                                    }}
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenExternalLinkDropdownId((prev) => (prev === entry.id ? null : entry.id))}
+                                  className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                                >
+                                  <span className={entry.label ? "text-gray-900" : "text-gray-400"}>
+                                    {entry.label || "Select platform"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+                                </button>
+                                {openExternalLinkDropdownId === entry.id && (
+                                  <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                    {EXTERNAL_LINK_PLATFORMS.map((platform) => (
+                                      <button
+                                        key={platform}
+                                        type="button"
+                                        onClick={() => {
+                                          updateExternalLink(entry.id, "label", platform);
+                                          setOpenExternalLinkDropdownId(null);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${entry.label === platform ? "bg-primary-50 text-primary-700 font-medium" : "text-gray-700"}`}
+                                      >
+                                        {platform}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             <label className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">URL</span>
                               <input
@@ -4736,23 +4773,47 @@ function BasicDetailsPageContent() {
                         </button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Label</span>
-                          <select
-                            value={entry.label}
-                            onChange={(e) => updateExternalLink(entry.id, "label", e.target.value)}
-                            className={fieldClass(false)}
-                          >
-                            <option value="">Select platform</option>
-                            <option value="GitHub">GitHub</option>
-                            <option value="LinkedIn">LinkedIn</option>
-                            <option value="Twitter">Twitter</option>
-                            <option value="Facebook">Facebook</option>
-                            <option value="Instagram">Instagram</option>
-                            <option value="Personal Website">Personal Website</option>
-                            <option value="Others">Others</option>
-                          </select>
-                        </label>
+                          <div className={`relative ${openExternalLinkDropdownId === entry.id ? "z-30" : ""}`}>
+                            {openExternalLinkDropdownId === entry.id && (
+                              <div
+                                className="fixed inset-0 z-[49]"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  setOpenExternalLinkDropdownId(null);
+                                }}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setOpenExternalLinkDropdownId((prev) => (prev === entry.id ? null : entry.id))}
+                              className={`${fieldClass(false)} flex items-center justify-between bg-white text-left`}
+                            >
+                              <span className={entry.label ? "text-gray-900" : "text-gray-400"}>
+                                {entry.label || "Select platform"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+                            </button>
+                            {openExternalLinkDropdownId === entry.id && (
+                              <div className="absolute top-full z-50 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+                                {EXTERNAL_LINK_PLATFORMS.map((platform) => (
+                                  <button
+                                    key={platform}
+                                    type="button"
+                                    onClick={() => {
+                                      updateExternalLink(entry.id, "label", platform);
+                                      setOpenExternalLinkDropdownId(null);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${entry.label === platform ? "bg-primary-50 text-primary-700 font-medium" : "text-gray-700"}`}
+                                  >
+                                    {platform}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">URL</span>
                           <input
