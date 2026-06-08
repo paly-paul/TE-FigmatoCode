@@ -60,7 +60,7 @@ export interface ProfileData {
   externalLinks: {
     label: string;
     url: string;
-    platform: "github" | "linkedin" | "website";
+    platform: "github" | "linkedin" | "twitter" | "facebook" | "instagram" | "website";
   }[];
   summary: string;
   experience: string;

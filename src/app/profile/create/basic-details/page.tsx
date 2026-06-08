@@ -2481,6 +2481,8 @@ function BasicDetailsPageContent() {
       : [];
     const draftCertifications = Array.isArray(stored.certifications) ? stored.certifications : [];
     const draftEducation = Array.isArray(stored.education) ? stored.education : [];
+    const draftLinks = (Array.isArray(stored.externalLinks) ? stored.externalLinks : [])
+      .filter((e) => e && e.label && e.url) as Array<{ label: string; url: string }>;
 
     const draftSkillsTable = draftTools.map((tool) => ({
       key_skills: tool.trim(),
@@ -2591,6 +2593,14 @@ function BasicDetailsPageContent() {
           ...(draftCertificationTable.length ? { certification_table: draftCertificationTable } : {}),
           ...(draftEducationQualifications.length
             ? { education_qualifications: draftEducationQualifications }
+            : {}),
+          ...(draftLinks.length
+            ? {
+                external_profile_links: draftLinks.map(({ label, url }) => ({
+                  platform: label,
+                  url,
+                })),
+              }
             : {}),
         },
         action: "save",
@@ -3491,8 +3501,9 @@ function BasicDetailsPageContent() {
                           <span className="text-sm font-medium text-gray-800">Score</span>
                           <input
                             type="text"
+                            inputMode="decimal"
                             value={entry.score}
-                            onChange={(e) => updateEducationEntry(entry.id, "score", e.target.value)}
+                            onChange={(e) => updateEducationEntry(entry.id, "score", e.target.value.replace(/[^0-9.]/g, ""))}
                             placeholder="e.g., 9.8"
                             className={fieldClass(false)}
                           />
@@ -3864,15 +3875,22 @@ function BasicDetailsPageContent() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <label className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">Label</span>
-                              <input
-                                type="text"
+                              <select
                                 value={entry.label}
                                 onChange={(e) =>
                                   updateExternalLink(entry.id, "label", e.target.value)
                                 }
-                                placeholder="e.g., LinkedIn"
                                 className={fieldClass(false)}
-                              />
+                              >
+                                <option value="">Select platform</option>
+                                <option value="GitHub">GitHub</option>
+                                <option value="LinkedIn">LinkedIn</option>
+                                <option value="Twitter">Twitter</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="Personal Website">Personal Website</option>
+                                <option value="Others">Others</option>
+                              </select>
                             </label>
                             <label className="flex flex-col gap-2">
                               <span className="text-sm font-medium text-gray-800">URL</span>
@@ -4377,8 +4395,9 @@ function BasicDetailsPageContent() {
                         <span className="text-sm font-medium text-gray-800">Score</span>
                         <input
                           type="text"
+                          inputMode="decimal"
                           value={entry.score}
-                          onChange={(e) => updateEducationEntry(entry.id, "score", e.target.value)}
+                          onChange={(e) => updateEducationEntry(entry.id, "score", e.target.value.replace(/[^0-9.]/g, ""))}
                           placeholder="e.g., 9.8"
                           className={fieldClass(false)}
                         />
@@ -4719,13 +4738,20 @@ function BasicDetailsPageContent() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">Label</span>
-                          <input
-                            type="text"
+                          <select
                             value={entry.label}
                             onChange={(e) => updateExternalLink(entry.id, "label", e.target.value)}
-                            placeholder="e.g., LinkedIn"
                             className={fieldClass(false)}
-                          />
+                          >
+                            <option value="">Select platform</option>
+                            <option value="GitHub">GitHub</option>
+                            <option value="LinkedIn">LinkedIn</option>
+                            <option value="Twitter">Twitter</option>
+                            <option value="Facebook">Facebook</option>
+                            <option value="Instagram">Instagram</option>
+                            <option value="Personal Website">Personal Website</option>
+                            <option value="Others">Others</option>
+                          </select>
                         </label>
                         <label className="flex flex-col gap-2">
                           <span className="text-sm font-medium text-gray-800">URL</span>

@@ -146,35 +146,52 @@ function normalizeExternalUrl(url: string | undefined): string {
     return `https://${trimmed}`;
 }
 
-function detectPlatformFromUrl(url: string): "github" | "linkedin" | "website" {
+function detectPlatformFromUrl(url: string): Platform {
     try {
         const hostname = new URL(url).hostname.toLowerCase();
         if (hostname === "github.com" || hostname.endsWith(".github.com")) return "github";
         if (hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")) return "linkedin";
+        if (hostname === "twitter.com" || hostname === "x.com" || hostname.endsWith(".twitter.com")) return "twitter";
+        if (hostname === "facebook.com" || hostname.endsWith(".facebook.com")) return "facebook";
+        if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
         return "website";
     } catch {
         const lowerUrl = url.toLowerCase();
         if (lowerUrl.includes("github.com")) return "github";
         if (lowerUrl.includes("linkedin.com")) return "linkedin";
+        if (lowerUrl.includes("twitter.com") || lowerUrl.includes("x.com")) return "twitter";
+        if (lowerUrl.includes("facebook.com")) return "facebook";
+        if (lowerUrl.includes("instagram.com")) return "instagram";
         return "website";
     }
 }
 
-function platformLabel(platform: "github" | "linkedin" | "website"): string {
-    if (platform === "github") return "Github";
-    if (platform === "linkedin") return "LinkedIn";
-    return "Website";
+type Platform = "github" | "linkedin" | "twitter" | "facebook" | "instagram" | "website";
+
+function detectPlatformFromLabel(label: string): Platform | null {
+    const l = label.toLowerCase();
+    if (l.includes("github")) return "github";
+    if (l.includes("linkedin")) return "linkedin";
+    if (l.includes("twitter") || l === "x") return "twitter";
+    if (l.includes("facebook")) return "facebook";
+    if (l.includes("instagram")) return "instagram";
+    return null;
 }
 
-function platformIcon(platform: "github" | "linkedin" | "website"): string {
+function platformIcon(platform: Platform): string {
     if (platform === "github") return "/icons/github-logo.svg";
     if (platform === "linkedin") return "/icons/linkedin-logo.svg";
+    if (platform === "twitter") return "/icons/twitter-logo.svg";
+    if (platform === "facebook") return "/icons/facebook-logo.svg";
+    if (platform === "instagram") return "/icons/instagram-logo.svg";
     return "/icons/web-logo.svg";
 }
 
+const PREDEFINED_LABELS = new Set(["github", "linkedin", "twitter", "facebook", "instagram", "personal website", "others"]);
+
 function normalizeExternalLinksList(links: Array<{ label?: string; url?: string }>) {
     const seen = new Set<string>();
-    const out: Array<{ label: string; url: string; platform: "github" | "linkedin" | "website" }> = [];
+    const out: Array<{ label: string; url: string; platform: Platform }> = [];
 
     for (const link of links) {
         const url = normalizeExternalUrl(link.url);
@@ -183,8 +200,23 @@ function normalizeExternalLinksList(links: Array<{ label?: string; url?: string 
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const platform = detectPlatformFromUrl(url);
-        const label = (link.label || "").trim() || platformLabel(platform);
+        const savedLabel = (link.label || "").trim();
+        const savedLower = savedLabel.toLowerCase();
+
+        // If the stored label is one of our predefined values, trust it directly.
+        const platformFromLabel = PREDEFINED_LABELS.has(savedLower) ? detectPlatformFromLabel(savedLabel) : null;
+        // Fall back to URL-based detection (catches twitter.com, facebook.com, etc.
+        // and overrides the backend's incorrect "GitHub" default for unknown URLs).
+        const platform: Platform = platformFromLabel ?? detectPlatformFromUrl(url);
+
+        const label =
+            platform === "github" ? "GitHub"
+            : platform === "linkedin" ? "LinkedIn"
+            : platform === "twitter" ? "Twitter"
+            : platform === "facebook" ? "Facebook"
+            : platform === "instagram" ? "Instagram"
+            : savedLabel || "Website";
+
         out.push({ label, url, platform });
     }
     return out;
@@ -654,7 +686,7 @@ export default function MyProfilePage() {
                                 className="inline-flex items-center gap-2 border border-[#D6DCEA] px-4 py-2 text-[14px] text-[#202939]"
                             >
                                 <Image width={18} height={18} src={platformIcon(link.platform)} alt="" />
-                                {platformLabel(link.platform)}
+                                {link.label}
                             </a>
                         ))}
                     </div>
@@ -735,7 +767,9 @@ export default function MyProfilePage() {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <p className="text-[16px] font-medium leading-6 text-[#202939]">{certification.name}</p>
                                                     {certification.externalUrl ? (
-                                                        <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A]" />
+                                                        <a href={certification.externalUrl} target="_blank" rel="noopener noreferrer" aria-label="View certificate">
+                                                            <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-[#66758A] hover:text-[#174EE7] transition-colors" />
+                                                        </a>
                                                     ) : null}
                                                 </div>
                                                 <p className="mt-2 text-[14px] text-[#5E7397]">{certification.issuer}</p>
@@ -1357,7 +1391,7 @@ export default function MyProfilePage() {
                                             className="inline-flex items-center gap-1.5 hover:bg-gray-200 p-2.5 border transition-colors"
                                         >
                                             <Image width={20} height={20} src={platformIcon(link.platform)} alt="" />
-                                            {platformLabel(link.platform)}
+                                            {link.label}
                                         </a>
                                     ))}
                                 </div>
@@ -1415,7 +1449,9 @@ export default function MyProfilePage() {
                                                                 {certification.name}
                                                             </p>
                                                             {certification.externalUrl ? (
-                                                                <ExternalLink className="h-3.5 w-3.5 text-[#66758a]" />
+                                                                <a href={certification.externalUrl} target="_blank" rel="noopener noreferrer" aria-label="View certificate">
+                                                                    <ExternalLink className="h-3.5 w-3.5 text-[#66758a] hover:text-[#174EE7] transition-colors" />
+                                                                </a>
                                                             ) : null}
                                                         </div>
                                                         <p className="mt-1 text-sm text-[#66758a]">{certification.issuer}</p>

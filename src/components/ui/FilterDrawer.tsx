@@ -153,7 +153,7 @@ function CheckboxGroup({
   );
 }
 
-const SALARY_SLIDER_MAX = 10000;
+export const SALARY_SLIDER_MAX = 10000;
 
 function SalaryRange({
   min,
