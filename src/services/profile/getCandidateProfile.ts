@@ -696,7 +696,7 @@ function mapToolsTableToWorkExperience(value: unknown): ResumeProfileData["workE
         parsedSkillTokens[0] ??
         undefined;
       const years =
-        typeof record.experience === "number" && Number.isFinite(record.experience)
+        typeof record.experience === "number" && Number.isFinite(record.experience) && record.experience > 0
           ? String(record.experience)
           : pickString(record, "experience_years", "experience", "years", "duration");
       if (!toolName && !years) return null;
