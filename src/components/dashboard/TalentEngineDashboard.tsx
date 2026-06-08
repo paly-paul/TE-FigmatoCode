@@ -45,6 +45,7 @@ import {
   DEFAULT_FILTERS,
   FilterDrawer,
   FilterState,
+  SALARY_SLIDER_MAX,
 } from "../ui/FilterDrawer";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -1351,7 +1352,7 @@ export default function TalentEngineDashboard() {
 
         const matchesSalary =
           job.hourlyRate >= filters.salaryMin &&
-          job.hourlyRate <= filters.salaryMax;
+          (filters.salaryMax >= SALARY_SLIDER_MAX || job.hourlyRate <= filters.salaryMax);
 
         const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
@@ -1545,7 +1546,7 @@ export default function TalentEngineDashboard() {
 
         const matchesSalary =
           job.hourlyRate >= filters.salaryMin &&
-          job.hourlyRate <= filters.salaryMax;
+          (filters.salaryMax >= SALARY_SLIDER_MAX || job.hourlyRate <= filters.salaryMax);
 
         const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 

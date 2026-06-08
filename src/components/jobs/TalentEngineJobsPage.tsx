@@ -23,6 +23,7 @@ import {
   EMPLOYMENT_TYPES,
   FilterDrawer,
   FilterState,
+  SALARY_SLIDER_MAX,
   SENIORITY_LEVELS,
 } from "../ui/FilterDrawer";
 import {
@@ -1124,7 +1125,7 @@ export default function TalentEngineJobsPage() {
         selectedRotations.has(rotationBucketFromJobCard(job));
       const matchesSalary =
         job.compensationValue >= filters.salaryMin &&
-        job.compensationValue <= filters.salaryMax;
+        (filters.salaryMax >= SALARY_SLIDER_MAX || job.compensationValue <= filters.salaryMax);
       const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
       return (
@@ -1217,7 +1218,7 @@ export default function TalentEngineJobsPage() {
         selectedRotations.has(rotationBucketFromJobCard(job));
       const matchesSalary =
         job.compensationValue >= filters.salaryMin &&
-        job.compensationValue <= filters.salaryMax;
+        (filters.salaryMax >= SALARY_SLIDER_MAX || job.compensationValue <= filters.salaryMax);
 
       const matchesSaved = !showSavedOnly || savedJobIds.has(job.jobDocumentId ?? "");
 
